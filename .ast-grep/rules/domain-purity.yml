@@ -1,0 +1,13 @@
+# 適応度関数: Domain / UseCase 層の純粋性
+# domain.md / infrastructure.md §2.2: Domain層は永続化・Storage・Logger・
+# Config・Runner・フレームワークを知らない。UseCase層はPort経由でのみ外界に触れる。
+id: domain-purity
+language: typescript
+severity: error
+message: Domain/UseCase 層でフレームワーク・IO ライブラリを import してはならない（docs/03-detailed-design/domain.md）
+files:
+  - applications/frontend/src/domain/**
+  - applications/frontend/src/usecase/**
+rule:
+  kind: import_statement
+  regex: "from\\s+['\"](react|react-dom|next|next/|drizzle-orm|better-sqlite3|openai|node:|fs['\"]|path['\"]|server-only)"

@@ -1,0 +1,13 @@
+# 適応度関数: 永続化ライブラリの閉じ込め
+# infrastructure.md §2.2: Drizzle / better-sqlite3 は Infrastructure 層に閉じ込める。
+id: persistence-only-in-infrastructure
+language: typescript
+severity: error
+message: drizzle-orm / better-sqlite3 は Infrastructure 層以外で import 禁止（docs/03-detailed-design/infrastructure.md §2.2）
+files:
+  - applications/frontend/src/**
+ignores:
+  - applications/frontend/src/infrastructure/**
+rule:
+  kind: import_statement
+  regex: "['\"](drizzle-orm|better-sqlite3)"
