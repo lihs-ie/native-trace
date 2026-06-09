@@ -1,0 +1,8 @@
+indentation: 2
+comma-style: trailing
+record-brace-space: true
+function-arrows: trailing
+import-export-style: diff-friendly
+haddock-style: single-line
+newlines-between-decls: 1
+respectful: true
