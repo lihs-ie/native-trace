@@ -1,0 +1,13 @@
+# infrastructure.md §2.2: TypeScript のクラス構文は使わず、
+# factory 関数と plain object で Port 実装を返す。
+id: no-class-declaration
+language: typescript
+severity: error
+message: クラス構文は禁止。factory 関数と plain object を使う（docs/03-detailed-design/infrastructure.md §2.2）
+files:
+  - applications/frontend/src/**/*.ts
+  - applications/frontend/src/**/*.tsx
+rule:
+  any:
+    - kind: class_declaration
+    - kind: abstract_class_declaration
