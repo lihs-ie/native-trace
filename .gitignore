@@ -41,6 +41,10 @@ data/
 .idea/
 *.swp
 
+# --- actrun (local GitHub Actions runner) ---
+_build/
+cabal.project.freeze
+
 # --- Logs ---
 *.log
 npm-debug.log*
