@@ -1,0 +1,7 @@
+packages:
+  - applications/frontend
+
+allowBuilds:
+  '@ast-grep/cli': true
+  sharp: true
+  unrs-resolver: true
