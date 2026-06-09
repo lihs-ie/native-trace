@@ -1,0 +1,23 @@
+{
+  "name": "native-trace",
+  "private": true,
+  "packageManager": "pnpm@11.5.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @native-trace/frontend dev",
+    "build": "pnpm --filter @native-trace/frontend build",
+    "lint": "pnpm --filter @native-trace/frontend lint",
+    "typecheck": "pnpm --filter @native-trace/frontend typecheck",
+    "test": "pnpm --filter @native-trace/frontend test",
+    "test:e2e": "pnpm --filter @native-trace/frontend test:e2e",
+    "format": "pnpm --filter @native-trace/frontend format",
+    "backend:build": "cabal build --project-dir=applications/backend",
+    "backend:test": "cabal test --project-dir=applications/backend",
+    "fitness": "bash scripts/fitness/check.sh"
+  },
+  "devDependencies": {
+    "@ast-grep/cli": "^0.43.0"
+  }
+}
