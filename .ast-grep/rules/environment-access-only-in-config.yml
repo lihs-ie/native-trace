@@ -1,0 +1,12 @@
+# 適応度関数: 環境変数アクセスの閉じ込め
+# infrastructure.md §11.1: 環境変数読み込みは ConfigProvider に閉じ込める。
+id: environment-access-only-in-config
+language: typescript
+severity: error
+message: process.env は infrastructure/config 以外で参照禁止（docs/03-detailed-design/infrastructure.md §11.1）
+files:
+  - applications/frontend/src/**
+ignores:
+  - applications/frontend/src/infrastructure/config/**
+rule:
+  pattern: process.env

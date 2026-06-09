@@ -1,0 +1,13 @@
+# 適応度関数: 解析エンジン SDK の閉じ込め
+# acl.md: OpenAI / OSS Worker 固有の入出力は ACL 層に閉じ込める。
+id: engine-sdk-only-in-acl
+language: typescript
+severity: error
+message: OpenAI SDK は ACL 層以外で import 禁止（docs/03-detailed-design/acl.md）
+files:
+  - applications/frontend/src/**
+ignores:
+  - applications/frontend/src/acl/**
+rule:
+  kind: import_statement
+  regex: "from\\s+['\"]openai"
