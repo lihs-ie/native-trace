@@ -1,0 +1,78 @@
+name: backend-ci
+
+on:
+  pull_request:
+    paths:
+      - "applications/backend/**"
+      - ".github/workflows/backend-ci.yml"
+  push:
+    branches: [main, develop]
+    paths:
+      - "applications/backend/**"
+      - ".github/workflows/backend-ci.yml"
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GHC_VERSION: "9.10.3"
+  CABAL_VERSION: "3.16.1.0"
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: haskell-actions/run-fourmolu@v11
+        with:
+          pattern: |
+            applications/backend/**/*.hs
+
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: haskell-actions/hlint-setup@v2
+
+      - uses: haskell-actions/hlint-run@v2
+        with:
+          path: applications/backend/
+          fail-on: warning
+
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: applications/backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: haskell-actions/setup@v2
+        id: setup-haskell
+        with:
+          ghc-version: ${{ env.GHC_VERSION }}
+          cabal-version: ${{ env.CABAL_VERSION }}
+
+      - name: Generate dependency freeze for cache key
+        run: cabal freeze
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ${{ steps.setup-haskell.outputs.cabal-store }}
+            applications/backend/dist-newstyle
+          key: cabal-${{ runner.os }}-ghc${{ env.GHC_VERSION }}-${{ hashFiles('applications/backend/cabal.project.freeze') }}
+          restore-keys: |
+            cabal-${{ runner.os }}-ghc${{ env.GHC_VERSION }}-
+
+      - name: Build
+        run: cabal build all
+
+      - name: Test
+        run: cabal test all --test-show-details=direct
