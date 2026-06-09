@@ -1,0 +1,4 @@
+# HLint configuration for native-trace-worker.
+# Add project-specific ignores below as the codebase grows.
+
+- ignore: {name: "Use newtype instead of data", within: []}

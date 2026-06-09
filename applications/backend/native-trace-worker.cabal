@@ -1,0 +1,60 @@
+cabal-version:      3.4
+name:               native-trace-worker
+version:            0.1.0.0
+synopsis:           Pronunciation analysis worker for NativeTrace
+description:
+  HTTP worker that analyzes English pronunciation recordings.
+  Exposes a synchronous API consumed by the NativeTrace frontend
+  through the OSS Worker Adaptor.
+
+build-type:         Simple
+tested-with:        GHC ==9.10.3
+
+common warnings
+    ghc-options:
+        -Wall -Wcompat -Widentities -Wincomplete-record-updates
+        -Wincomplete-uni-patterns -Wmissing-export-lists
+        -Wredundant-constraints
+
+    default-language: GHC2024
+    default-extensions: OverloadedStrings
+
+library
+    import:           warnings
+    hs-source-dirs:   src
+    exposed-modules:
+        NativeTrace.Worker.Api
+        NativeTrace.Worker.Application
+        NativeTrace.Worker.Types
+
+    build-depends:
+        , aeson           >=2.2
+        , base            >=4.20 && <5
+        , servant         >=0.20
+        , servant-server  >=0.20
+        , text            >=2.1
+        , wai             >=3.2
+
+executable native-trace-worker
+    import:           warnings
+    main-is:          Main.hs
+    hs-source-dirs:   app
+    ghc-options:      -threaded -rtsopts -with-rtsopts=-N
+    build-depends:
+        , base
+        , native-trace-worker
+        , warp  >=3.4
+
+test-suite native-trace-worker-test
+    import:             warnings
+    type:               exitcode-stdio-1.0
+    main-is:            Spec.hs
+    hs-source-dirs:     test
+    other-modules:      NativeTrace.Worker.ApplicationSpec
+    build-tool-depends: hspec-discover:hspec-discover
+    build-depends:
+        , base
+        , hspec                >=2.11
+        , hspec-wai            >=0.11
+        , http-types           >=0.12
+        , native-trace-worker
