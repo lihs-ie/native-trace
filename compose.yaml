@@ -1,0 +1,15 @@
+services:
+  worker:
+    build:
+      context: applications/backend
+      dockerfile: Dockerfile
+    container_name: native-trace-worker
+    ports:
+      - "8787:8787"
+    environment:
+      WORKER_PORT: "8787"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8787/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
