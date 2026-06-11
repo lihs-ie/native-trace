@@ -64,7 +64,8 @@ graph TB
     end
 
     subgraph WorkerLayer["解析worker層"]
-        OssWorker["Pronunciation Analysis Worker<br>初期実装: Haskell"]
+        OssWorker["Pronunciation Analysis Worker<br>Haskell（検証・採点・response構築）"]
+        PyAnalyzer["Pronunciation Analysis Service<br>Python（g2p・強制整列・wav2vec2 GOP 計測）"]
     end
 
     subgraph ExternalServices["外部サービス"]
@@ -84,10 +85,11 @@ graph TB
     JobRunner --> EngineAdaptors
     EngineAdaptors --> OpenAI
     EngineAdaptors --> OssWorker
+    OssWorker --> PyAnalyzer
     JobRunner --> SQLite
 ```
 
-図1: NativeTrace ローカルMVPのシステム構成。Next.jsがUI/API/ジョブ状態管理を担い、OpenAI APIとOSS解析workerをAdaptor経由で呼び出す。
+図1: NativeTrace ローカルMVPのシステム構成。Next.jsがUI/API/ジョブ状態管理を担い、OpenAI APIとOSS解析workerをAdaptor経由で呼び出す。OSS解析workerはHaskellがオーケストレーション/採点を担い、生計測（g2p・強制整列・wav2vec2 GOP）をPython解析サービスへ同期HTTPで委譲する（[ADR-001](../../adr/001-gop-based-pronunciation-error-detection.md), [ADR-004](../../adr/004-scoring-policy-in-haskell-worker-structured-diff.md)）。
 
 ## 4. 技術スタック
 
@@ -101,8 +103,9 @@ graph TB
 | 音声保存 | ローカルファイルシステム | - | ローカルMVPで録音音声を低コストに保存できるため |
 | 音声保存抽象 | AudioStorage | アプリ内実装 | 将来S3互換ストレージへ差し替えられるようにするため |
 | クラウド解析 | OpenAI API | 利用時点の安定版 | 発音添削の品質検証を早く行うため |
-| OSS解析worker | Haskell製HTTP worker | GHC stable | CPU動作をMustとしつつ、将来サーバー配置や任意のGPU最適化、実装差し替えに備えるため |
-| worker通信 | HTTP API | - | 将来workerを別ホストへ移しても同じ境界を維持できるため |
+| OSS解析worker | Haskell製HTTP worker | GHC stable | CPU動作をMustとしつつ、将来サーバー配置や任意のGPU最適化、実装差し替えに備えるため。検証・採点ポリシー・response構築を担い、g2p/音響解析は持たない（[ADR-004](../../adr/004-scoring-policy-in-haskell-worker-structured-diff.md)） |
+| 発音解析サービス | Python製HTTP service（python-analyzer） | Python 3系 / torch / espeak-ng / phonemizer | 生計測（espeak g2p・強制整列・wav2vec2 phoneme-CTC GOP・detected IPA）をCPUローカルで担う。オニオン構成で適応度関数をPythonへ拡張（[ADR-001](../../adr/001-gop-based-pronunciation-error-detection.md), [ADR-002](../../adr/002-espeak-ng-ipa-unification-g2p-in-python.md), [ADR-005](../../adr/005-python-analysis-service-onion-architecture.md)） |
+| worker通信 | HTTP API | - | 将来workerを別ホストへ移しても同じ境界を維持できるため。Haskell worker ↔ python-analyzer も同期HTTP境界 |
 
 ## 5. 機能一覧
 
