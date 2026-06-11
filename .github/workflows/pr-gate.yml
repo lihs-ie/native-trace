@@ -1,0 +1,74 @@
+name: pr-gate
+
+# agent-policy merge gate: 文書ではなくハードゲート。
+# policy (no-prod-doubles / test-bypass / wiring / allowlist-expiry) を required check にする。
+# build/test は既存の backend-ci.yml / frontend-ci.yml が担うためここでは再実行しない。
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: No production test doubles
+        env:
+          BASE_REF: origin/${{ github.base_ref }}
+        run: bash scripts/verify-no-prod-doubles.sh
+      - name: No test-only bypass
+        env:
+          BASE_REF: origin/${{ github.base_ref }}
+        run: bash scripts/verify-test-bypass.sh
+      - name: Wiring follows implementation
+        env:
+          BASE_REF: origin/${{ github.base_ref }}
+        run: bash scripts/verify-wiring.sh
+      - name: No unwired placeholder stub
+        run: bash scripts/verify-no-stub-placeholder.sh
+      - name: Allowlist not expired
+        run: bash scripts/verify-allowlist-expiry.sh
+      - name: Upload policy evidence
+        if: ${{ success() || failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: policy-evidence
+          path: |
+            .agent-evidence/**
+          if-no-files-found: ignore
+
+  integration_smoke:
+    needs: [policy]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Smoke (v1 declare-only)
+        run: |
+          echo "integration_smoke: v1 では smoke は wiring_manifest.yml に宣言のみ。" | tee smoke.log
+          echo "宣言された smoke コマンド:" | tee -a smoke.log
+          grep -nE '^[[:space:]]*smoke:' wiring_manifest.yml | tee -a smoke.log || echo "(なし)" | tee -a smoke.log
+          echo "follow-up で実行を有効化する。" | tee -a smoke.log
+      - name: Upload smoke evidence
+        if: ${{ success() || failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-evidence
+          path: smoke.log
+
+  summary:
+    if: ${{ success() || failure() }}
+    needs: [policy, integration_smoke]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write job summary
+        run: |
+          {
+            echo "## PR Gate Summary"
+            echo "- policy: ${{ needs.policy.result }}"
+            echo "- integration_smoke: ${{ needs.integration_smoke.result }} (v1 declare-only)"
+            echo "- evidence artifacts uploaded"
+          } >> "$GITHUB_STEP_SUMMARY"
