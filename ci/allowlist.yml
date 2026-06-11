@@ -1,0 +1,11 @@
+# ci/allowlist.yml — 本番パスの test double / 例外を期限付きで許可する (native-trace)。
+# verify-no-prod-doubles.sh が path/expires_at を読み、期限内のものだけ検出から除外する。
+# verify-allowlist-expiry.sh が無期限・期限切れを CI で fail させる。
+#
+# entries:
+#   - rule: no-prod-doubles
+#     path: "applications/backend/src/**/Generated/**"
+#     owner: "@lihs-ie"
+#     reason: "protoc 生成コードに stub 命名が含まれるため"
+#     expires_at: "2026-09-30"
+entries: []

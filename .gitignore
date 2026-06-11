@@ -49,3 +49,6 @@ cabal.project.freeze
 *.log
 npm-debug.log*
 pnpm-debug.log*
+
+# --- agent-policy: 証跡はローカル生成・CI で再生成 (.active マーカー含む) ---
+.agent-evidence/

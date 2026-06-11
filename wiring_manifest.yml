@@ -1,0 +1,32 @@
+# wiring_manifest.yml — 「実装に対し配線が追随しているか」の宣言 (native-trace)。
+# scripts/verify-wiring.sh が読む。glob: ** は任意階層、* は同一階層。
+# 配線が本当に不要な変更では .agent-evidence/wiring-waivers.txt に rule id を 1 行書き理由を証跡化する。
+#
+# 注: Next.js App Router (applications/frontend/src/app/**/{page,route,layout}.tsx) は
+#     ファイル配置自体がルーティング登録のため、専用 wiring rule は不要 (compiler/router が保証)。
+#     server action や feature module を足したら、参照元 component との結線を手で確認すること。
+#     backend は Servant: WorkerApi 型 (Api.hs) に route を足すと Application.hs の Server に
+#     handler が無ければ型エラーになる (compile-time 保証) が、ここでは「型を変えたら handler 側も
+#     変える」を早期シグナルとして明示する。
+rules:
+  - id: backend-servant-route-needs-handler
+    when: "applications/backend/src/NativeTrace/Worker/Api.hs"
+    require_one_of:
+      - "applications/backend/src/NativeTrace/Worker/Application.hs"
+    reason: "WorkerApi 型に endpoint を追加したら Application.hs の Server に handler を結線する"
+    smoke: "docker compose up -d worker && curl -fsS localhost:8787/health (v1: 宣言のみ・follow-up で実行)"
+
+  - id: python-analyzer-entrypoint-needs-app-wiring
+    when: "applications/python-analyzer/src/python_analyzer/interface/http_handler.py"
+    require_one_of:
+      - "applications/python-analyzer/src/python_analyzer/app.py"
+    reason: "http_handler.py の router を app.py の FastAPI Composition Root で include_router しなければ endpoint が到達不能になる"
+    smoke: "docker compose up -d analyzer && curl -fsS localhost:8788/health"
+
+  - id: haskell-worker-python-analyzer-edge
+    when: "applications/python-analyzer/**"
+    require_one_of:
+      - "compose.yaml"
+      - "wiring_manifest.yml"
+    reason: "python-analyzer の変更は compose.yaml または wiring_manifest.yml も共変更して配線を明示する"
+    smoke: "docker compose up -d analyzer && curl -fsS localhost:8788/health"
