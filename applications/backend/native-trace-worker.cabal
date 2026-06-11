@@ -25,15 +25,20 @@ library
     exposed-modules:
         NativeTrace.Worker.Api
         NativeTrace.Worker.Application
+        NativeTrace.Worker.Assessment
+        NativeTrace.Worker.Scoring
         NativeTrace.Worker.Types
 
     build-depends:
-        , aeson           >=2.2
-        , base            >=4.20 && <5
-        , servant         >=0.20
-        , servant-server  >=0.20
-        , text            >=2.1
-        , wai             >=3.2
+        , aeson                >=2.2
+        , base                 >=4.20 && <5
+        , bytestring           >=0.11
+        , http-types           >=0.12
+        , servant              >=0.20
+        , servant-multipart    >=0.12
+        , servant-server       >=0.20
+        , text                 >=2.1
+        , wai                  >=3.2
 
 executable native-trace-worker
     import:           warnings
@@ -50,11 +55,17 @@ test-suite native-trace-worker-test
     type:               exitcode-stdio-1.0
     main-is:            Spec.hs
     hs-source-dirs:     test
-    other-modules:      NativeTrace.Worker.ApplicationSpec
+    other-modules:
+        NativeTrace.Worker.ApplicationSpec
+        NativeTrace.Worker.ScoringSpec
+
     build-tool-depends: hspec-discover:hspec-discover
     build-depends:
+        , aeson                >=2.2
         , base
+        , bytestring           >=0.11
         , hspec                >=2.11
         , hspec-wai            >=0.11
         , http-types           >=0.12
         , native-trace-worker
+        , text                 >=2.1

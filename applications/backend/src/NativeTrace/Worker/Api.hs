@@ -4,15 +4,18 @@ module NativeTrace.Worker.Api (
 )
 where
 
-import Data.Aeson (Value)
 import Data.Proxy (Proxy (..))
-import NativeTrace.Worker.Types (HealthResponse, VersionResponse)
-import Servant.API (Get, JSON, Post, ReqBody, (:<|>), (:>))
+import NativeTrace.Worker.Types (AssessmentResponse, HealthResponse, VersionResponse)
+import Servant.API (Get, JSON, Post, (:<|>), (:>))
+import Servant.Multipart (Mem, MultipartData, MultipartForm)
 
 type WorkerApi =
   "health" :> Get '[JSON] HealthResponse
     :<|> "version" :> Get '[JSON] VersionResponse
-    :<|> "v1" :> "pronunciation-assessments" :> ReqBody '[JSON] Value :> Post '[JSON] Value
+    :<|> "v1"
+      :> "pronunciation-assessments"
+      :> MultipartForm Mem (MultipartData Mem)
+      :> Post '[JSON] AssessmentResponse
 
 workerApi :: Proxy WorkerApi
 workerApi = Proxy
