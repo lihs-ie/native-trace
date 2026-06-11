@@ -35,6 +35,16 @@ const eslintConfig = defineConfig([
     plugins: { "architecture-import": importPlugin },
     rules: {
       "architecture-import/no-restricted-paths": ["error", { zones: onionLayerZones }],
+      // `_` プレフィックスは「意図的に未使用」を示す慣習。型のためだけに残す引数や
+      // catch 句を許容する（Port 実装の fake シグネチャ等で使う）。
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+        },
+      ],
     },
   },
   // Override default ignores of eslint-config-next.

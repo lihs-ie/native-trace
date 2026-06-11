@@ -1,49 +1,129 @@
+/* ============================================================
+   NativeTrace — Design Tokens（Claude Design ハンドオフ移植）
+   英語発音チェックアプリ / General American 基準
+   テーマ: 言語学・辞書的な真面目さ / ダーク基調 / IPA・データはモノスペース
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+JP:wght@400;500;700&display=swap');
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* ---- Type families ---- */
+  --font-sans: "IBM Plex Sans", "Noto Sans JP", system-ui, sans-serif;
+  --font-jp:   "Noto Sans JP", "IBM Plex Sans", system-ui, sans-serif;
+  --font-serif:"Newsreader", Georgia, "Times New Roman", serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* ---- Type scale ---- */
+  --text-2xs: 11px;
+  --text-xs:  12px;
+  --text-sm:  13px;
+  --text-base:15px;
+  --text-md:  16px;
+  --text-lg:  18px;
+  --text-xl:  21px;
+  --text-2xl: 25px;
+  --text-3xl: 31px;
+  --text-4xl: 39px;
+  --text-5xl: 49px;
+
+  --leading-tight: 1.2;
+  --leading-snug:  1.4;
+  --leading-normal:1.6;
+  --leading-read:  1.85;
+
+  --tracking-tight: -0.01em;
+  --tracking-normal: 0em;
+  --tracking-wide:  0.04em;
+  --tracking-caps:  0.08em;
+
+  /* ---- Neutral surfaces (dark, slightly cool ink) ---- */
+  --bg-base:     oklch(0.165 0.012 256);
+  --bg-sunken:   oklch(0.135 0.012 256);
+  --surface-1:   oklch(0.205 0.013 256);
+  --surface-2:   oklch(0.245 0.014 256);
+  --surface-3:   oklch(0.295 0.015 256);
+  --surface-hi:  oklch(0.345 0.016 256);
+
+  --border-faint:  oklch(0.27 0.014 256);
+  --border:        oklch(0.34 0.016 256);
+  --border-strong: oklch(0.45 0.018 256);
+
+  /* ---- Text ---- */
+  --text-primary:   oklch(0.965 0.004 256);
+  --text-secondary: oklch(0.80 0.010 256);
+  --text-tertiary:  oklch(0.635 0.012 256);
+  --text-faint:     oklch(0.515 0.012 256);
+  --text-on-accent: oklch(0.99 0.003 256);
+
+  /* ---- Accent (blue #2f5fd0) ---- */
+  --accent:        oklch(0.555 0.165 264);
+  --accent-hover:  oklch(0.625 0.155 264);
+  --accent-press:  oklch(0.50 0.16 264);
+  --accent-soft:   oklch(0.40 0.085 264 / 0.28);
+  --accent-line:   oklch(0.62 0.14 264 / 0.55);
+  --accent-text:   oklch(0.74 0.13 264);
+
+  /* ---- Severity ---- */
+  --sev-critical:       oklch(0.645 0.205 22);
+  --sev-critical-text:  oklch(0.76 0.16 22);
+  --sev-critical-soft:  oklch(0.645 0.205 22 / 0.16);
+  --sev-critical-line:  oklch(0.66 0.20 22 / 0.85);
+  --sev-major:          oklch(0.705 0.165 52);
+  --sev-major-text:     oklch(0.80 0.13 58);
+  --sev-major-soft:     oklch(0.705 0.165 52 / 0.16);
+  --sev-major-line:     oklch(0.72 0.16 52 / 0.85);
+  --sev-minor:          oklch(0.825 0.135 92);
+  --sev-minor-text:     oklch(0.86 0.12 95);
+  --sev-minor-soft:     oklch(0.825 0.135 92 / 0.15);
+  --sev-minor-line:     oklch(0.82 0.14 92 / 0.80);
+  --sev-suggest:        oklch(0.72 0.115 215);
+  --sev-suggest-text:   oklch(0.80 0.10 215);
+  --sev-suggest-soft:   oklch(0.72 0.115 215 / 0.14);
+  --sev-suggest-line:   oklch(0.72 0.12 215 / 0.75);
+
+  /* ---- Functional ---- */
+  --positive:      oklch(0.72 0.14 158);
+  --positive-text: oklch(0.80 0.12 158);
+  --positive-soft: oklch(0.72 0.14 158 / 0.16);
+  --warning:       oklch(0.78 0.14 78);
+  --danger:        oklch(0.64 0.20 22);
+
+  /* engine identity */
+  --engine-openai: oklch(0.74 0.12 168);
+  --engine-rust:   oklch(0.74 0.13 38);
+
+  /* ---- Spacing ---- */
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-10: 40px;
+  --sp-12: 48px; --sp-16: 64px; --sp-20: 80px;
+
+  /* ---- Radii ---- */
+  --r-xs: 4px; --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-xl: 16px; --r-full: 999px;
+
+  /* ---- Shadows ---- */
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.4);
+  --shadow-md: 0 4px 14px oklch(0 0 0 / 0.45);
+  --shadow-lg: 0 16px 40px oklch(0 0 0 / 0.55);
+  --shadow-pop: 0 8px 28px oklch(0 0 0 / 0.6), 0 0 0 1px var(--border);
+
+  --focus-ring: 0 0 0 2px var(--bg-base), 0 0 0 4px var(--accent);
+  --maxw-read: 70ch;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-html {
-  height: 100%;
-}
-
-html,
-body {
-  max-width: 100vw;
-  overflow-x: hidden;
-}
-
+/* ---- Resets / base ---- */
+*, *::before, *::after { box-sizing: border-box; }
+* { padding: 0; margin: 0; }
+html { -webkit-text-size-adjust: 100%; height: 100%; color-scheme: dark; }
+html, body { max-width: 100vw; overflow-x: hidden; }
 body {
   min-height: 100%;
-  display: flex;
-  flex-direction: column;
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
-
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
-}
+a { color: inherit; text-decoration: none; }
+::selection { background: var(--accent-soft); }
