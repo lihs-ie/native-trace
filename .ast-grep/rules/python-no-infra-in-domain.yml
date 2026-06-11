@@ -1,0 +1,24 @@
+# 適応度関数: domain 層が infra/interface/usecase を import しない
+# ADR-005 オニオンアーキテクチャ: domain は最内層。外側の層を知らない。
+id: python-no-infra-in-domain
+language: python
+severity: error
+message: "domain 層は infrastructure/interface/usecase を import してはならない（ADR-005 オニオン）"
+files:
+  - applications/python-analyzer/src/python_analyzer/domain/**
+rule:
+  any:
+    - pattern: from python_analyzer.infrastructure import $$$
+    - pattern: from python_analyzer.interface import $$$
+    - pattern: from python_analyzer.usecase import $$$
+    - pattern: import python_analyzer.infrastructure
+    - pattern: import python_analyzer.interface
+    - pattern: import python_analyzer.usecase
+    - pattern: from phonemizer import $$$
+    - pattern: import phonemizer
+    - pattern: import torch
+    - pattern: from torch import $$$
+    - pattern: import torchaudio
+    - pattern: from torchaudio import $$$
+    - pattern: from fastapi import $$$
+    - pattern: import fastapi

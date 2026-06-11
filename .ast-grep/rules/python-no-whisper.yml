@@ -1,0 +1,14 @@
+# 適応度関数: whisper/openai-whisper の import 禁止
+# ADR-003: 発音解析に whisper を使わない（espeak-ng + wav2vec2 で代替）
+id: python-no-whisper
+language: python
+severity: error
+message: "whisper/openai-whisper を import してはならない（ADR-003）。発音解析は espeak-ng + wav2vec2 を使う。"
+files:
+  - applications/python-analyzer/**
+rule:
+  any:
+    - pattern: import whisper
+    - pattern: import openai_whisper
+    - pattern: from whisper import $$$
+    - pattern: from openai_whisper import $$$
