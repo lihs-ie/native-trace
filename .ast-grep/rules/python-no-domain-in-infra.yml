@@ -1,0 +1,14 @@
+# 適応度関数: infra 層が usecase/interface を import しない
+# ADR-005 オニオンアーキテクチャ: infra は domain のみに依存する（usecase/interface は外側）
+id: python-no-domain-in-infra
+language: python
+severity: error
+message: "infrastructure 層は usecase/interface を import してはならない（ADR-005 オニオン）。domain のみ依存可能。"
+files:
+  - applications/python-analyzer/src/python_analyzer/infrastructure/**
+rule:
+  any:
+    - pattern: from python_analyzer.usecase import $$$
+    - pattern: from python_analyzer.interface import $$$
+    - pattern: import python_analyzer.usecase
+    - pattern: import python_analyzer.interface

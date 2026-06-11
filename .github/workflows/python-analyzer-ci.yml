@@ -1,0 +1,45 @@
+name: python-analyzer-ci
+
+on:
+  push:
+    paths:
+      - "applications/python-analyzer/**"
+  pull_request:
+    paths:
+      - "applications/python-analyzer/**"
+
+jobs:
+  lint-and-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install ruff and pyright
+        run: pip install ruff pyright
+      - name: ruff check
+        working-directory: applications/python-analyzer
+        run: ruff check src/ test/
+      - name: ruff format check
+        working-directory: applications/python-analyzer
+        run: ruff format --check src/ test/
+      - name: pyright typecheck
+        working-directory: applications/python-analyzer
+        run: pyright src/
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build python-analyzer Docker image
+        run: docker compose build analyzer
+      - name: Run tests in Docker container
+        run: |
+          docker compose run --rm --no-deps analyzer \
+            bash -c "cd /app && PYTHONPATH=/app/src pytest test/ -v"
+      - name: Run ruff in Docker container
+        run: |
+          docker compose run --rm --no-deps analyzer \
+            bash -c "cd /app && ruff check src/ test/ && ruff format --check src/ test/"
