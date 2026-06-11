@@ -2,3 +2,13 @@
 # Add project-specific ignores below as the codebase grows.
 
 - ignore: {name: "Use newtype instead of data", within: []}
+
+# --- agent-policy: 本番 test double 抑止 (no-prod-doubles) ---
+# test double を仕込む常套手段になりやすい unsafe を本番で禁止する。
+# 網羅的な mock/stub/fake/dummy 識別子・*.Mock モジュールの検出は
+# scripts/verify-no-prod-doubles.sh (fitness hook + CI) が担当する。
+- functions:
+  - {name: System.IO.Unsafe.unsafePerformIO, within: []}
+  - {name: Unsafe.Coerce.unsafeCoerce, within: []}
+# 既知の test-double モジュールを test 配下に作ったら、本番から import されないよう
+# ここで modules restrict を足す (例: within: [Spec, NativeTrace.Worker.ApplicationSpec])。
