@@ -6,6 +6,7 @@ type EngineTabsProps = {
   engines: EngineResultDto[];
   activeEngine: string | null;
   onSelectEngine: (engineResultIdentifier: string) => void;
+  onAddEngine?: () => void;
 };
 
 const engineDotVar = (engineKind: string): string => {
@@ -19,7 +20,18 @@ const engineDotVar = (engineKind: string): string => {
   }
 };
 
-export const EngineTabs = ({ engines, activeEngine, onSelectEngine }: EngineTabsProps) => {
+const missingEngineName = (engines: EngineResultDto[]): string => {
+  const hasCloud = engines.some((engine) => engine.engineKind === "cloud");
+  if (!hasCloud) return "OpenAI API";
+  return "OSS Worker";
+};
+
+export const EngineTabs = ({
+  engines,
+  activeEngine,
+  onSelectEngine,
+  onAddEngine,
+}: EngineTabsProps) => {
   return (
     <div className="eng-tabs">
       {engines.map((engine) => {
@@ -32,15 +44,17 @@ export const EngineTabs = ({ engines, activeEngine, onSelectEngine }: EngineTabs
             type="button"
             onClick={() => onSelectEngine(engine.result)}
           >
-            <span
-              className="eng-dot"
-              style={{ background: engineDotVar(engine.engineKind) }}
-            />
+            <span className="eng-dot" style={{ background: engineDotVar(engine.engineKind) }} />
             {engine.engineName}
             <span className="et-score">{engine.scores.overall}</span>
           </button>
         );
       })}
+      {engines.length < 2 && onAddEngine && (
+        <button className="eng-tab eng-tab--add" type="button" onClick={onAddEngine}>
+          ⊕ {missingEngineName(engines)}
+        </button>
+      )}
     </div>
   );
 };

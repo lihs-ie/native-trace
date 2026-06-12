@@ -14,8 +14,8 @@ const configSchema = z.object({
   nodeEnv: z.enum(["development", "production", "test"]).default("development"),
   /** infrastructure.md §11.1: Runner tick 間隔 (ms)。デフォルト 2000ms。 */
   analysisJobPollIntervalMilliseconds: z.coerce.number().int().positive().default(2000),
-  /** infrastructure.md §11.1: DB lease 期限 (ms)。デフォルト 60000ms。 */
-  analysisJobLeaseDurationMilliseconds: z.coerce.number().int().positive().default(60000),
+  /** infrastructure.md §11.1: DB lease 期限 (ms)。worker 解析が数十秒〜分かかるためデフォルト 300000ms (ADR-001/004, #4)。 */
+  analysisJobLeaseDurationMilliseconds: z.coerce.number().int().positive().default(300000),
   /** infrastructure.md §11.1: 最大 retry 回数。デフォルト 3 回。 */
   analysisJobMaxAttempts: z.coerce.number().int().positive().default(3),
   /** infrastructure.md §11.1: OSS Worker 呼び出し timeout (ms)。デフォルト 30000ms。 */

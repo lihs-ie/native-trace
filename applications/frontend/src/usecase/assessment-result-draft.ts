@@ -92,13 +92,15 @@ export type PronunciationEvidenceDraft = Readonly<{
 }>;
 
 export type AssessmentFindingDraft = Readonly<{
+  phenomenon: string | null;
+  gop: number | null;
   category: FindingCategory;
   severity: FindingSeverity;
   textRange: TextRangeDraft;
   audioRange: AudioRangeDraft | null;
   expected: PronunciationEvidenceDraft;
   detected: PronunciationEvidenceDraft;
-  messageJa: string;
+  messageJa: string | null;
   messageEn: string | null;
   scoreImpact: number;
   confidence: number;
@@ -143,6 +145,8 @@ export type AssessmentEngineMetadataDraft = Readonly<{
  */
 export type AssessmentResultDraft = Readonly<{
   engine: AnalysisEngine;
+  /** 採点ステータス。"low_quality" は音声品質不足で採点せず早期返却されたことを示す。 */
+  status: "normal" | "low_quality";
   scores: ScoreDraftSet;
   findings: ReadonlyArray<AssessmentFindingDraft>;
   segments: ReadonlyArray<AssessmentSegmentDraft>;

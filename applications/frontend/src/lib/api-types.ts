@@ -117,6 +117,8 @@ export type ScoresDto = {
 
 export type FindingDto = {
   identifier: string;
+  phenomenon: FindingPhenomenon | null;
+  gop: number | null;
   category: string;
   severity: string;
   textRange: TextRangeDto;
@@ -154,6 +156,8 @@ export type SectionTokenDto = {
 
 export type EngineFindingDto = {
   finding: string;
+  phenomenon: FindingPhenomenon | null;
+  gop: number | null;
   severity: "critical" | "major" | "minor" | "suggestion";
   category: string;
   textRange: TextRangeDto;
@@ -194,7 +198,12 @@ export type WorkspaceDto = {
   section: SectionDto;
   sectionTokens: SectionTokenDto[];
   recordingAttempts: RecordingAttemptDto[];
-  latestAnalysisRun: { identifier: string; mode?: string; status: string } | null;
+  latestAnalysisRun: {
+    identifier: string;
+    mode?: string;
+    status: string;
+    errorCode?: string | null;
+  } | null;
   resultsByEngine: EngineResultDto[];
   highlightRangesByEngine: HighlightsByEngineDto[];
 };
@@ -244,6 +253,21 @@ export type FindingCategory =
   | "prosody"
   | "nativeLikeness";
 
+/**
+ * Worker から返される発音エラーの現象種別。
+ * domain は import しないため独立定義。
+ */
+export type FindingPhenomenon =
+  | "substitution"
+  | "omission"
+  | "insertion"
+  | "connectedSpeech"
+  | "weakForm"
+  | "linking"
+  | "flap"
+  | "assimilation"
+  | "reduction";
+
 export const SEVERITY_LABELS: Record<string, string> = {
   critical: "Critical",
   major: "Major",
@@ -262,4 +286,44 @@ export const CATEGORY_LABELS: Record<string, string> = {
 export const ENGINE_LABELS: Record<string, string> = {
   cloud: "OpenAI",
   oss_worker: "OSS Worker",
+};
+
+// ---- History DTOs ----
+
+export type AssessmentResultSummaryDto = {
+  identifier: string;
+  overallScore: number;
+  createdAt: string;
+};
+
+export type HistoryAnalysisRunDto = {
+  identifier: string;
+  mode: string;
+  status: string;
+  createdAt: string;
+  assessmentResults: AssessmentResultSummaryDto[];
+};
+
+export type HistoryRecordingAttemptDto = {
+  identifier: string;
+  status: string;
+  createdAt: string;
+};
+
+export type HistorySectionDto = {
+  identifier: string;
+  version: number;
+  bodyText: string;
+  createdAt: string;
+};
+
+export type HistorySectionVersionDto = {
+  section: HistorySectionDto;
+  recordingAttempts: HistoryRecordingAttemptDto[];
+  analysisRuns: HistoryAnalysisRunDto[];
+};
+
+export type HistoryGroupDto = {
+  sectionSeries: { identifier: string; title: string };
+  sections: HistorySectionVersionDto[];
 };

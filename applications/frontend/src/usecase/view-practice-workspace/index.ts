@@ -47,6 +47,7 @@ export type AnalysisRunWorkspaceOutput = Readonly<{
   mode: string;
   status: string;
   createdAt: string;
+  errorCode: string | null;
 }>;
 
 export type HighlightRangeOutput = Readonly<{
@@ -248,11 +249,20 @@ export const createViewPracticeWorkspace =
               .andThen((jobPage) => {
                 // 実 status は jobs から派生する（mode と混同しない）。
                 const jobsNonEmpty = createNonEmptyList(jobPage.items);
+                const derivedStatus = jobsNonEmpty
+                  ? deriveAnalysisRunStatus(jobsNonEmpty)
+                  : "queued";
+                const failedJob = jobPage.items.find((j) => j.type === "failed");
+                const errorCodeValue =
+                  derivedStatus === "failed" && failedJob && failedJob.type === "failed"
+                    ? (failedJob.lastErrorCode ?? null)
+                    : null;
                 const latestAnalysisRunOutput: AnalysisRunWorkspaceOutput = {
                   identifier: latestRun.identifier as string,
                   mode: latestRun.mode,
-                  status: jobsNonEmpty ? deriveAnalysisRunStatus(jobsNonEmpty) : "queued",
+                  status: derivedStatus,
                   createdAt: latestRun.createdAt.toISOString(),
+                  errorCode: errorCodeValue,
                 };
                 if (jobPage.items.length === 0) {
                   return okAsync({

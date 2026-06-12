@@ -27,6 +27,8 @@ import {
   createConfidence0To1,
   createTokenizerVersion,
   createAssessmentResult,
+  isValidFindingPhenomenon,
+  type FindingPhenomenon,
   type AssessmentResult,
   type AssessmentResultCreated,
   type AssessmentFinding,
@@ -49,6 +51,7 @@ import { type Clock } from "../port/clock";
 import { type Logger } from "../port/logger";
 import { TOKENIZER_VERSION } from "../shared/tokenizer";
 import { type AssessmentResultDraft } from "../assessment-result-draft";
+import { type ImprovementMessageGenerator } from "../port/improvement-message-generator";
 
 // ---- Constants ----
 
@@ -102,6 +105,7 @@ export type RunAssessmentJobDependencies = Readonly<{
   entropyProvider: EntropyProvider;
   clock: Clock;
   logger: Logger;
+  improvementMessageGenerator: ImprovementMessageGenerator;
 }>;
 
 // ---- Helpers ----
@@ -149,9 +153,7 @@ const bufferFromStream = (stream: NodeJS.ReadableStream): ResultAsync<Buffer, Do
 const mapMetadata = (draft: AssessmentResultDraft): AssessmentEngineMetadata => ({
   engineName: draft.engine.type,
   engineVersion:
-    draft.metadata.workerVersion ??
-    draft.metadata.model ??
-    draft.metadata.assessmentSchemaVersion,
+    draft.metadata.workerVersion ?? draft.metadata.model ?? draft.metadata.assessmentSchemaVersion,
   modelName: draft.metadata.model,
   promptVersion: draft.metadata.promptVersion,
   schemaVersion: String(draft.metadata.assessmentSchemaVersion),
@@ -425,6 +427,26 @@ export const createRunAssessmentJob =
                                       assessmentSchemaVersion: ASSESSMENT_SCHEMA_VERSION,
                                     })
                                     .andThen((draft) => {
+                                      // 7a. low_quality 早期返却: errAsync で orElse パスに乗せる
+                                      if (draft.status === "low_quality") {
+                                        dependencies.logger.info(
+                                          "runAssessmentJob: low_quality audio detected, failing job without retry",
+                                          { analysisJob: String(runningJob.identifier) },
+                                        );
+                                        return errAsync<
+                                          readonly [
+                                            AssessmentResult,
+                                            NonEmptyList<AssessmentResultCreated>,
+                                          ],
+                                          DomainError
+                                        >({
+                                          type: "assessmentEngineFailed",
+                                          engine: "oss_worker",
+                                          reason: "low_quality_audio",
+                                          failureKind: "nonRetryable",
+                                        });
+                                      }
+
                                       // 7. AssessmentResultDraft 共通検証 (use-case.md §7.5)
                                       const scoreKeys = [
                                         "overall",
@@ -545,9 +567,28 @@ export const createRunAssessmentJob =
                                           });
                                         }
 
+                                        // phenomenon を型ガードで確定（invalid なら substitution にフォールバック）
+                                        const phenomenon: FindingPhenomenon =
+                                          isValidFindingPhenomenon(findingDraft.phenomenon ?? "")
+                                            ? (findingDraft.phenomenon as FindingPhenomenon)
+                                            : "substitution";
+
+                                        // messageJa が null/空なら ImprovementMessageGenerator で充填
+                                        const messageJa =
+                                          findingDraft.messageJa &&
+                                          findingDraft.messageJa.trim().length > 0
+                                            ? findingDraft.messageJa
+                                            : dependencies.improvementMessageGenerator.generate({
+                                                phenomenon: phenomenon ?? "substitution",
+                                                expected: findingDraft.expected,
+                                                detected: findingDraft.detected,
+                                              });
+
                                         // Draft の textRange/audioRange を Domain 型へ変換
                                         findingsWithId.push({
                                           identifier: findingIdentifier,
+                                          phenomenon,
+                                          gop: findingDraft.gop,
                                           category: findingDraft.category,
                                           severity: findingDraft.severity,
                                           textRange: {
@@ -556,14 +597,13 @@ export const createRunAssessmentJob =
                                           },
                                           audioRange: findingDraft.audioRange
                                             ? {
-                                                startMilliseconds:
-                                                  findingDraft.audioRange.startMs,
+                                                startMilliseconds: findingDraft.audioRange.startMs,
                                                 endMilliseconds: findingDraft.audioRange.endMs,
                                               }
                                             : null,
                                           expected: findingDraft.expected,
                                           detected: findingDraft.detected,
-                                          messageJa: findingDraft.messageJa,
+                                          messageJa,
                                           messageEn: findingDraft.messageEn,
                                           scoreImpact: findingDraft.scoreImpact,
                                           confidence: confidenceResult.value,
@@ -758,10 +798,17 @@ export const createRunAssessmentJob =
                                             ? "nonRetryable"
                                             : "retryable";
 
+                                      // low_quality_audio は専用 errorCode を使う
+                                      const errorCode =
+                                        engineOrSchemaError.type === "assessmentEngineFailed" &&
+                                        engineOrSchemaError.reason === "low_quality_audio"
+                                          ? "low_quality_audio"
+                                          : engineOrSchemaError.type;
+
                                       return handleJobFailure(
                                         dependencies,
                                         runningJob,
-                                        engineOrSchemaError.type,
+                                        errorCode,
                                         extractReason(engineOrSchemaError),
                                         failureKind,
                                         now,
