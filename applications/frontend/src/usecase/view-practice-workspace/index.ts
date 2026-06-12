@@ -8,6 +8,7 @@ import { type RecordingAttemptRepository } from "../port/recording-attempt-repos
 import { type AnalysisRunRepository } from "../port/analysis-run-repository";
 import { type AnalysisJobRepository } from "../port/analysis-job-repository";
 import { type AssessmentResultRepository } from "../port/assessment-result-repository";
+import { type FindingDismissalRepository } from "../port/finding-dismissal-repository";
 import { type AudioFileRepository } from "../port/audio-file-repository";
 import { tokenizeSectionBody, type SectionToken } from "../shared/tokenizer";
 
@@ -172,6 +173,7 @@ export type ViewPracticeWorkspaceDependencies = Readonly<{
   analysisRunRepository: AnalysisRunRepository;
   analysisJobRepository: AnalysisJobRepository;
   assessmentResultRepository: AssessmentResultRepository;
+  findingDismissalRepository: FindingDismissalRepository;
   audioFileRepository: AudioFileRepository;
 }>;
 
@@ -349,125 +351,136 @@ export const createViewPracticeWorkspace =
                     type: "resultsByJobs",
                     jobs: jobIdentifiers,
                   })
-                  .map((resultPage) => {
-                    // エンジン別にグループ化（比較モードでも統合しない）
-                    const highlightRangesByEngine: EngineHighlightRangesOutput[] = [];
-                    const resultsByEngine: EngineResultOutput[] = [];
+                  .andThen((resultPage) => {
+                    // ORPHAN-3 解消: 却下中の finding_identifier 集合を引いて dismissed を実値化する。
+                    const dismissalResultIdentifiers = resultPage.items.map((r) => r.identifier);
+                    return dependencies.findingDismissalRepository
+                      .findActiveDismissedIdentifiersByResults(dismissalResultIdentifiers)
+                      .map((dismissedByResult) => {
+                        // エンジン別にグループ化（比較モードでも統合しない）
+                        const highlightRangesByEngine: EngineHighlightRangesOutput[] = [];
+                        const resultsByEngine: EngineResultOutput[] = [];
 
-                    for (const result of resultPage.items) {
-                      const highlights: HighlightRangeOutput[] = result.findings.map((finding) => {
-                        const tokenRange = resolveTokenRange(
-                          sectionTokens,
-                          finding.textRange.startOffset,
-                          finding.textRange.endOffset,
-                        );
+                        for (const result of resultPage.items) {
+                          const highlights: HighlightRangeOutput[] = result.findings.map(
+                            (finding) => {
+                              const tokenRange = resolveTokenRange(
+                                sectionTokens,
+                                finding.textRange.startOffset,
+                                finding.textRange.endOffset,
+                              );
+
+                              return {
+                                finding: finding.identifier as string,
+                                phenomenon: finding.phenomenon,
+                                severity: finding.severity,
+                                category: finding.category,
+                                textRange: {
+                                  startChar: finding.textRange.startOffset,
+                                  endChar: finding.textRange.endOffset,
+                                },
+                                tokenRange,
+                                audioRange: finding.audioRange
+                                  ? {
+                                      startMilliseconds: finding.audioRange.startMilliseconds,
+                                      endMilliseconds: finding.audioRange.endMilliseconds,
+                                    }
+                                  : null,
+                                scoreImpact: finding.scoreImpact,
+                                confidence: finding.confidence as number,
+                                // M-107d: C-3 配線断の解消。実 finding の messageJa を届ける。
+                                messageJa: finding.messageJa,
+                              };
+                            },
+                          );
+
+                          highlightRangesByEngine.push({
+                            analysisEngine: result.engineSnapshot.identifier,
+                            engineKind: result.engineSnapshot.type,
+                            result: result.identifier as string,
+                            highlights,
+                          });
+
+                          const counts = { critical: 0, major: 0, minor: 0, suggestion: 0 };
+                          for (const finding of result.findings) {
+                            counts[finding.severity] += 1;
+                          }
+
+                          resultsByEngine.push({
+                            result: result.identifier as string,
+                            engineKind: result.engineSnapshot.type,
+                            engineName: result.engineSnapshot.displayName,
+                            modelName: result.engineSnapshot.modelName,
+                            scores: {
+                              overall: result.scores.overall as number,
+                              accuracy: result.scores.accuracy as number,
+                              nativeLikeness: result.scores.nativeLikeness as number,
+                              pronunciation: result.scores.pronunciation as number,
+                              connectedSpeech: result.scores.connectedSpeech as number,
+                              prosody: result.scores.prosody as number,
+                              intelligibility:
+                                result.scores.intelligibility !== null
+                                  ? (result.scores.intelligibility as number)
+                                  : null,
+                              cefrOverall: result.scores.cefrOverall,
+                              cefrSegmental: result.scores.cefrSegmental,
+                              cefrProsodic: result.scores.cefrProsodic,
+                            },
+                            counts,
+                            findings: result.findings.map((finding) => ({
+                              finding: finding.identifier as string,
+                              phenomenon: finding.phenomenon,
+                              gop: finding.gop,
+                              severity: finding.severity,
+                              category: finding.category,
+                              textRange: {
+                                startChar: finding.textRange.startOffset,
+                                endChar: finding.textRange.endOffset,
+                              },
+                              audioRange: finding.audioRange
+                                ? {
+                                    startMilliseconds: finding.audioRange.startMilliseconds,
+                                    endMilliseconds: finding.audioRange.endMilliseconds,
+                                  }
+                                : null,
+                              expected: { text: finding.expected.text, ipa: finding.expected.ipa },
+                              detected: { text: finding.detected.text, ipa: finding.detected.ipa },
+                              messageJa: finding.messageJa,
+                              messageEn: finding.messageEn,
+                              scoreImpact: finding.scoreImpact,
+                              confidence: finding.confidence as number,
+                              // v2 (C3-a): NBest / FL / カタログ / connected speech / epenthesis / 3層 / 却下
+                              detectedTopCandidate: finding.detectedTopCandidate,
+                              nBest: finding.nBest,
+                              matchesL1Pattern: finding.matchesL1Pattern,
+                              functionalLoad: finding.functionalLoad,
+                              catalogId: finding.catalogId,
+                              wordPair: finding.wordPair,
+                              expectedPronunciation: finding.expectedPronunciation,
+                              insertedVowel: finding.insertedVowel,
+                              feedbackLayers: finding.feedbackLayers,
+                              dismissed:
+                                dismissedByResult
+                                  .get(result.identifier as string)
+                                  ?.has(finding.identifier as string) ?? false,
+                            })),
+                            // v2 (C3-c): 全音素 GOP ヒートマップ / focus sounds / 韻律 / 動的サマリー
+                            perPhonemeGop: result.perPhonemeGop,
+                            focusSounds: result.focusSounds,
+                            prosody: result.prosody,
+                            engineSummaryMessageJa: result.engineSummaryMessageJa,
+                          });
+                        }
 
                         return {
-                          finding: finding.identifier as string,
-                          phenomenon: finding.phenomenon,
-                          severity: finding.severity,
-                          category: finding.category,
-                          textRange: {
-                            startChar: finding.textRange.startOffset,
-                            endChar: finding.textRange.endOffset,
-                          },
-                          tokenRange,
-                          audioRange: finding.audioRange
-                            ? {
-                                startMilliseconds: finding.audioRange.startMilliseconds,
-                                endMilliseconds: finding.audioRange.endMilliseconds,
-                              }
-                            : null,
-                          scoreImpact: finding.scoreImpact,
-                          confidence: finding.confidence as number,
-                          // M-107d: C-3 配線断の解消。実 finding の messageJa を届ける。
-                          messageJa: finding.messageJa,
-                        };
+                          section: sectionOutput,
+                          sectionTokens: tokenOutputs,
+                          recordingAttempts: recordingAttemptOutputs,
+                          latestAnalysisRun: latestAnalysisRunOutput,
+                          highlightRangesByEngine,
+                          resultsByEngine,
+                        } satisfies ViewPracticeWorkspaceOutput;
                       });
-
-                      highlightRangesByEngine.push({
-                        analysisEngine: result.engineSnapshot.identifier,
-                        engineKind: result.engineSnapshot.type,
-                        result: result.identifier as string,
-                        highlights,
-                      });
-
-                      const counts = { critical: 0, major: 0, minor: 0, suggestion: 0 };
-                      for (const finding of result.findings) {
-                        counts[finding.severity] += 1;
-                      }
-
-                      resultsByEngine.push({
-                        result: result.identifier as string,
-                        engineKind: result.engineSnapshot.type,
-                        engineName: result.engineSnapshot.displayName,
-                        modelName: result.engineSnapshot.modelName,
-                        scores: {
-                          overall: result.scores.overall as number,
-                          accuracy: result.scores.accuracy as number,
-                          nativeLikeness: result.scores.nativeLikeness as number,
-                          pronunciation: result.scores.pronunciation as number,
-                          connectedSpeech: result.scores.connectedSpeech as number,
-                          prosody: result.scores.prosody as number,
-                          intelligibility:
-                            result.scores.intelligibility !== null
-                              ? (result.scores.intelligibility as number)
-                              : null,
-                          cefrOverall: result.scores.cefrOverall,
-                          cefrSegmental: result.scores.cefrSegmental,
-                          cefrProsodic: result.scores.cefrProsodic,
-                        },
-                        counts,
-                        findings: result.findings.map((finding) => ({
-                          finding: finding.identifier as string,
-                          phenomenon: finding.phenomenon,
-                          gop: finding.gop,
-                          severity: finding.severity,
-                          category: finding.category,
-                          textRange: {
-                            startChar: finding.textRange.startOffset,
-                            endChar: finding.textRange.endOffset,
-                          },
-                          audioRange: finding.audioRange
-                            ? {
-                                startMilliseconds: finding.audioRange.startMilliseconds,
-                                endMilliseconds: finding.audioRange.endMilliseconds,
-                              }
-                            : null,
-                          expected: { text: finding.expected.text, ipa: finding.expected.ipa },
-                          detected: { text: finding.detected.text, ipa: finding.detected.ipa },
-                          messageJa: finding.messageJa,
-                          messageEn: finding.messageEn,
-                          scoreImpact: finding.scoreImpact,
-                          confidence: finding.confidence as number,
-                          // v2 (C3-a): NBest / FL / カタログ / connected speech / epenthesis / 3層 / 却下
-                          detectedTopCandidate: finding.detectedTopCandidate,
-                          nBest: finding.nBest,
-                          matchesL1Pattern: finding.matchesL1Pattern,
-                          functionalLoad: finding.functionalLoad,
-                          catalogId: finding.catalogId,
-                          wordPair: finding.wordPair,
-                          expectedPronunciation: finding.expectedPronunciation,
-                          insertedVowel: finding.insertedVowel,
-                          feedbackLayers: finding.feedbackLayers,
-                          dismissed: finding.dismissed,
-                        })),
-                        // v2 (C3-c): 全音素 GOP ヒートマップ / focus sounds / 韻律 / 動的サマリー
-                        perPhonemeGop: result.perPhonemeGop,
-                        focusSounds: result.focusSounds,
-                        prosody: result.prosody,
-                        engineSummaryMessageJa: result.engineSummaryMessageJa,
-                      });
-                    }
-
-                    return {
-                      section: sectionOutput,
-                      sectionTokens: tokenOutputs,
-                      recordingAttempts: recordingAttemptOutputs,
-                      latestAnalysisRun: latestAnalysisRunOutput,
-                      highlightRangesByEngine,
-                      resultsByEngine,
-                    } satisfies ViewPracticeWorkspaceOutput;
                   });
               });
           });

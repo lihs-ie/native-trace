@@ -23,10 +23,16 @@ services:
       context: applications/python-analyzer
       dockerfile: Dockerfile
     container_name: native-trace-analyzer
+    # v2 配線:
+    #   - POST /v1/analyze は wav2vec2 GOP + NBest + parselmouth 韻律(F0/語強勢/nPVI/弱形) + 音節/epenthesis を返す
+    #   - POST /v1/tts は Kokoro-82M で General American お手本音声(audio/wav)を生成 (REQ-124)
+    #   - frontend (pnpm dev / 別コンテナ) は ANALYZER_URL=http://localhost:8788 で /v1/tts に到達する
     ports:
       - "8788:8788"
     environment:
       ANALYZER_PORT: "8788"
+      # Kokoro-82M / wav2vec2 のモデルは HF_HOME (hf-cache volume) にキャッシュする
+      HF_HOME: "/root/.cache/huggingface"
     volumes:
       - hf-cache:/root/.cache/huggingface
     healthcheck:
@@ -34,7 +40,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      # parselmouth + Kokoro-82M + wav2vec2 のロードで初回起動が重いため余裕をとる
+      start_period: 180s
 
 volumes:
   hf-cache:

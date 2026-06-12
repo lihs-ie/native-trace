@@ -85,6 +85,12 @@ const makeDependencies = (
     search: () => okAsync({ items: [] }),
     persist: () => okAsync(undefined),
   },
+  findingDismissalRepository: {
+    record: () => okAsync(undefined),
+    restore: () => okAsync(undefined),
+    findActiveDismissedIdentifiers: () => okAsync(new Set<string>()),
+    findActiveDismissedIdentifiersByResults: () => okAsync(new Map<string, ReadonlySet<string>>()),
+  },
   audioFileRepository: {
     find: () =>
       okAsync({

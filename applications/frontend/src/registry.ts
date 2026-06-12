@@ -18,6 +18,7 @@ import { createDrizzleAudioFileRepository } from "./infrastructure/drizzle/repos
 import { createDrizzleAnalysisRunRepository } from "./infrastructure/drizzle/repositories/analysis-run-repository";
 import { createDrizzleAnalysisJobRepository } from "./infrastructure/drizzle/repositories/analysis-job-repository";
 import { createDrizzleAssessmentResultRepository } from "./infrastructure/drizzle/repositories/assessment-result-repository";
+import { createDrizzleFindingDismissalRepository } from "./infrastructure/drizzle/repositories/finding-dismissal-repository";
 import { createLocalAudioStorage } from "./infrastructure/local-audio-storage";
 import { createSystemClock } from "./infrastructure/clock";
 import { createEntropyProvider } from "./infrastructure/entropy-provider";
@@ -44,6 +45,8 @@ import { createRunAssessmentJob } from "./usecase/run-assessment-job/index";
 import { createSubmitPracticeAttempt } from "./usecase/submit-practice-attempt/index";
 import { createViewMaterialPracticePlan } from "./usecase/view-material-practice-plan/index";
 import { createViewPracticeWorkspace } from "./usecase/view-practice-workspace/index";
+import { createDismissFinding } from "./usecase/dismiss-finding/index";
+import { createRestoreFinding } from "./usecase/restore-finding/index";
 
 import type {
   BrowsePracticeMaterialsInput,
@@ -104,6 +107,8 @@ import type {
   ViewPracticeWorkspaceInput,
   ViewPracticeWorkspaceOutput,
 } from "./usecase/view-practice-workspace/index";
+import type { DismissFindingInput, DismissFindingOutput } from "./usecase/dismiss-finding/index";
+import type { RestoreFindingInput, RestoreFindingOutput } from "./usecase/restore-finding/index";
 
 import type { ResultAsync } from "neverthrow";
 import type { DomainError } from "./domain/shared";
@@ -162,6 +167,8 @@ export type Container = Readonly<{
     viewPracticeWorkspace: (
       input: ViewPracticeWorkspaceInput,
     ) => ResultAsync<ViewPracticeWorkspaceOutput, DomainError>;
+    dismissFinding: (input: DismissFindingInput) => ResultAsync<DismissFindingOutput, DomainError>;
+    restoreFinding: (input: RestoreFindingInput) => ResultAsync<RestoreFindingOutput, DomainError>;
   }>;
 }>;
 
@@ -187,6 +194,7 @@ const buildContainer = (): Container => {
   const analysisRunRepository = createDrizzleAnalysisRunRepository(database);
   const analysisJobRepository = createDrizzleAnalysisJobRepository(database);
   const assessmentResultRepository = createDrizzleAssessmentResultRepository(database);
+  const findingDismissalRepository = createDrizzleFindingDismissalRepository(database);
 
   // Infrastructure services
   const audioStorage = createLocalAudioStorage(config.audioStorageRoot);
@@ -371,6 +379,28 @@ const buildContainer = (): Container => {
       analysisJobRepository,
       assessmentResultRepository,
       audioFileRepository,
+      findingDismissalRepository,
+    }),
+
+    dismissFinding: createDismissFinding({
+      sectionRepository,
+      recordingAttemptRepository,
+      analysisRunRepository,
+      analysisJobRepository,
+      assessmentResultRepository,
+      findingDismissalRepository,
+      entropyProvider,
+      clock,
+    }),
+
+    restoreFinding: createRestoreFinding({
+      sectionRepository,
+      recordingAttemptRepository,
+      analysisRunRepository,
+      analysisJobRepository,
+      assessmentResultRepository,
+      findingDismissalRepository,
+      clock,
     }),
   };
 

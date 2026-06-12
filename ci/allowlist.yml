@@ -14,3 +14,8 @@ entries:
     owner: "@lihs-ie"
     reason: "page.tsx の client fetch をテストするためのモック。テストファイル専用で本番パスへの混入なし。"
     expires_at: "2027-06-30"
+  - rule: no-prod-doubles
+    path: "applications/frontend/src/app/api/v1/tts/route.test.ts"
+    owner: "@lihs-ie"
+    reason: "TTS プロキシ route の unit/contract test。vi.mock で config モジュールをモックし fetch を vi.stubGlobal で差し替える。テストファイル専用で本番パスへの混入なし (M-124)。"
+    expires_at: "2027-06-30"

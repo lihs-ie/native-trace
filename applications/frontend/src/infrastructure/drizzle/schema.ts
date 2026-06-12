@@ -1,12 +1,5 @@
 import { sql } from "drizzle-orm";
-import {
-  check,
-  index,
-  integer,
-  sqliteTable,
-  text,
-  unique,
-} from "drizzle-orm/sqlite-core";
+import { check, index, integer, sqliteTable, text, unique } from "drizzle-orm/sqlite-core";
 
 // DB-001: materials
 export const materials = sqliteTable(
@@ -20,10 +13,7 @@ export const materials = sqliteTable(
     deletedAt: text("deleted_at"),
   },
   (table) => [
-    check(
-      "ck_materials_title_not_blank",
-      sql`length(trim(${table.title})) > 0`,
-    ),
+    check("ck_materials_title_not_blank", sql`length(trim(${table.title})) > 0`),
     check(
       "ck_materials_source_json",
       sql`${table.sourceJson} IS NULL OR json_valid(${table.sourceJson})`,
@@ -47,14 +37,8 @@ export const sectionSeries = sqliteTable(
     deletedAt: text("deleted_at"),
   },
   (table) => [
-    check(
-      "ck_section_series_title_not_blank",
-      sql`length(trim(${table.title})) > 0`,
-    ),
-    check(
-      "ck_section_series_display_order",
-      sql`${table.displayOrder} >= 0`,
-    ),
+    check("ck_section_series_title_not_blank", sql`length(trim(${table.title})) > 0`),
+    check("ck_section_series_display_order", sql`${table.displayOrder} >= 0`),
     index("idx_section_series_material_order").on(
       table.material,
       table.deletedAt,
@@ -78,23 +62,10 @@ export const sections = sqliteTable(
     deletedAt: text("deleted_at"),
   },
   (table) => [
-    unique("uq_sections_series_version").on(
-      table.sectionSeries,
-      table.versionNumber,
-    ),
-    check(
-      "ck_sections_version_number",
-      sql`${table.versionNumber} >= 1`,
-    ),
-    check(
-      "ck_sections_body_text_not_blank",
-      sql`length(trim(${table.bodyText})) > 0`,
-    ),
-    index("idx_sections_latest").on(
-      table.sectionSeries,
-      table.deletedAt,
-      table.versionNumber,
-    ),
+    unique("uq_sections_series_version").on(table.sectionSeries, table.versionNumber),
+    check("ck_sections_version_number", sql`${table.versionNumber} >= 1`),
+    check("ck_sections_body_text_not_blank", sql`length(trim(${table.bodyText})) > 0`),
+    index("idx_sections_latest").on(table.sectionSeries, table.deletedAt, table.versionNumber),
     index("idx_sections_body_hash").on(table.sectionSeries, table.bodyTextHash),
   ],
 );
@@ -120,10 +91,7 @@ export const recordingAttempts = sqliteTable(
     deletedAt: text("deleted_at"),
   },
   (table) => [
-    check(
-      "ck_recording_attempts_status",
-      sql`${table.status} IN ('saving', 'ready', 'failed')`,
-    ),
+    check("ck_recording_attempts_status", sql`${table.status} IN ('saving', 'ready', 'failed')`),
     check(
       "ck_recording_attempts_input_kind",
       sql`${table.inputKind} IN ('browser_recording', 'uploaded_file')`,
@@ -186,14 +154,8 @@ export const audioFiles = sqliteTable(
       "ck_audio_files_status",
       sql`${table.status} IN ('stored', 'deletion_pending', 'physically_deleted', 'delete_failed')`,
     ),
-    check(
-      "ck_audio_files_size_bytes",
-      sql`${table.sizeBytes} BETWEEN 1 AND 104857600`,
-    ),
-    check(
-      "ck_audio_files_duration",
-      sql`${table.durationMilliseconds} BETWEEN 1 AND 600000`,
-    ),
+    check("ck_audio_files_size_bytes", sql`${table.sizeBytes} BETWEEN 1 AND 104857600`),
+    check("ck_audio_files_duration", sql`${table.durationMilliseconds} BETWEEN 1 AND 600000`),
     check(
       "ck_audio_files_sample_rate",
       sql`${table.sampleRate} IS NULL OR ${table.sampleRate} > 0`,
@@ -202,16 +164,9 @@ export const audioFiles = sqliteTable(
       "ck_audio_files_channel_count",
       sql`${table.channelCount} IS NULL OR ${table.channelCount} > 0`,
     ),
-    check(
-      "ck_audio_files_sha256",
-      sql`length(${table.sha256}) = 64`,
-    ),
+    check("ck_audio_files_sha256", sql`length(${table.sha256}) = 64`),
     index("idx_audio_files_recording_attempt").on(table.recordingAttempt),
-    index("idx_audio_files_delete_status").on(
-      table.status,
-      table.deletedAt,
-      table.updatedAt,
-    ),
+    index("idx_audio_files_delete_status").on(table.status, table.deletedAt, table.updatedAt),
   ],
 );
 
@@ -246,11 +201,7 @@ export const analysisRuns = sqliteTable(
       table.deletedAt,
       table.createdAt,
     ),
-    index("idx_analysis_runs_status").on(
-      table.status,
-      table.deletedAt,
-      table.updatedAt,
-    ),
+    index("idx_analysis_runs_status").on(table.status, table.deletedAt, table.updatedAt),
   ],
 );
 
@@ -284,30 +235,15 @@ export const analysisJobs = sqliteTable(
   },
   (table) => [
     unique("uq_analysis_jobs_run_engine").on(table.analysisRun, table.engine),
-    check(
-      "ck_analysis_jobs_engine",
-      sql`${table.engine} IN ('cloud', 'oss_worker')`,
-    ),
-    check(
-      "ck_analysis_jobs_engine_config_json",
-      sql`json_valid(${table.engineConfigJson})`,
-    ),
+    check("ck_analysis_jobs_engine", sql`${table.engine} IN ('cloud', 'oss_worker')`),
+    check("ck_analysis_jobs_engine_config_json", sql`json_valid(${table.engineConfigJson})`),
     check(
       "ck_analysis_jobs_status",
       sql`${table.status} IN ('queued', 'leased', 'running', 'succeeded', 'failed', 'canceled')`,
     ),
-    check(
-      "ck_analysis_jobs_attempt_count",
-      sql`${table.attemptCount} >= 0`,
-    ),
-    check(
-      "ck_analysis_jobs_max_attempts",
-      sql`${table.maxAttempts} >= 1`,
-    ),
-    check(
-      "ck_analysis_jobs_attempt_limit",
-      sql`${table.attemptCount} <= ${table.maxAttempts}`,
-    ),
+    check("ck_analysis_jobs_attempt_count", sql`${table.attemptCount} >= 0`),
+    check("ck_analysis_jobs_max_attempts", sql`${table.maxAttempts} >= 1`),
+    check("ck_analysis_jobs_attempt_limit", sql`${table.attemptCount} <= ${table.maxAttempts}`),
     check(
       "ck_analysis_jobs_lease_fields",
       sql`${table.status} NOT IN ('leased', 'running') OR (${table.leaseToken} IS NOT NULL AND ${table.leasedUntil} IS NOT NULL)`,
@@ -329,11 +265,7 @@ export const analysisJobs = sqliteTable(
       table.createdAt,
     ),
     index("idx_analysis_jobs_run_engine").on(table.analysisRun, table.engine),
-    index("idx_analysis_jobs_run_status").on(
-      table.analysisRun,
-      table.deletedAt,
-      table.status,
-    ),
+    index("idx_analysis_jobs_run_status").on(table.analysisRun, table.deletedAt, table.status),
   ],
 );
 
@@ -360,14 +292,8 @@ export const assessmentResults = sqliteTable(
   },
   (table) => [
     unique("uq_assessment_results_analysis_job").on(table.analysisJob),
-    check(
-      "ck_assessment_results_overall_score",
-      sql`${table.overallScore} BETWEEN 0 AND 100`,
-    ),
-    check(
-      "ck_assessment_results_accuracy_score",
-      sql`${table.accuracyScore} BETWEEN 0 AND 100`,
-    ),
+    check("ck_assessment_results_overall_score", sql`${table.overallScore} BETWEEN 0 AND 100`),
+    check("ck_assessment_results_accuracy_score", sql`${table.accuracyScore} BETWEEN 0 AND 100`),
     check(
       "ck_assessment_results_native_likeness_score",
       sql`${table.nativeLikenessScore} BETWEEN 0 AND 100`,
@@ -380,30 +306,42 @@ export const assessmentResults = sqliteTable(
       "ck_assessment_results_connected_speech_score",
       sql`${table.connectedSpeechScore} BETWEEN 0 AND 100`,
     ),
-    check(
-      "ck_assessment_results_prosody_score",
-      sql`${table.prosodyScore} BETWEEN 0 AND 100`,
-    ),
-    check(
-      "ck_assessment_results_assessment_json",
-      sql`json_valid(${table.assessmentResultJson})`,
-    ),
-    check(
-      "ck_assessment_results_raw_response_json",
-      sql`json_valid(${table.rawResponseJson})`,
-    ),
+    check("ck_assessment_results_prosody_score", sql`${table.prosodyScore} BETWEEN 0 AND 100`),
+    check("ck_assessment_results_assessment_json", sql`json_valid(${table.assessmentResultJson})`),
+    check("ck_assessment_results_raw_response_json", sql`json_valid(${table.rawResponseJson})`),
     check(
       "ck_assessment_results_engine_snapshot_json",
       sql`json_valid(${table.engineSnapshotJson})`,
     ),
-    index("idx_assessment_results_analysis_job").on(
-      table.analysisJob,
-      table.deletedAt,
+    index("idx_assessment_results_analysis_job").on(table.analysisJob, table.deletedAt),
+    index("idx_assessment_results_scores").on(table.deletedAt, table.createdAt, table.overallScore),
+  ],
+);
+
+// DB-009: finding_dismissals
+export const findingDismissals = sqliteTable(
+  "finding_dismissals",
+  {
+    identifier: text("identifier").primaryKey(),
+    assessmentResult: text("assessment_result")
+      .notNull()
+      .references(() => assessmentResults.identifier),
+    findingIdentifier: text("finding_identifier").notNull(),
+    dismissedAt: integer("dismissed_at").notNull(),
+    reason: text("reason"),
+    undoneAt: integer("undone_at"),
+  },
+  (table) => [
+    check("ck_finding_dismissals_dismissed_at", sql`${table.dismissedAt} > 0`),
+    check(
+      "ck_finding_dismissals_undone_at",
+      sql`${table.undoneAt} IS NULL OR ${table.undoneAt} > ${table.dismissedAt}`,
     ),
-    index("idx_assessment_results_scores").on(
-      table.deletedAt,
-      table.createdAt,
-      table.overallScore,
+    index("idx_finding_dismissals_assessment_result").on(table.assessmentResult, table.undoneAt),
+    index("idx_finding_dismissals_finding").on(
+      table.assessmentResult,
+      table.findingIdentifier,
+      table.undoneAt,
     ),
   ],
 );
