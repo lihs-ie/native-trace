@@ -52,6 +52,7 @@ export type AnalysisRunWorkspaceOutput = Readonly<{
 
 export type HighlightRangeOutput = Readonly<{
   finding: string;
+  phenomenon: string | null;
   severity: "critical" | "major" | "minor" | "suggestion";
   category: "accuracy" | "pronunciation" | "connectedSpeech" | "prosody" | "nativeLikeness";
   textRange: Readonly<{ startChar: number; endChar: number }>;
@@ -59,6 +60,8 @@ export type HighlightRangeOutput = Readonly<{
   audioRange: Readonly<{ startMilliseconds: number; endMilliseconds: number }> | null;
   scoreImpact: number;
   confidence: number;
+  // C-3 配線断の解消（M-107d）: 本文ハイライトに対応する finding の messageJa を届ける。
+  messageJa: string | null;
 }>;
 
 export type EngineHighlightRangesOutput = Readonly<{
@@ -71,6 +74,8 @@ export type EngineHighlightRangesOutput = Readonly<{
 // rail のゲージ・スコア・詳細パネルが必要とするエンジン別の解析結果（スコア + finding 詳細）。
 export type EngineFindingOutput = Readonly<{
   finding: string;
+  phenomenon: string | null;
+  gop: number | null;
   severity: "critical" | "major" | "minor" | "suggestion";
   category: "accuracy" | "pronunciation" | "connectedSpeech" | "prosody" | "nativeLikeness";
   textRange: Readonly<{ startChar: number; endChar: number }>;
@@ -81,6 +86,46 @@ export type EngineFindingOutput = Readonly<{
   messageEn: string | null;
   scoreImpact: number;
   confidence: number;
+  // ---- v2 (C3-a): NBest 診断 / FL / カタログ / connected speech / epenthesis / 3層 / 却下 ----
+  detectedTopCandidate: string | null;
+  nBest: ReadonlyArray<Readonly<{ phoneme: string; confidence: number }>> | null;
+  matchesL1Pattern: boolean;
+  functionalLoad: string | null;
+  catalogId: string | null;
+  wordPair: Readonly<{ first: string; second: string }> | null;
+  expectedPronunciation: string | null;
+  insertedVowel: string | null;
+  feedbackLayers: Readonly<{ whatJa: string; whyJa: string; howJa: string }> | null;
+  dismissed: boolean;
+}>;
+
+export type CefrSubscaleOutput = Readonly<{ score: number; band: string }>;
+
+export type PerPhonemeGopOutput = Readonly<{
+  word: string;
+  phoneme: string;
+  gop: number;
+  heat: number;
+}>;
+
+export type FocusSoundOutput = Readonly<{
+  pair: string;
+  phenomenon: string | null;
+  functionalLoad: string;
+  occurrences: number;
+  priority: string;
+  reasonJa: string;
+  catalogId: string | null;
+}>;
+
+export type ProsodyOutput = Readonly<{
+  f0Contour: Readonly<{ timesMs: ReadonlyArray<number>; valuesHz: ReadonlyArray<number> }> | null;
+  wordStress: ReadonlyArray<
+    Readonly<{ word: string; wordIndex: number; expectedStress: number; predictedStress: number }>
+  > | null;
+  rhythmNpvi: number | null;
+  referenceNpvi: number | null;
+  weakFormRate: number | null;
 }>;
 
 export type EngineResultOutput = Readonly<{
@@ -95,9 +140,19 @@ export type EngineResultOutput = Readonly<{
     pronunciation: number;
     connectedSpeech: number;
     prosody: number;
+    // ---- v2 (C3-b): 二段階ゴール + CEFR 3 下位尺度 ----
+    intelligibility: number | null;
+    cefrOverall: CefrSubscaleOutput | null;
+    cefrSegmental: CefrSubscaleOutput | null;
+    cefrProsodic: CefrSubscaleOutput | null;
   }>;
   counts: Readonly<{ critical: number; major: number; minor: number; suggestion: number }>;
   findings: ReadonlyArray<EngineFindingOutput>;
+  // ---- v2 (C3-c): 全音素 GOP ヒートマップ / focus sounds / 韻律 / 動的サマリー ----
+  perPhonemeGop: ReadonlyArray<PerPhonemeGopOutput> | null;
+  focusSounds: ReadonlyArray<FocusSoundOutput> | null;
+  prosody: ProsodyOutput | null;
+  engineSummaryMessageJa: string | null;
 }>;
 
 export type ViewPracticeWorkspaceOutput = Readonly<{
@@ -309,6 +364,7 @@ export const createViewPracticeWorkspace =
 
                         return {
                           finding: finding.identifier as string,
+                          phenomenon: finding.phenomenon,
                           severity: finding.severity,
                           category: finding.category,
                           textRange: {
@@ -324,6 +380,8 @@ export const createViewPracticeWorkspace =
                             : null,
                           scoreImpact: finding.scoreImpact,
                           confidence: finding.confidence as number,
+                          // M-107d: C-3 配線断の解消。実 finding の messageJa を届ける。
+                          messageJa: finding.messageJa,
                         };
                       });
 
@@ -351,10 +409,19 @@ export const createViewPracticeWorkspace =
                           pronunciation: result.scores.pronunciation as number,
                           connectedSpeech: result.scores.connectedSpeech as number,
                           prosody: result.scores.prosody as number,
+                          intelligibility:
+                            result.scores.intelligibility !== null
+                              ? (result.scores.intelligibility as number)
+                              : null,
+                          cefrOverall: result.scores.cefrOverall,
+                          cefrSegmental: result.scores.cefrSegmental,
+                          cefrProsodic: result.scores.cefrProsodic,
                         },
                         counts,
                         findings: result.findings.map((finding) => ({
                           finding: finding.identifier as string,
+                          phenomenon: finding.phenomenon,
+                          gop: finding.gop,
                           severity: finding.severity,
                           category: finding.category,
                           textRange: {
@@ -373,7 +440,23 @@ export const createViewPracticeWorkspace =
                           messageEn: finding.messageEn,
                           scoreImpact: finding.scoreImpact,
                           confidence: finding.confidence as number,
+                          // v2 (C3-a): NBest / FL / カタログ / connected speech / epenthesis / 3層 / 却下
+                          detectedTopCandidate: finding.detectedTopCandidate,
+                          nBest: finding.nBest,
+                          matchesL1Pattern: finding.matchesL1Pattern,
+                          functionalLoad: finding.functionalLoad,
+                          catalogId: finding.catalogId,
+                          wordPair: finding.wordPair,
+                          expectedPronunciation: finding.expectedPronunciation,
+                          insertedVowel: finding.insertedVowel,
+                          feedbackLayers: finding.feedbackLayers,
+                          dismissed: finding.dismissed,
                         })),
+                        // v2 (C3-c): 全音素 GOP ヒートマップ / focus sounds / 韻律 / 動的サマリー
+                        perPhonemeGop: result.perPhonemeGop,
+                        focusSounds: result.focusSounds,
+                        prosody: result.prosody,
+                        engineSummaryMessageJa: result.engineSummaryMessageJa,
                       });
                     }
 

@@ -82,6 +82,54 @@ export type ScoreDraftSet = Readonly<{
   pronunciation: number;
   connectedSpeech: number;
   prosody: number;
+  /** C3-b: FL重み付き明瞭性スコア 0-100 */
+  intelligibility: number | null;
+  /** C3-b: CEFR全体的音韻統制 */
+  cefrOverall: Readonly<{ score: number; band: string }> | null;
+  /** C3-b: CEFR分節 */
+  cefrSegmental: Readonly<{ score: number; band: string }> | null;
+  /** C3-b: CEFR韻律 */
+  cefrProsodic: Readonly<{ score: number; band: string }> | null;
+}>;
+
+// ---- NBest ----
+
+export type NBestCandidateDraft = Readonly<{
+  phoneme: string;
+  confidence: number;
+}>;
+
+// ---- focusSounds ----
+
+export type FocusSoundDraft = Readonly<{
+  pair: string;
+  phenomenon: string | null;
+  functionalLoad: string;
+  occurrences: number;
+  priority: string;
+  reasonJa: string;
+  catalogId: string | null;
+}>;
+
+// ---- prosody ----
+
+export type ProsodyDraft = Readonly<{
+  f0Contour: Readonly<{ timesMs: ReadonlyArray<number>; valuesHz: ReadonlyArray<number> }> | null;
+  wordStress: ReadonlyArray<
+    Readonly<{ word: string; wordIndex: number; expectedStress: number; predictedStress: number }>
+  > | null;
+  rhythmNpvi: number | null;
+  referenceNpvi: number | null;
+  weakFormRate: number | null;
+}>;
+
+// ---- perPhonemeGop ----
+
+export type PerPhonemeGopDraft = Readonly<{
+  word: string;
+  phoneme: string;
+  gop: number;
+  heat: number;
 }>;
 
 // ---- Finding / Segment ----
@@ -89,6 +137,13 @@ export type ScoreDraftSet = Readonly<{
 export type PronunciationEvidenceDraft = Readonly<{
   text: string | null;
   ipa: string | null;
+}>;
+
+/** C4-b: 3層フィードバック文 */
+export type FeedbackLayersDraft = Readonly<{
+  whatJa: string;
+  whyJa: string;
+  howJa: string;
 }>;
 
 export type AssessmentFindingDraft = Readonly<{
@@ -104,6 +159,26 @@ export type AssessmentFindingDraft = Readonly<{
   messageEn: string | null;
   scoreImpact: number;
   confidence: number;
+  /** C3-a: NBest最有力候補 IPA */
+  detectedTopCandidate: string | null;
+  /** C3-a: 上位3件候補 */
+  nBest: ReadonlyArray<NBestCandidateDraft> | null;
+  /** C3-a: L1パターン一致フラグ */
+  matchesL1Pattern: boolean;
+  /** C3-a: functionalLoadランク */
+  functionalLoad: string | null;
+  /** C3-a: カタログID */
+  catalogId: string | null;
+  /** C3-a: connected speech対象語ペア */
+  wordPair: Readonly<{ first: string; second: string }> | null;
+  /** C3-a: connected speech期待発音IPA */
+  expectedPronunciation: string | null;
+  /** C3-a: epenthesis挿入母音 */
+  insertedVowel: string | null;
+  /** M-104: 3層フィードバック文 (ACL/usecase で生成) */
+  feedbackLayers: FeedbackLayersDraft | null;
+  /** C4-b: 却下フラグ (この Wave では false 固定、次 Wave で永続化) */
+  dismissed: boolean;
 }>;
 
 export type AssessmentSegmentDraft = Readonly<{
@@ -154,4 +229,12 @@ export type AssessmentResultDraft = Readonly<{
   rawResponse: StoredRawEngineResponse;
   metadata: AssessmentEngineMetadataDraft;
   tokenizerVersion: string;
+  /** C3-c: 全音素GOPヒートマップ */
+  perPhonemeGop: ReadonlyArray<PerPhonemeGopDraft> | null;
+  /** C3-c: focusSoundsリスト */
+  focusSounds: ReadonlyArray<FocusSoundDraft> | null;
+  /** C3-c: 韻律生データ */
+  prosody: ProsodyDraft | null;
+  /** C3-c: エンジンサマリー文 (M-107b) */
+  engineSummaryMessageJa: string | null;
 }>;

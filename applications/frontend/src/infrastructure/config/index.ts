@@ -4,6 +4,8 @@ const configSchema = z.object({
   dbPath: z.string().min(1),
   audioStorageRoot: z.string().min(1),
   workerApiEndpoint: z.string().url(),
+  /** infrastructure.md §11.1: Python analyzer (Kokoro TTS / analyze endpoint) のベース URL。 */
+  analyzerApiEndpoint: z.string().url(),
   openaiApiKey: z.string().min(1),
   /**
    * acl.md §7.2: 音声入力と Structured Outputs に対応するモデル。
@@ -28,6 +30,27 @@ const configSchema = z.object({
 
 export type AppConfig = z.infer<typeof configSchema>;
 
+const analyzerConfigSchema = z.object({
+  analyzerApiEndpoint: z.string().url(),
+});
+
+export type AnalyzerConfig = z.infer<typeof analyzerConfigSchema>;
+
+/**
+ * createAnalyzerConfig — TTS プロキシ route 専用の軽量 config。
+ * openaiApiKey 等の他フィールドに依存せず analyzer endpoint だけを解決する。
+ * process.env は infrastructure/config 以外で参照禁止 (ast-grep ルール)。
+ */
+export const createAnalyzerConfig = (): AnalyzerConfig => {
+  const result = analyzerConfigSchema.safeParse({
+    analyzerApiEndpoint: process.env.ANALYZER_URL ?? "http://localhost:8788",
+  });
+  if (!result.success) {
+    throw new Error(`analyzer 設定が不正です: ${result.error.message}`);
+  }
+  return result.data;
+};
+
 /**
  * isNodejsRuntime — Next.js runtime 判定。
  * infrastructure.md §6.1: Edge runtime では DB adaptor を起動しない。
@@ -40,6 +63,7 @@ export const createConfig = (): AppConfig => {
     dbPath: process.env.DB_PATH ?? "./data/native-trace.db",
     audioStorageRoot: process.env.AUDIO_STORAGE_ROOT ?? "./data/audio",
     workerApiEndpoint: process.env.WORKER_API_ENDPOINT ?? "http://localhost:8787",
+    analyzerApiEndpoint: process.env.ANALYZER_URL ?? "http://localhost:8788",
     openaiApiKey: process.env.OPENAI_API_KEY ?? "",
     openaiAssessmentModel: process.env.OPENAI_ASSESSMENT_MODEL ?? "gpt-4o-audio-preview",
     nodeEnv: process.env.NODE_ENV ?? "development",

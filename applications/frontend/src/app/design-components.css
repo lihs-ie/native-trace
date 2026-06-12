@@ -517,3 +517,344 @@
 
 /* mobile engine head (compare mobile tab switch) */
 .m-eng-head { display: flex; align-items: center; gap: 10px; padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border-faint); }
+
+/* ============================================================
+   NativeTrace — Components v2.0 追加部品
+   components-v2.css から逐語移植
+   ============================================================ */
+
+/* ============ 0. エビデンストレース (REQ-NF-103) ============ */
+.ev-chip { display: inline-flex; align-items: center; font-family: var(--font-mono); font-size: var(--text-2xs);
+  color: var(--text-faint); border: 1px solid var(--border-faint); border-radius: var(--r-xs); padding: 1px 6px;
+  text-decoration: none; white-space: nowrap; cursor: help; }
+.ev-chip:hover { color: var(--accent-text); border-color: var(--accent-line); }
+.ev-row { display: inline-flex; gap: 4px; flex-wrap: wrap; vertical-align: middle; }
+
+/* ============ 1. phenomenon タグ (REQ-102) ============
+   色は重大度専用。phenomenon はアイコン+ラベルのみで識別する。 */
+.phen { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-jp); font-size: var(--text-2xs);
+  color: var(--text-secondary); background: var(--surface-2); border: 1px solid var(--border-faint);
+  border-radius: var(--r-full); padding: 3px 10px 3px 7px; white-space: nowrap; }
+.phen .pi { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-tertiary); width: 14px; text-align: center; }
+.phen .pe { font-family: var(--font-mono); font-size: 10px; color: var(--text-faint); }
+.phen--lg { font-size: var(--text-xs); padding: 5px 12px 5px 9px; }
+.phen--lg .pi { font-size: var(--text-sm); }
+
+/* ============ 2. 信頼度・ヘッジ・却下 (REQ-108) ============ */
+.conf { display: inline-flex; align-items: center; gap: 7px; font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); }
+.conf .cd { display: inline-flex; gap: 3px; }
+.conf .cd i { width: 6px; height: 6px; border-radius: 50%; background: var(--surface-3); border: 1px solid var(--border); }
+.conf[data-level="high"] .cd i:nth-child(-n+3),
+.conf[data-level="mid"]  .cd i:nth-child(-n+2),
+.conf[data-level="low"]  .cd i:nth-child(-n+1) { background: var(--conf-high); border-color: transparent; }
+.conf[data-level="mid"] .cd i:nth-child(-n+2) { background: var(--conf-mid); }
+.conf[data-level="low"] .cd i:nth-child(1) { background: var(--conf-low); }
+
+/* ヘッジ表現 — 低信頼の指摘は断定しない */
+.hedge { font-family: var(--font-jp); color: var(--text-tertiary); }
+.hedge::after { content: "（低信頼）"; font-size: 0.85em; color: var(--text-faint); margin-left: 4px; }
+
+/* 低信頼 finding の折りたたみ行 */
+.fold { border: 1px dashed var(--border); border-radius: var(--r-md); background: transparent; }
+.fold-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer;
+  font-size: var(--text-xs); color: var(--text-tertiary); }
+.fold-head .tri { font-family: var(--font-mono); color: var(--text-faint); transition: transform .15s; }
+.fold[open] .fold-head .tri { transform: rotate(90deg); }
+.fold-head .n { font-family: var(--font-mono); color: var(--text-faint); margin-left: auto; }
+.fold-body { padding: 4px 14px 12px; }
+summary.fold-head { list-style: none; } summary.fold-head::-webkit-details-marker { display: none; }
+
+/* 却下導線 + 却下済み状態 */
+.dismiss-btn { font-family: var(--font-sans); font-size: var(--text-2xs); color: var(--text-faint);
+  background: transparent; border: 1px solid var(--border-faint); border-radius: var(--r-xs);
+  padding: 4px 9px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+.dismiss-btn:hover { color: var(--sev-critical-text); border-color: var(--sev-critical-line); }
+.finding--dismissed { opacity: 0.55; }
+.finding--dismissed .panel-jp, .finding--dismissed .panel-target { text-decoration: line-through; text-decoration-color: var(--text-faint); }
+.dismissed-note { display: flex; align-items: center; gap: 8px; font-size: var(--text-2xs); color: var(--text-faint);
+  font-family: var(--font-mono); padding: 8px 12px; background: var(--bg-sunken); border-radius: var(--r-sm); }
+.dismissed-note .undo { color: var(--accent-text); cursor: pointer; text-decoration: underline; }
+
+/* ============ 3. 3層フィードバック (REQ-104) ============ */
+.fb3 { display: flex; flex-direction: column; }
+.fb3-row { display: grid; grid-template-columns: 30px 1fr; gap: 12px; padding: 12px 0; }
+.fb3-row + .fb3-row { border-top: 1px solid var(--border-faint); }
+.fb3-num { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--border-strong);
+  display: grid; place-items: center; font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); }
+.fb3-row--fix .fb3-num { border-color: var(--accent-line); color: var(--accent-text); background: var(--accent-soft); }
+.fb3-k { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-faint);
+  text-transform: uppercase; letter-spacing: var(--tracking-caps); margin-bottom: 4px; display: flex; align-items: baseline; gap: 8px; }
+.fb3-k .jp { font-family: var(--font-jp); letter-spacing: 0; text-transform: none; color: var(--text-tertiary); }
+.fb3-t { font-family: var(--font-jp); font-size: var(--text-sm); line-height: var(--leading-normal); color: var(--text-secondary); }
+.fb3-t .mono { color: var(--text-primary); }
+.fb3-t .en { display: block; margin-top: 4px; font-size: var(--text-xs); color: var(--text-tertiary); font-style: italic; font-family: var(--font-sans); }
+
+/* B案: 横ステップ型 */
+.fb3h { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--border-faint);
+  border: 1px solid var(--border-faint); border-radius: var(--r-md); overflow: hidden; }
+@media (max-width: 720px){ .fb3h { grid-template-columns: 1fr; } }
+.fb3h-cell { background: var(--surface-1); padding: 14px 16px; }
+.fb3h-cell--fix { background: linear-gradient(var(--accent-soft), var(--accent-soft)), var(--surface-1) padding-box; }
+
+/* ============ 4. NBest 診断 (REQ-103) ============ */
+.nbest { display: flex; flex-direction: column; gap: 7px; }
+.nbest-row { display: grid; grid-template-columns: 64px 1fr 44px; align-items: center; gap: 12px; }
+.nbest-row .nb-ipa { font-family: var(--font-mono); font-size: var(--text-md); color: var(--text-primary); }
+.nbest-row.is-top .nb-ipa { color: var(--sev-critical-text); }
+.nb-bar { height: 8px; background: var(--surface-2); border-radius: var(--r-full); overflow: hidden; }
+.nb-bar i { display: block; height: 100%; background: var(--surface-hi); border-radius: var(--r-full); }
+.nbest-row.is-top .nb-bar i { background: var(--sev-critical-line); }
+.nb-p { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); text-align: right; }
+
+/* 典型射影バッジ — confusion set との一致 (E-8) */
+.proj-badge { display: inline-flex; align-items: center; gap: 7px; font-family: var(--font-jp); font-size: var(--text-2xs);
+  color: var(--accent-text); background: var(--accent-soft); border: 1px solid var(--accent-line);
+  border-radius: var(--r-sm); padding: 5px 10px; }
+.proj-badge .pj { font-family: var(--font-mono); }
+.proj-badge--none { color: var(--text-tertiary); background: var(--surface-2); border-color: var(--border-faint); }
+
+/* ============ 5. functional load / focus sounds (REQ-112) ============ */
+.fl { display: inline-flex; align-items: center; gap: 7px; font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); }
+.fl .fd { display: inline-flex; gap: 2px; }
+.fl .fd i { width: 5px; height: 10px; border-radius: 2px; background: var(--surface-3); }
+.fl[data-rank="max"]  .fd i:nth-child(-n+4),
+.fl[data-rank="high"] .fd i:nth-child(-n+3),
+.fl[data-rank="mid"]  .fd i:nth-child(-n+2),
+.fl[data-rank="low"]  .fd i:nth-child(-n+1) { background: var(--text-secondary); }
+
+.prio { font-family: var(--font-mono); font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: var(--tracking-wide);
+  padding: 2px 8px; border-radius: var(--r-xs); border: 1px solid var(--border); color: var(--text-secondary); background: var(--surface-2); }
+.prio--now { color: var(--text-on-accent); background: var(--accent); border-color: transparent; }
+.prio--low { color: var(--text-faint); background: transparent; border-style: dashed; }
+
+/* focus sound タイル */
+.focus-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: var(--sp-3); }
+.focus-tile { border: 1px solid var(--border-faint); border-radius: var(--r-lg); background: var(--surface-1);
+  padding: var(--sp-4); display: flex; flex-direction: column; gap: 10px; cursor: pointer; transition: border-color .15s; }
+.focus-tile:hover { border-color: var(--border-strong); }
+.focus-tile.is-now { border-color: var(--accent-line); box-shadow: 0 0 0 1px var(--accent-line); }
+.focus-pair { font-family: var(--font-mono); font-size: var(--text-2xl); color: var(--text-primary); letter-spacing: -0.01em; }
+.focus-pair .vs { color: var(--text-faint); font-size: var(--text-md); margin: 0 2px; }
+.focus-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.focus-why { font-family: var(--font-jp); font-size: var(--text-2xs); color: var(--text-tertiary); line-height: 1.5; }
+.focus-foot { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--border-faint); padding-top: 10px; }
+
+/* focus sound 行型 (リスト案) */
+.focus-row { display: grid; grid-template-columns: 110px 1fr auto auto; align-items: center; gap: var(--sp-4);
+  padding: 12px 14px; border: 1px solid var(--border-faint); border-radius: var(--r-md); background: var(--surface-1); }
+.focus-row + .focus-row { margin-top: 8px; }
+.focus-row .focus-pair { font-size: var(--text-lg); }
+
+/* ============ 6. 2軸スコア (REQ-111) ============ */
+.axis2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
+@media (max-width: 720px){ .axis2 { grid-template-columns: 1fr; } }
+.axis-card { border: 1px solid var(--border-faint); border-radius: var(--r-lg); background: var(--surface-1); padding: var(--sp-4) var(--sp-5); }
+.axis-card .ax-k { display: flex; align-items: baseline; gap: 8px; font-size: var(--text-sm); font-weight: 600; }
+.axis-card .ax-k .en { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-faint); font-weight: 400; }
+.axis-card .ax-n { font-family: var(--font-mono); font-size: var(--text-4xl); font-weight: 500; letter-spacing: -0.02em; margin: 6px 0 2px; }
+.axis-card--intel .ax-n { color: var(--axis-intel-text); }
+.axis-card--native .ax-n { color: var(--axis-native-text); }
+.axis-card .ax-d { font-family: var(--font-jp); font-size: var(--text-2xs); color: var(--text-tertiary); line-height: 1.55; }
+.axis-bar { height: 6px; background: var(--surface-3); border-radius: var(--r-full); overflow: hidden; margin: 10px 0 8px; }
+.axis-bar i { display: block; height: 100%; border-radius: var(--r-full); }
+.axis-card--intel .axis-bar i { background: var(--axis-intel); }
+.axis-card--native .axis-bar i { background: var(--axis-native); }
+
+/* スコア乖離の説明ボックス — 「なぜ明瞭性は高いのにネイティブ性が低いか」 */
+.axis-expl { grid-column: 1 / -1; display: flex; gap: 12px; align-items: flex-start;
+  border: 1px solid var(--border-faint); border-left: 3px solid var(--axis-intel-line); border-radius: var(--r-md);
+  background: var(--bg-sunken); padding: 12px 16px; font-family: var(--font-jp); font-size: var(--text-xs);
+  color: var(--text-secondary); line-height: var(--leading-normal); }
+.axis-expl .q { font-family: var(--font-mono); color: var(--axis-intel-text); flex: none; }
+
+/* Stage トラック — I → II の段階感 */
+.stage-track { display: flex; align-items: center; gap: 0; font-family: var(--font-mono); font-size: var(--text-2xs); }
+.stage-seg { flex: 1; display: flex; flex-direction: column; gap: 7px; }
+.stage-seg .sl { color: var(--text-tertiary); display: flex; justify-content: space-between; padding: 0 2px; }
+.stage-seg .sl b { font-family: var(--font-jp); font-weight: 500; color: var(--text-secondary); }
+.stage-seg .rail2 { height: 4px; background: var(--surface-3); position: relative; }
+.stage-seg:first-child .rail2 { border-radius: 99px 0 0 99px; }
+.stage-seg:last-child .rail2 { border-radius: 0 99px 99px 0; }
+.stage-seg .rail2 i { position: absolute; inset: 0 auto 0 0; background: var(--axis-intel); border-radius: inherit; }
+.stage-seg--native .rail2 i { background: var(--axis-native); }
+.stage-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--text-primary);
+  border: 3px solid var(--bg-base); box-shadow: 0 0 0 1px var(--border-strong); position: relative; z-index: 2; margin: 19px -7px 0; }
+
+/* CEFR 3下位尺度 (REQ-111 / 129) */
+.subscale { display: grid; grid-template-columns: 130px 1fr 36px 70px; align-items: center; gap: 12px; padding: 9px 0; }
+.subscale + .subscale { border-top: 1px solid var(--border-faint); }
+.subscale .ss-k { font-size: var(--text-xs); color: var(--text-tertiary); }
+.subscale .ss-k b { display: block; font-family: var(--font-jp); font-size: var(--text-sm); color: var(--text-secondary); font-weight: 500; }
+.subscale .ss-cefr { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--accent-text); text-align: right; }
+
+/* ============ 7. GOP ヒートマップ (REQ-107) ============ */
+.gopmap { display: flex; flex-wrap: wrap; gap: 14px 18px; }
+.gopw { display: flex; flex-direction: column; gap: 5px; }
+.gopw .gw { font-family: var(--font-serif); font-size: var(--text-md); color: var(--text-secondary); }
+.gopw .cells { display: flex; gap: 2px; }
+.gp { min-width: 26px; height: 30px; display: grid; place-items: center; border-radius: 4px;
+  font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-secondary);
+  background: var(--heat-0); cursor: default; }
+.gp[data-h="1"] { background: var(--heat-1); }
+.gp[data-h="2"] { background: var(--heat-2); color: var(--text-primary); }
+.gp[data-h="3"] { background: var(--heat-3); color: var(--text-primary); }
+.gp[data-h="4"] { background: var(--heat-4); color: var(--text-primary); font-weight: 600; }
+.heat-legend { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-faint); }
+.heat-legend i { width: 18px; height: 10px; border-radius: 3px; }
+
+/* ============ 8. F0 輪郭・韻律チャート (REQ-114 / 126) ============ */
+.f0card { border: 1px solid var(--border-faint); border-radius: var(--r-lg); background: var(--bg-sunken); padding: var(--sp-4); }
+.f0-head { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; flex-wrap: wrap; }
+.f0-legend { display: inline-flex; align-items: center; gap: 7px; font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); }
+.f0-legend .ln { width: 22px; height: 0; border-top: 2.5px solid var(--chart-ref); border-radius: 2px; }
+.f0-legend .ln--learner { border-top-style: dashed; border-top-color: var(--chart-learner); }
+.f0-svg { width: 100%; height: auto; display: block; }
+.f0-ref { fill: none; stroke: var(--chart-ref); stroke-width: 2.5; stroke-linecap: round; }
+.f0-learner { fill: none; stroke: var(--chart-learner); stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 7 5; }
+.f0-grid { stroke: var(--chart-grid); stroke-width: 1; }
+.f0-axis { stroke: var(--chart-axis); stroke-width: 1; }
+.f0-word { font-family: var(--font-mono); font-size: 11px; fill: var(--text-faint); }
+.f0-stress { fill: var(--chart-ref); }
+.f0-stress--miss { fill: none; stroke: var(--chart-learner); stroke-width: 2; }
+.f0-lbl { font-family: var(--font-mono); font-size: 10px; fill: var(--text-tertiary); text-transform: uppercase; letter-spacing: .08em; }
+/* ブラインドモード — 輪郭を隠して自己評価 → 答え合わせ */
+.f0card[data-blind] .f0-ref, .f0card[data-blind] .f0-learner,
+.f0card[data-blind] .f0-stress, .f0card[data-blind] .f0-stress--miss { visibility: hidden; }
+.f0-blind-cover { display: none; }
+.f0card[data-blind] { position: relative; }
+.f0card[data-blind] .f0-blind-cover { display: grid; place-content: center; gap: 10px; position: absolute; inset: 42px 16px 16px;
+  text-align: center; font-family: var(--font-jp); font-size: var(--text-xs); color: var(--text-tertiary); }
+
+/* リズム指標 (nPVI) ミニバー */
+.rhythm { display: grid; grid-template-columns: 92px 1fr; gap: 8px 14px; align-items: center; font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); }
+.rhythm .rb { height: 10px; border-radius: var(--r-full); background: var(--surface-2); position: relative; }
+.rhythm .rb i { position: absolute; top: -2px; bottom: -2px; width: 3px; border-radius: 2px; background: var(--chart-learner); }
+.rhythm .rb em { position: absolute; top: -2px; bottom: -2px; width: 3px; border-radius: 2px; background: var(--chart-ref); }
+
+/* ============ 9. 調音図解 (REQ-105) ============ */
+.artic { display: grid; grid-template-columns: 220px 1fr; gap: var(--sp-5); border: 1px solid var(--border-faint);
+  border-radius: var(--r-lg); background: var(--surface-1); padding: var(--sp-5); }
+@media (max-width: 720px){ .artic { grid-template-columns: 1fr; } }
+.artic-fig { aspect-ratio: 1 / 1; border-radius: var(--r-md); border: 1px solid var(--border);
+  background: repeating-linear-gradient(-45deg, var(--surface-2) 0 10px, var(--surface-1) 10px 20px);
+  display: grid; place-content: center; gap: 6px; text-align: center; padding: 12px; }
+.artic-fig .ph { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-faint); line-height: 1.6; }
+.artic-fig .sym { font-family: var(--font-mono); font-size: var(--text-3xl); color: var(--text-tertiary); }
+.artic-steps { margin: 0; padding: 0 0 0 2px; list-style: none; counter-reset: as; display: flex; flex-direction: column; gap: 10px; }
+.artic-steps li { counter-increment: as; display: grid; grid-template-columns: 22px 1fr; gap: 10px;
+  font-family: var(--font-jp); font-size: var(--text-sm); color: var(--text-secondary); line-height: var(--leading-normal); }
+.artic-steps li::before { content: counter(as); width: 20px; height: 20px; border-radius: 50%;
+  border: 1px solid var(--border-strong); display: grid; place-items: center;
+  font-family: var(--font-mono); font-size: 10px; color: var(--text-tertiary); margin-top: 2px; }
+.artic-audio { display: flex; align-items: center; gap: 10px; margin-top: var(--sp-4); padding-top: var(--sp-4); border-top: 1px solid var(--border-faint); grid-column: 1 / -1; flex-wrap: wrap; }
+
+/* ============ 10. お手本・A/B 再生 (REQ-124 / 128) ============ */
+.ab { display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--border-faint); border-radius: var(--r-lg); background: var(--surface-1); padding: var(--sp-4); }
+.ab-srcs { display: inline-flex; background: var(--bg-sunken); border: 1px solid var(--border); border-radius: var(--r-md); padding: 3px; gap: 2px; align-self: flex-start; }
+.ab-src { font-family: var(--font-sans); font-size: var(--text-xs); color: var(--text-tertiary); background: transparent;
+  border: none; padding: 7px 12px; border-radius: var(--r-xs); cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
+.ab-src .sd2 { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.ab-src.is-active { background: var(--surface-3); color: var(--text-primary); box-shadow: var(--shadow-sm); }
+.speed { display: inline-flex; gap: 4px; }
+.sp-chip { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); background: var(--surface-2);
+  border: 1px solid var(--border-faint); border-radius: var(--r-full); padding: 3px 9px; cursor: pointer; }
+.sp-chip.is-active { color: var(--accent-text); border-color: var(--accent-line); background: var(--accent-soft); }
+.gs-gate { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: var(--text-2xs);
+  color: var(--text-faint); border: 1px dashed var(--border); border-radius: var(--r-xs); padding: 3px 8px; }
+
+/* ============ 11. HVPT 識別課題 (REQ-122) ============ */
+.spk-chip { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: var(--text-2xs);
+  color: var(--text-tertiary); background: var(--surface-2); border: 1px solid var(--border-faint); border-radius: var(--r-full); padding: 3px 9px; }
+.choice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
+.choice { min-height: var(--choice-min-h); border: 1px solid var(--border); border-radius: var(--r-lg);
+  background: var(--surface-1); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  font-family: var(--font-sans); transition: border-color .12s, background .12s, box-shadow .12s; padding: 14px; }
+.choice:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.choice .cw { font-family: var(--font-serif); font-size: var(--text-2xl); color: var(--text-primary); }
+.choice .cipa { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--text-tertiary); }
+.choice.is-correct { border-color: var(--positive); background: var(--train-correct-soft); box-shadow: var(--train-correct-glow); }
+.choice.is-correct .cipa { color: var(--positive-text); }
+.choice.is-wrong { border-color: var(--train-wrong); background: var(--train-wrong-soft); }
+.choice:disabled { cursor: default; }
+.trial-fb { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-radius: var(--r-md);
+  font-family: var(--font-jp); font-size: var(--text-sm); }
+.trial-fb--ok { background: var(--train-correct-soft); color: var(--positive-text); border: 1px solid oklch(0.72 0.14 158 / 0.4); }
+.trial-fb--ng { background: var(--train-wrong-soft); color: var(--sev-critical-text); border: 1px solid var(--sev-critical-line); }
+.trial-fb .mk2 { font-family: var(--font-mono); font-size: var(--text-md); flex: none; }
+
+/* セッションメタ: 試行カウント・制限時間・累計 */
+.session-meta { display: flex; align-items: center; gap: 16px; font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); flex-wrap: wrap; }
+.session-meta b { color: var(--text-secondary); font-weight: 500; }
+.cum-bar { position: relative; height: 8px; background: var(--surface-2); border-radius: var(--r-full); }
+.cum-bar > i { position: absolute; inset: 0 auto 0 0; background: var(--positive); border-radius: var(--r-full); }
+.cum-bar .plateau { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--text-faint); }
+.cum-bar .plateau::after { content: attr(data-lbl); position: absolute; top: -16px; left: 50%; transform: translateX(-50%);
+  font-family: var(--font-mono); font-size: 9px; color: var(--text-faint); white-space: nowrap; }
+
+/* ============ 12. 産出ドリル (REQ-123) ============ */
+.drill-pair { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: var(--sp-4); text-align: center; }
+.drill-pair .dw { font-family: var(--font-serif); font-size: var(--text-2xl); }
+.drill-pair .dipa { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--text-tertiary); margin-top: 2px; }
+.drill-pair .dvs { font-family: var(--font-mono); color: var(--text-faint); }
+.drill-pair .dw .t { color: var(--accent-text); }
+.drill-verdict { display: flex; align-items: center; gap: 12px; font-family: var(--font-mono); font-size: var(--text-xs);
+  background: var(--bg-sunken); border: 1px solid var(--border-faint); border-radius: var(--r-md); padding: 10px 14px; }
+
+/* ============ 13. シャドーイング・ラグ (REQ-125) ============ */
+.lag { display: flex; flex-direction: column; gap: 6px; }
+.lag-scale { position: relative; height: 14px; border-radius: var(--r-full); overflow: hidden; display: flex; }
+.lag-scale .z { flex: 1; background: var(--surface-2); }
+.lag-scale .z--ok { background: var(--train-correct-soft); }
+.lag-scale .z--warn { background: var(--sev-minor-soft); }
+.lag-scale .z--ng { background: var(--sev-critical-soft); }
+.lag-needle { position: absolute; top: -3px; bottom: -3px; width: 3px; background: var(--text-primary); border-radius: 2px; }
+.lag-lbls { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-faint); }
+
+/* ============ 14. 分散学習スケジューラ (REQ-127) ============ */
+.sched { display: flex; gap: 6px; }
+.sched-cell { flex: 1; border-radius: var(--r-md); border: 1px solid var(--border-faint); background: var(--surface-1);
+  padding: 9px 6px 8px; display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 0; }
+.sched-cell .d { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-faint); }
+.sched-cell .s { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+  font-family: var(--font-mono); font-size: var(--text-2xs); }
+.sched-cell--done .s { background: var(--train-correct-soft); color: var(--positive-text); border: 1px solid oklch(0.72 0.14 158 / 0.4); }
+.sched-cell--due { border-color: var(--accent-line); box-shadow: 0 0 0 1px var(--accent-line); }
+.sched-cell--due .s { background: var(--accent); color: var(--text-on-accent); }
+.sched-cell--gate .s { border: 1px dashed var(--border-strong); color: var(--text-faint); }
+.sched-cell--rest .s { color: var(--text-faint); }
+.sched-cell .lbl { font-family: var(--font-jp); font-size: 9px; color: var(--text-faint); }
+.gate-note { display: flex; gap: 8px; align-items: baseline; font-family: var(--font-jp); font-size: var(--text-2xs); color: var(--text-tertiary); }
+.gate-note .gn { font-family: var(--font-mono); color: var(--text-faint); }
+
+/* ============ 15. 進捗 (REQ-129) ============ */
+.spark { display: block; }
+.spark .sline { fill: none; stroke: var(--accent-text); stroke-width: 1.8; stroke-linecap: round; }
+.spark .sfill { fill: var(--accent-soft); stroke: none; }
+.spark .sdot { fill: var(--text-primary); }
+.radar-poly--ref { fill: none; stroke: var(--chart-grid); stroke-width: 1; }
+.radar-poly--now { fill: var(--axis-intel-soft); stroke: var(--axis-intel); stroke-width: 2; stroke-linejoin: round; }
+.radar-poly--prev { fill: none; stroke: var(--text-faint); stroke-width: 1.5; stroke-dasharray: 4 4; stroke-linejoin: round; }
+.radar-lbl { font-family: var(--font-jp); font-size: 11px; fill: var(--text-tertiary); }
+.radar-val { font-family: var(--font-mono); font-size: 11px; fill: var(--text-secondary); }
+.stat { display: flex; flex-direction: column; gap: 2px; }
+.stat .sk { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-faint); text-transform: uppercase; letter-spacing: var(--tracking-wide); }
+.stat .sv { font-family: var(--font-mono); font-size: var(--text-2xl); color: var(--text-primary); }
+.stat .sv small { font-size: var(--text-xs); color: var(--text-faint); }
+.stat .sd3 { font-family: var(--font-jp); font-size: var(--text-2xs); color: var(--text-tertiary); }
+.delta-up { color: var(--positive-text); font-family: var(--font-mono); }
+.delta-dn { color: var(--sev-major-text); font-family: var(--font-mono); }
+
+/* 統制課題注記 (E-2) — 効果の範囲を正直に示す */
+.scope-note { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-jp); font-size: var(--text-2xs);
+  color: var(--text-faint); border: 1px solid var(--border-faint); border-radius: var(--r-full); padding: 2px 10px; }
+
+/* ============ 16. LLM 個別化 (REQ-106) ============ */
+.llm-note { display: flex; gap: 10px; align-items: flex-start; font-family: var(--font-jp); font-size: var(--text-2xs);
+  color: var(--text-tertiary); background: var(--bg-sunken); border: 1px dashed var(--border); border-radius: var(--r-sm);
+  padding: 9px 12px; line-height: 1.6; }
+.llm-note .li2 { font-family: var(--font-mono); color: var(--text-faint); flex: none; }
+.llm-toggle { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-jp); font-size: var(--text-xs); color: var(--text-secondary); }
+.llm-toggle .tg { width: 34px; height: 20px; border-radius: 99px; background: var(--surface-3); border: 1px solid var(--border); position: relative; cursor: pointer; }
+.llm-toggle .tg::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--text-tertiary); transition: all .15s; }
+.llm-toggle .tg.is-on { background: var(--accent-soft); border-color: var(--accent-line); }
+.llm-toggle .tg.is-on::after { left: 16px; background: var(--accent-text); }

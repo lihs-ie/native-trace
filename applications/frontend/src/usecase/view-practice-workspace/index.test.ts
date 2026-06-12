@@ -15,10 +15,7 @@ import {
   type RecordingAttemptIdentifier,
   type RecordingDuration,
 } from "../../domain/recording-attempt";
-import {
-  type AnalysisRun,
-  type AnalysisRunIdentifier,
-} from "../../domain/analysis-run";
+import { type AnalysisRun, type AnalysisRunIdentifier } from "../../domain/analysis-run";
 import {
   type AudioFileIdentifier,
   type StorageKey,
@@ -186,10 +183,16 @@ describe("viewPracticeWorkspace", () => {
           pronunciation: 80 as never,
           connectedSpeech: 80 as never,
           prosody: 80 as never,
+          intelligibility: null,
+          cefrOverall: null,
+          cefrSegmental: null,
+          cefrProsodic: null,
         },
         summary: { overallCommentJa: "よい", overallCommentEn: null },
         findings: [],
-        segments: [{ textRange: { startOffset: 0, endOffset: 5 }, audioRange: null, word: "Hello" }] as never,
+        segments: [
+          { textRange: { startOffset: 0, endOffset: 5 }, audioRange: null, word: "Hello" },
+        ] as never,
         metadata: {
           engineName: "cloud",
           engineVersion: "1.0",
@@ -206,6 +209,10 @@ describe("viewPracticeWorkspace", () => {
           modelName: null,
         },
         createdAt: new Date("2026-01-01T00:00:00Z"),
+        perPhonemeGop: null,
+        focusSounds: null,
+        prosody: null,
+        engineSummaryMessageJa: null,
       },
       {
         identifier: "02RESULT" as never,
@@ -217,10 +224,16 @@ describe("viewPracticeWorkspace", () => {
           pronunciation: 75 as never,
           connectedSpeech: 75 as never,
           prosody: 75 as never,
+          intelligibility: null,
+          cefrOverall: null,
+          cefrSegmental: null,
+          cefrProsodic: null,
         },
         summary: { overallCommentJa: "良好", overallCommentEn: null },
         findings: [],
-        segments: [{ textRange: { startOffset: 0, endOffset: 5 }, audioRange: null, word: "Hello" }] as never,
+        segments: [
+          { textRange: { startOffset: 0, endOffset: 5 }, audioRange: null, word: "Hello" },
+        ] as never,
         metadata: {
           engineName: "oss",
           engineVersion: "1.0",
@@ -237,6 +250,10 @@ describe("viewPracticeWorkspace", () => {
           modelName: null,
         },
         createdAt: new Date("2026-01-01T00:00:00Z"),
+        perPhonemeGop: null,
+        focusSounds: null,
+        prosody: null,
+        engineSummaryMessageJa: null,
       },
     ];
 

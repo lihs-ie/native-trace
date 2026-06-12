@@ -54,12 +54,14 @@ export async function GET(_request: NextRequest, context: RouteContext): Promise
       engine: byEngine.engineKind,
       highlights: byEngine.highlights.map((h) => ({
         finding: h.finding,
+        phenomenon: h.phenomenon,
         severity: h.severity,
         category: h.category,
         textRange: h.textRange,
         tokenRange: h.tokenRange,
         audioRange: h.audioRange,
-        messageJa: null,
+        // M-107d: C-3 配線断の解消。null ハードコードをやめ実 messageJa を返す。
+        messageJa: h.messageJa,
         messageEn: null,
         confidence: h.confidence,
       })),
@@ -76,6 +78,11 @@ export async function GET(_request: NextRequest, context: RouteContext): Promise
         pronunciation: r.scores.pronunciation,
         connectedSpeech: r.scores.connectedSpeech,
         prosody: r.scores.prosody,
+        // v2 (M-111): 二段階ゴール + CEFR 3 下位尺度
+        intelligibility: r.scores.intelligibility,
+        cefrOverall: r.scores.cefrOverall,
+        cefrSegmental: r.scores.cefrSegmental,
+        cefrProsodic: r.scores.cefrProsodic,
       },
       counts: {
         critical: r.counts.critical,
@@ -85,6 +92,8 @@ export async function GET(_request: NextRequest, context: RouteContext): Promise
       },
       findings: r.findings.map((f) => ({
         finding: f.finding,
+        phenomenon: f.phenomenon,
+        gop: f.gop,
         severity: f.severity,
         category: f.category,
         textRange: f.textRange,
@@ -95,7 +104,23 @@ export async function GET(_request: NextRequest, context: RouteContext): Promise
         messageEn: f.messageEn,
         scoreImpact: f.scoreImpact,
         confidence: f.confidence,
+        // v2 (M-103/109/112/115/104/108): NBest / FL / カタログ / connected speech / epenthesis / 3層 / 却下
+        detectedTopCandidate: f.detectedTopCandidate,
+        nBest: f.nBest,
+        matchesL1Pattern: f.matchesL1Pattern,
+        functionalLoad: f.functionalLoad,
+        catalogId: f.catalogId,
+        wordPair: f.wordPair,
+        expectedPronunciation: f.expectedPronunciation,
+        insertedVowel: f.insertedVowel,
+        feedbackLayers: f.feedbackLayers,
+        dismissed: f.dismissed,
       })),
+      // v2 (M-107b/c, M-112, M-114): 全音素 GOP ヒートマップ / focus sounds / 韻律 / 動的サマリー
+      engineSummaryMessageJa: r.engineSummaryMessageJa,
+      perPhonemeGop: r.perPhonemeGop,
+      focusSounds: r.focusSounds,
+      prosody: r.prosody,
     })),
   };
 

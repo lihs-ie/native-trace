@@ -68,6 +68,10 @@ const makeAssessmentResult = (overallScore: number): AssessmentResult => ({
     pronunciation: 82 as Score0To100,
     connectedSpeech: 70 as Score0To100,
     prosody: 78 as Score0To100,
+    intelligibility: null,
+    cefrOverall: null,
+    cefrSegmental: null,
+    cefrProsodic: null,
   },
   summary: {
     overallCommentJa: "発音は概ね良好です",
@@ -98,6 +102,10 @@ const makeAssessmentResult = (overallScore: number): AssessmentResult => ({
     modelName: "gpt-4o-audio",
   },
   createdAt: new Date("2026-01-02T00:02:00Z"),
+  perPhonemeGop: null,
+  focusSounds: null,
+  prosody: null,
+  engineSummaryMessageJa: null,
 });
 
 const makeSectionSeries = (): ActiveSectionSeries => ({

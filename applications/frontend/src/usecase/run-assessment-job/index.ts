@@ -582,7 +582,30 @@ export const createRunAssessmentJob =
                                                 phenomenon: phenomenon ?? "substitution",
                                                 expected: findingDraft.expected,
                                                 detected: findingDraft.detected,
+                                                wordPositionLabel: null,
+                                                catalogId: findingDraft.catalogId ?? null,
+                                                wordPair: findingDraft.wordPair ?? null,
+                                                expectedPronunciation:
+                                                  findingDraft.expectedPronunciation ?? null,
+                                                insertedVowel: findingDraft.insertedVowel ?? null,
                                               });
+
+                                        // feedbackLayers が null の場合は generator から生成
+                                        const feedbackLayers =
+                                          findingDraft.feedbackLayers ??
+                                          dependencies.improvementMessageGenerator.generateFeedbackLayers(
+                                            {
+                                              phenomenon: phenomenon ?? "substitution",
+                                              expected: findingDraft.expected,
+                                              detected: findingDraft.detected,
+                                              wordPositionLabel: null,
+                                              catalogId: findingDraft.catalogId ?? null,
+                                              wordPair: findingDraft.wordPair ?? null,
+                                              expectedPronunciation:
+                                                findingDraft.expectedPronunciation ?? null,
+                                              insertedVowel: findingDraft.insertedVowel ?? null,
+                                            },
+                                          );
 
                                         // Draft の textRange/audioRange を Domain 型へ変換
                                         findingsWithId.push({
@@ -607,6 +630,18 @@ export const createRunAssessmentJob =
                                           messageEn: findingDraft.messageEn,
                                           scoreImpact: findingDraft.scoreImpact,
                                           confidence: confidenceResult.value,
+                                          detectedTopCandidate:
+                                            findingDraft.detectedTopCandidate ?? null,
+                                          nBest: findingDraft.nBest ?? null,
+                                          matchesL1Pattern: findingDraft.matchesL1Pattern,
+                                          functionalLoad: findingDraft.functionalLoad ?? null,
+                                          catalogId: findingDraft.catalogId ?? null,
+                                          wordPair: findingDraft.wordPair ?? null,
+                                          expectedPronunciation:
+                                            findingDraft.expectedPronunciation ?? null,
+                                          insertedVowel: findingDraft.insertedVowel ?? null,
+                                          feedbackLayers,
+                                          dismissed: findingDraft.dismissed,
                                         });
                                       }
 
@@ -629,6 +664,15 @@ export const createRunAssessmentJob =
                                         prosody: createScore0To100(
                                           draft.scores.prosody,
                                         )._unsafeUnwrap(),
+                                        intelligibility:
+                                          draft.scores.intelligibility !== null
+                                            ? createScore0To100(
+                                                draft.scores.intelligibility,
+                                              )._unsafeUnwrap()
+                                            : null,
+                                        cefrOverall: draft.scores.cefrOverall,
+                                        cefrSegmental: draft.scores.cefrSegmental,
+                                        cefrProsodic: draft.scores.cefrProsodic,
                                       };
 
                                       // Draft の segments を Domain 型へ変換
@@ -689,6 +733,10 @@ export const createRunAssessmentJob =
                                           raw: rawData,
                                           engineSnapshot,
                                           now,
+                                          perPhonemeGop: draft.perPhonemeGop,
+                                          focusSounds: draft.focusSounds,
+                                          prosody: draft.prosody,
+                                          engineSummaryMessageJa: draft.engineSummaryMessageJa,
                                         });
 
                                       return okAsync([assessmentResult, resultEvents] as const);

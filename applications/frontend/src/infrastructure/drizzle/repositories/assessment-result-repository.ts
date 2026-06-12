@@ -15,6 +15,10 @@ import {
   type AnalysisEngineSnapshot,
   type ScoreSet,
   type Score0To100,
+  type CefrSubscale,
+  type PerPhonemeGopEntry,
+  type FocusSound,
+  type ProsodyData,
   type TokenizerVersion,
   type UnknownEngineRawResult,
   createAssessmentResultIdentifier,
@@ -35,12 +39,20 @@ type StoredAssessmentJson = {
     pronunciation: number;
     connectedSpeech: number;
     prosody: number;
+    intelligibility?: number | null;
+    cefrOverall?: CefrSubscale | null;
+    cefrSegmental?: CefrSubscale | null;
+    cefrProsodic?: CefrSubscale | null;
   };
   summary: { overallCommentJa: string; overallCommentEn: string | null };
   findings: AssessmentFinding[];
   segments: AssessmentSegment[];
   metadata: AssessmentEngineMetadata;
   tokenizerVersion: string;
+  perPhonemeGop?: PerPhonemeGopEntry[] | null;
+  focusSounds?: FocusSound[] | null;
+  prosody?: ProsodyData | null;
+  engineSummaryMessageJa?: string | null;
 };
 
 const rowToAssessmentResult = (row: AssessmentResultRow): AssessmentResult => {
@@ -58,6 +70,10 @@ const rowToAssessmentResult = (row: AssessmentResultRow): AssessmentResult => {
     pronunciation: stored.scores.pronunciation as Score0To100,
     connectedSpeech: stored.scores.connectedSpeech as Score0To100,
     prosody: stored.scores.prosody as Score0To100,
+    intelligibility: (stored.scores.intelligibility ?? null) as Score0To100 | null,
+    cefrOverall: (stored.scores.cefrOverall ?? null) as CefrSubscale | null,
+    cefrSegmental: (stored.scores.cefrSegmental ?? null) as CefrSubscale | null,
+    cefrProsodic: (stored.scores.cefrProsodic ?? null) as CefrSubscale | null,
   };
 
   const segments = stored.segments as unknown as NonEmptyList<AssessmentSegment>;
@@ -74,6 +90,10 @@ const rowToAssessmentResult = (row: AssessmentResultRow): AssessmentResult => {
     raw,
     engineSnapshot,
     createdAt: new Date(row.createdAt),
+    perPhonemeGop: (stored.perPhonemeGop ?? null) as ReadonlyArray<PerPhonemeGopEntry> | null,
+    focusSounds: (stored.focusSounds ?? null) as ReadonlyArray<FocusSound> | null,
+    prosody: (stored.prosody ?? null) as ProsodyData | null,
+    engineSummaryMessageJa: stored.engineSummaryMessageJa ?? null,
   };
 };
 
@@ -156,6 +176,10 @@ export const createDrizzleAssessmentResultRepository = (
           segments: result.segments,
           metadata: result.metadata,
           tokenizerVersion: result.tokenizerVersion,
+          perPhonemeGop: result.perPhonemeGop,
+          focusSounds: result.focusSounds,
+          prosody: result.prosody,
+          engineSummaryMessageJa: result.engineSummaryMessageJa,
         });
 
         const row = {

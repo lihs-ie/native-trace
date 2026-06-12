@@ -113,6 +113,10 @@ const makeDraft = (): AssessmentResultDraft => ({
     pronunciation: 80,
     connectedSpeech: 80,
     prosody: 80,
+    intelligibility: null,
+    cefrOverall: null,
+    cefrSegmental: null,
+    cefrProsodic: null,
   },
   summary: {
     messageJa: "発音が良好です",
@@ -147,6 +151,10 @@ const makeDraft = (): AssessmentResultDraft => ({
     originalSizeBytes: 20,
     storedSizeBytes: 20,
   },
+  perPhonemeGop: null,
+  focusSounds: null,
+  prosody: null,
+  engineSummaryMessageJa: null,
 });
 
 let ulidCounter = 0;
@@ -229,7 +237,14 @@ const makeDependencies = (
   entropyProvider: makeEntropyProvider(),
   clock: makeClock(),
   logger: makeLogger(),
-  improvementMessageGenerator: { generate: () => "テスト用改善メッセージ" },
+  improvementMessageGenerator: {
+    generate: () => "テスト用改善メッセージ",
+    generateFeedbackLayers: () => ({
+      whatJa: "テスト用what",
+      whyJa: "テスト用why",
+      howJa: "テスト用how",
+    }),
+  },
   ...overrides,
 });
 
@@ -436,6 +451,16 @@ describe("runAssessmentJob", () => {
           messageEn: null,
           scoreImpact: -5,
           confidence: 0.9,
+          detectedTopCandidate: null,
+          nBest: null,
+          matchesL1Pattern: false,
+          functionalLoad: null,
+          catalogId: null,
+          wordPair: null,
+          expectedPronunciation: null,
+          insertedVowel: null,
+          feedbackLayers: null,
+          dismissed: false,
         },
       ],
     };
@@ -452,6 +477,11 @@ describe("runAssessmentJob", () => {
           }
           return "フォールバックメッセージ";
         },
+        generateFeedbackLayers: () => ({
+          whatJa: "テスト用what",
+          whyJa: "テスト用why",
+          howJa: "テスト用how",
+        }),
       },
     });
     const execute = createRunAssessmentJob(deps);
@@ -524,6 +554,16 @@ describe("runAssessmentJob", () => {
           messageEn: null,
           scoreImpact: -2,
           confidence: 0.8,
+          detectedTopCandidate: null,
+          nBest: null,
+          matchesL1Pattern: false,
+          functionalLoad: null,
+          catalogId: null,
+          wordPair: null,
+          expectedPronunciation: null,
+          insertedVowel: null,
+          feedbackLayers: null,
+          dismissed: false,
         },
       ],
     };
@@ -537,6 +577,11 @@ describe("runAssessmentJob", () => {
           generatorCallCount++;
           return "generator-message";
         },
+        generateFeedbackLayers: () => ({
+          whatJa: "テスト用what",
+          whyJa: "テスト用why",
+          howJa: "テスト用how",
+        }),
       },
     });
     const execute = createRunAssessmentJob(deps);

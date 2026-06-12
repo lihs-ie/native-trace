@@ -49,6 +49,8 @@ export const FindingPhenomenon = {
   FLAP: "flap",
   ASSIMILATION: "assimilation",
   REDUCTION: "reduction",
+  EPENTHESIS: "epenthesis",
+  LEXICAL_STRESS: "lexicalStress",
 } as const;
 export type FindingPhenomenon = (typeof FindingPhenomenon)[keyof typeof FindingPhenomenon];
 
@@ -102,6 +104,17 @@ export type PronunciationEvidence = Readonly<{
   ipa: string | null;
 }>;
 
+export type NBestCandidate = Readonly<{
+  phoneme: string;
+  confidence: number;
+}>;
+
+export type FeedbackLayers = Readonly<{
+  whatJa: string;
+  whyJa: string;
+  howJa: string;
+}>;
+
 export type AssessmentFinding = Readonly<{
   identifier: AssessmentFindingIdentifier;
   phenomenon: FindingPhenomenon | null;
@@ -116,6 +129,26 @@ export type AssessmentFinding = Readonly<{
   messageEn: string | null;
   scoreImpact: number;
   confidence: Confidence0To1;
+  /** C3-a: NBest最有力候補 IPA */
+  detectedTopCandidate: string | null;
+  /** C3-a: 上位3件候補 */
+  nBest: ReadonlyArray<NBestCandidate> | null;
+  /** C3-a: L1パターン一致フラグ */
+  matchesL1Pattern: boolean;
+  /** C3-a: functionalLoadランク */
+  functionalLoad: string | null;
+  /** C3-a: カタログID */
+  catalogId: string | null;
+  /** C3-a: connected speech対象語ペア */
+  wordPair: Readonly<{ first: string; second: string }> | null;
+  /** C3-a: connected speech期待発音IPA */
+  expectedPronunciation: string | null;
+  /** C3-a: epenthesis挿入母音 */
+  insertedVowel: string | null;
+  /** M-104: 3層フィードバック文 */
+  feedbackLayers: FeedbackLayers | null;
+  /** C4-b: 却下フラグ (この Wave では false 固定) */
+  dismissed: boolean;
 }>;
 
 export type AssessmentSegment = Readonly<{
@@ -125,6 +158,12 @@ export type AssessmentSegment = Readonly<{
   confidence: number;
 }>;
 
+/** C3-b: CEFR 音韻統制の下位尺度（score + バンド表記） */
+export type CefrSubscale = Readonly<{
+  score: number;
+  band: string;
+}>;
+
 export type ScoreSet = Readonly<{
   overall: Score0To100;
   accuracy: Score0To100;
@@ -132,6 +171,44 @@ export type ScoreSet = Readonly<{
   pronunciation: Score0To100;
   connectedSpeech: Score0To100;
   prosody: Score0To100;
+  /** C3-b: FL 重み付き明瞭性スコア（Stage I）。旧データ互換のため null 許容。 */
+  intelligibility: Score0To100 | null;
+  /** C3-b: CEFR 全体的音韻統制 */
+  cefrOverall: CefrSubscale | null;
+  /** C3-b: CEFR 分節音の調音 */
+  cefrSegmental: CefrSubscale | null;
+  /** C3-b: CEFR 韻律 */
+  cefrProsodic: CefrSubscale | null;
+}>;
+
+/** C3-c: 全音素 GOP ヒートマップの 1 エントリ */
+export type PerPhonemeGopEntry = Readonly<{
+  word: string;
+  phoneme: string;
+  gop: number;
+  heat: number;
+}>;
+
+/** C3-c: focus sound（FL × 頻度 × 習熟度から導く優先音素） */
+export type FocusSound = Readonly<{
+  pair: string;
+  phenomenon: string | null;
+  functionalLoad: string;
+  occurrences: number;
+  priority: string;
+  reasonJa: string;
+  catalogId: string | null;
+}>;
+
+/** C3-c: 韻律生データ（F0 輪郭・語強勢・リズム・弱形実現率） */
+export type ProsodyData = Readonly<{
+  f0Contour: Readonly<{ timesMs: ReadonlyArray<number>; valuesHz: ReadonlyArray<number> }> | null;
+  wordStress: ReadonlyArray<
+    Readonly<{ word: string; wordIndex: number; expectedStress: number; predictedStress: number }>
+  > | null;
+  rhythmNpvi: number | null;
+  referenceNpvi: number | null;
+  weakFormRate: number | null;
 }>;
 
 export type AssessmentSummary = Readonly<{
@@ -168,6 +245,14 @@ export type AssessmentResult = Readonly<{
   raw: UnknownEngineRawResult;
   engineSnapshot: AnalysisEngineSnapshot;
   createdAt: Date;
+  /** C3-c: 全音素 GOP ヒートマップ系列（閾値未満の音素も含む。旧データ互換で null） */
+  perPhonemeGop: ReadonlyArray<PerPhonemeGopEntry> | null;
+  /** C3-c: focus sounds（漸進更新） */
+  focusSounds: ReadonlyArray<FocusSound> | null;
+  /** C3-c: 韻律生データ */
+  prosody: ProsodyData | null;
+  /** C3-c / M-107b: エンジン別動的サマリー文 */
+  engineSummaryMessageJa: string | null;
 }>;
 
 export type AssessmentResultCreated = Readonly<{
@@ -195,6 +280,10 @@ export const createAssessmentResult = (
     raw: UnknownEngineRawResult;
     engineSnapshot: AnalysisEngineSnapshot;
     now: Date;
+    perPhonemeGop?: ReadonlyArray<PerPhonemeGopEntry> | null;
+    focusSounds?: ReadonlyArray<FocusSound> | null;
+    prosody?: ProsodyData | null;
+    engineSummaryMessageJa?: string | null;
   }>,
 ): CreateAssessmentResultOutput => {
   const assessmentResult: AssessmentResult = {
@@ -209,6 +298,10 @@ export const createAssessmentResult = (
     raw: input.raw,
     engineSnapshot: input.engineSnapshot,
     createdAt: input.now,
+    perPhonemeGop: input.perPhonemeGop ?? null,
+    focusSounds: input.focusSounds ?? null,
+    prosody: input.prosody ?? null,
+    engineSummaryMessageJa: input.engineSummaryMessageJa ?? null,
   };
   return {
     assessmentResult,

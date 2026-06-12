@@ -33,7 +33,19 @@ const pronunciationEvidenceSchema = z.object({
   ipa: z.string().nullable(),
 });
 
+// ---- NBest ----
+
+const nBestCandidateSchema = z.object({
+  phoneme: z.string(),
+  confidence: z.number().min(0).max(1),
+});
+
 // ---- Finding / Segment ----
+
+const wordPairSchema = z.object({
+  first: z.string(),
+  second: z.string(),
+});
 
 const findingSchema = z.object({
   phenomenon: z.string().nullable(),
@@ -48,6 +60,42 @@ const findingSchema = z.object({
   messageEn: z.string().nullable(),
   scoreImpact: z.number(),
   confidence: z.number().min(0).max(1),
+  // C3-a 追加フィールド
+  detectedTopCandidate: z
+    .string()
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
+  nBest: z
+    .array(nBestCandidateSchema)
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
+  matchesL1Pattern: z.boolean().optional().default(false),
+  functionalLoad: z
+    .enum(["max", "high", "mid", "low"])
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
+  catalogId: z
+    .string()
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
+  wordPair: wordPairSchema
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
+  expectedPronunciation: z
+    .string()
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
+  insertedVowel: z
+    .string()
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
 });
 
 const segmentSchema = z.object({
@@ -59,6 +107,11 @@ const segmentSchema = z.object({
 
 // ---- Scores ----
 
+const cefrBandSchema = z.object({
+  score: z.number(),
+  band: z.string(),
+});
+
 const scoresSchema = z.object({
   overall: z.number().int().min(0).max(100),
   accuracy: z.number().int().min(0).max(100),
@@ -66,6 +119,26 @@ const scoresSchema = z.object({
   pronunciation: z.number().int().min(0).max(100),
   connectedSpeech: z.number().int().min(0).max(100),
   prosody: z.number().int().min(0).max(100),
+  // C3-b 追加フィールド
+  intelligibility: z
+    .number()
+    .min(0)
+    .max(100)
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
+  cefrOverall: cefrBandSchema
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
+  cefrSegmental: cefrBandSchema
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
+  cefrProsodic: cefrBandSchema
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
 });
 
 // ---- Summary ----
@@ -74,6 +147,74 @@ const summarySchema = z.object({
   messageJa: z.string().min(1),
   messageEn: z
     .string()
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
+});
+
+// ---- C3-c トップレベル追加スキーマ ----
+
+const perPhonemeGopEntrySchema = z.object({
+  word: z.string(),
+  phoneme: z.string(),
+  gop: z.number(),
+  heat: z.number().int().min(0).max(4),
+});
+
+const focusSoundSchema = z.object({
+  pair: z.string(),
+  phenomenon: z
+    .string()
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
+  functionalLoad: z.enum(["max", "high", "mid", "low"]),
+  occurrences: z.number().int().nonnegative(),
+  priority: z.enum(["now", "next", "later"]),
+  reasonJa: z.string(),
+  catalogId: z
+    .string()
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
+});
+
+const wordStressEntrySchema = z.object({
+  word: z.string(),
+  wordIndex: z.number().int().nonnegative(),
+  expectedStress: z.number().int().min(0).max(2),
+  predictedStress: z.number().int().min(0).max(2),
+});
+
+const f0ContourSchema = z.object({
+  timesMs: z.array(z.number().int().nonnegative()),
+  valuesHz: z.array(z.number()),
+});
+
+const prosodySchema = z.object({
+  f0Contour: f0ContourSchema
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
+  wordStress: z
+    .array(wordStressEntrySchema)
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
+  rhythmNpvi: z
+    .number()
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
+  referenceNpvi: z
+    .number()
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
+  weakFormRate: z
+    .number()
+    .min(0)
+    .max(1)
     .nullable()
     .optional()
     .transform((v) => v ?? null),
@@ -100,6 +241,26 @@ export const ossWorkerSuccessResponseSchema = z.object({
   findings: z.array(findingSchema),
   segments: z.array(segmentSchema).min(1, "segments は 1 件以上必要です"),
   metadata: workerMetadataSchema,
+  // C3-c トップレベル追加フィールド
+  perPhonemeGop: z
+    .array(perPhonemeGopEntrySchema)
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
+  focusSounds: z
+    .array(focusSoundSchema)
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
+  prosody: prosodySchema
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
+  engineSummaryMessageJa: z
+    .string()
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
 });
 
 export type OssWorkerSuccessResponse = z.infer<typeof ossWorkerSuccessResponseSchema>;

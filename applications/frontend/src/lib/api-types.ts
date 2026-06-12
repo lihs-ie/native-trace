@@ -256,6 +256,7 @@ export type FindingCategory =
 /**
  * Worker から返される発音エラーの現象種別。
  * domain は import しないため独立定義。
+ * C4-a: 11値 (substitution/omission/insertion/connectedSpeech/weakForm/linking/flap/assimilation/reduction/epenthesis/lexicalStress)
  */
 export type FindingPhenomenon =
   | "substitution"
@@ -266,7 +267,9 @@ export type FindingPhenomenon =
   | "linking"
   | "flap"
   | "assimilation"
-  | "reduction";
+  | "reduction"
+  | "epenthesis"
+  | "lexicalStress";
 
 export const SEVERITY_LABELS: Record<string, string> = {
   critical: "Critical",

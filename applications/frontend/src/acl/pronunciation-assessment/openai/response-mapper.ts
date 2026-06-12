@@ -106,6 +106,11 @@ const mapValidatedResponse = (
       pronunciation: response.scores.pronunciation,
       connectedSpeech: response.scores.connectedSpeech,
       prosody: response.scores.prosody,
+      // OpenAI は二段階ゴール / CEFR 内訳を返さない（空状態。偽データを入れない）
+      intelligibility: null,
+      cefrOverall: null,
+      cefrSegmental: null,
+      cefrProsodic: null,
     },
     findings: response.findings.map((finding) => ({
       phenomenon: null,
@@ -129,6 +134,17 @@ const mapValidatedResponse = (
       messageEn: finding.messageEn,
       scoreImpact: finding.scoreImpact,
       confidence: finding.confidence,
+      // OpenAI は NBest / FL / カタログ / connected speech 詳細を返さない（空状態）
+      detectedTopCandidate: null,
+      nBest: null,
+      matchesL1Pattern: false,
+      functionalLoad: null,
+      catalogId: null,
+      wordPair: null,
+      expectedPronunciation: null,
+      insertedVowel: null,
+      feedbackLayers: null,
+      dismissed: false,
     })),
     segments: response.segments.map((segment) => ({
       textRange: {
@@ -150,6 +166,11 @@ const mapValidatedResponse = (
     rawResponse,
     metadata,
     tokenizerVersion: response.tokenizerVersion,
+    // OpenAI は全音素 GOP / focus sounds / 韻律生データ / 動的サマリーを返さない（空状態）
+    perPhonemeGop: null,
+    focusSounds: null,
+    prosody: null,
+    engineSummaryMessageJa: null,
   };
 
   return ok(draft);

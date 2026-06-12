@@ -121,6 +121,10 @@ const mapSuccessResponse = (
       pronunciation: response.scores.pronunciation,
       connectedSpeech: response.scores.connectedSpeech,
       prosody: response.scores.prosody,
+      intelligibility: response.scores.intelligibility,
+      cefrOverall: response.scores.cefrOverall,
+      cefrSegmental: response.scores.cefrSegmental,
+      cefrProsodic: response.scores.cefrProsodic,
     },
     findings: response.findings.map((finding) => ({
       phenomenon: finding.phenomenon,
@@ -140,6 +144,16 @@ const mapSuccessResponse = (
       messageEn: finding.messageEn,
       scoreImpact: finding.scoreImpact,
       confidence: finding.confidence,
+      detectedTopCandidate: finding.detectedTopCandidate,
+      nBest: finding.nBest,
+      matchesL1Pattern: finding.matchesL1Pattern,
+      functionalLoad: finding.functionalLoad,
+      catalogId: finding.catalogId,
+      wordPair: finding.wordPair,
+      expectedPronunciation: finding.expectedPronunciation,
+      insertedVowel: finding.insertedVowel,
+      feedbackLayers: null,
+      dismissed: false,
     })),
     segments: response.segments.map((segment) => ({
       textRange: {
@@ -160,6 +174,18 @@ const mapSuccessResponse = (
     rawResponse,
     metadata,
     tokenizerVersion: response.tokenizerVersion,
+    perPhonemeGop: response.perPhonemeGop,
+    focusSounds: response.focusSounds,
+    prosody: response.prosody
+      ? {
+          f0Contour: response.prosody.f0Contour,
+          wordStress: response.prosody.wordStress,
+          rhythmNpvi: response.prosody.rhythmNpvi,
+          referenceNpvi: response.prosody.referenceNpvi,
+          weakFormRate: response.prosody.weakFormRate,
+        }
+      : null,
+    engineSummaryMessageJa: response.engineSummaryMessageJa,
   };
 
   return ok(draft);
