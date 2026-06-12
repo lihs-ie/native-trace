@@ -51,9 +51,12 @@ class AnalyzePronunciationUseCase:
         detected_ipa = self._aligner.detect_ipa(audio)
 
         # 話速・無音・シュワ解析を行う
-        inter_word_silences, schwa_realizations, speech_rate = (
-            self._speech_rate.analyze(boundaries, audio.duration_milliseconds)
+        inter_word_silences, schwa_realizations, speech_rate = self._speech_rate.analyze(
+            boundaries, audio.duration_milliseconds
         )
+
+        # 録音品質計測（dBFS / 実音声長）
+        mean_dbfs, speech_duration_seconds = self._aligner.measure_audio_quality(audio)
 
         return RawMeasurementResult(
             expected_ipa=expected_ipa,
@@ -63,4 +66,6 @@ class AnalyzePronunciationUseCase:
             schwa_realizations=schwa_realizations,
             speech_rate_phoneme_per_second=speech_rate,
             alignment_boundaries=boundaries,
+            mean_dbfs=mean_dbfs,
+            speech_duration_seconds=speech_duration_seconds,
         )

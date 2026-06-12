@@ -5,7 +5,6 @@ import logging
 from python_analyzer.domain.measurement import InterWordSilence, SchwaRealization
 from python_analyzer.domain.phoneme import AlignmentBoundary
 
-
 logger = logging.getLogger(__name__)
 
 # シュワ音の IPA 記号

@@ -11,10 +11,15 @@ import json
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 
-from python_analyzer.app import app
+# soundfile/torch 不在環境（ローカル）では collection エラーを防ぐためスキップする。
+# Docker 環境では soundfile/torch が揃っているため全テストが実行される。
+pytest.importorskip("soundfile")
+pytest.importorskip("torch")
 
+from fastapi.testclient import TestClient  # noqa: E402
+
+from python_analyzer.app import app  # noqa: E402
 
 # fixture ファイルのパス
 _FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
@@ -46,9 +51,7 @@ class TestAnalyzeEndpoint:
     観測可能挙動（perPhonemeGop 非空 / IPA 非空）を assert する。
     """
 
-    def test_analyze_returns_non_empty_per_phoneme_gop(
-        self, client: TestClient
-    ) -> None:
+    def test_analyze_returns_non_empty_per_phoneme_gop(self, client: TestClient) -> None:
         """POST /v1/analyze が perPhonemeGop 非空のレスポンスを返すこと。
 
         Done When 1 の主要 assert。

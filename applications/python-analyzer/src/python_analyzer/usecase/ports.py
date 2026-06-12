@@ -37,6 +37,17 @@ class AlignerPort(Protocol):
         """音声から IPA 音素列を検出する。"""
         ...
 
+    def measure_audio_quality(self, audio: AudioInput) -> tuple[float, float]:
+        """録音品質を計測する。
+
+        16kHz モノラル waveform から RMS を計算して dBFS に変換し、
+        forced_align の非 blank フレーム数から実音声長（秒）を推定する。
+
+        Returns:
+            (mean_dbfs, speech_duration_seconds)
+        """
+        ...
+
 
 class SpeechRatePort(Protocol):
     """話速・無音・シュワ解析ポート。"""

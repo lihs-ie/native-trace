@@ -6,13 +6,16 @@
 
 import io
 import logging
-from typing import Any
+import math
+import subprocess
+from typing import Any  # noqa: UP035
 
 import soundfile as sf  # type: ignore[import-untyped]
 import torch
 import torchaudio  # type: ignore[import-untyped]
 from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor  # type: ignore[import-untyped]
 
+from python_analyzer.domain.audio import AudioInput
 from python_analyzer.domain.measurement import PhonemeGopMeasurement
 from python_analyzer.domain.phoneme import (
     AlignmentBoundary,
@@ -20,8 +23,9 @@ from python_analyzer.domain.phoneme import (
     IpaSequence,
     PhonemeLabel,
 )
-from python_analyzer.domain.audio import AudioInput
-
+from python_analyzer.infrastructure.audio_energy import (
+    compute_speech_duration_seconds_from_energy,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,13 +61,61 @@ class Wav2Vec2Aligner:
         self._model.eval()
         logger.info("wav2vec2 モデルのロード完了")
 
+    def _decode_to_pcm(self, content: bytes, mime_type: str) -> bytes:
+        """WebM/OGG 等の非 PCM フォーマットを WAV PCM に変換する。
+
+        soundfile は libsndfile バックエンドのため WebM を直接読めない。
+        ffmpeg subprocess を使って WebM/OGG/MP4 等を WAV PCM に変換する。
+        WAV / FLAC / AU 等の soundfile が直接読める形式は変換をスキップする。
+        """
+        soundfile_native_mimes = {
+            "audio/wav",
+            "audio/x-wav",
+            "audio/wave",
+            "audio/flac",
+            "audio/x-flac",
+            "audio/aiff",
+            "audio/x-aiff",
+        }
+        normalized_mime = mime_type.split(";")[0].strip().lower()
+        if normalized_mime in soundfile_native_mimes:
+            return content
+
+        logger.info("ffmpeg で %s を WAV PCM に変換する", mime_type)
+        result = subprocess.run(
+            [
+                "ffmpeg",
+                "-nostdin",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                "pipe:0",
+                "-f",
+                "wav",
+                "-acodec",
+                "pcm_s16le",
+                "pipe:1",
+            ],
+            input=content,
+            capture_output=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"ffmpeg デコード失敗 (mime={mime_type}): {result.stderr.decode(errors='replace')}"
+            )
+        return result.stdout
+
     def _load_audio_tensor(self, audio: AudioInput) -> torch.Tensor:
         """AudioInput のバイナリを 16kHz モノ float32 テンソルに変換する。
 
         torchaudio 2.9+ は TorchCodec 依存で BytesIO 読み込みに問題があるため、
         soundfile で直接読み込んで torch.Tensor に変換する。
+        WebM/OGG 等の soundfile 非対応形式は ffmpeg で WAV PCM に変換してから読む。
         """
-        audio_buffer = io.BytesIO(audio.content)
+        pcm_bytes = self._decode_to_pcm(audio.content, audio.mime_type)
+        audio_buffer = io.BytesIO(pcm_bytes)
         # soundfile で読み込む（float32 に正規化される）
         data, sample_rate = sf.read(audio_buffer, dtype="float32", always_2d=True)
         # (samples, channels) -> (channels, samples) に変換する
@@ -77,9 +129,7 @@ class Wav2Vec2Aligner:
             waveform = resampler(waveform)
         return waveform.squeeze(0)
 
-    def _run_ctc_inference(
-        self, waveform: torch.Tensor
-    ) -> tuple[torch.Tensor, list[str]]:
+    def _run_ctc_inference(self, waveform: torch.Tensor) -> tuple[torch.Tensor, list[str]]:
         """CTC 推論を実行してログ事後確率と語彙を返す。
 
         Returns:
@@ -202,6 +252,32 @@ class Wav2Vec2Aligner:
                         token_ids.append(char_id)
         return token_ids
 
+    def measure_audio_quality(self, audio: AudioInput) -> tuple[float, float]:
+        """録音品質を計測する。
+
+        16kHz モノラル waveform の RMS から mean dBFS を計算し、
+        エネルギーベース VAD で実音声長（秒）を計測する。
+
+        dBFS = 20 * log10(RMS)。無音（RMS≒0）は -100.0 dBFS を返す。
+        speechDurationSeconds: compute_speech_duration_seconds_from_energy で算出する。
+        CTC 非 blank フレーム数は音素検出数に近く実発話時間と桁が乖離するため使わない。
+        エネルギーフレームの RMS > _ENERGY_SILENCE_RMS_THRESHOLD のフレームが発話区間。
+
+        Returns:
+            (mean_dbfs, speech_duration_seconds)
+        """
+        waveform = self._load_audio_tensor(audio)
+        rms = float(waveform.pow(2).mean().sqrt().item())
+        if rms < 1e-9:
+            mean_dbfs = -100.0
+        else:
+            mean_dbfs = 20.0 * math.log10(rms)
+
+        waveform_numpy = waveform.numpy()
+        speech_duration_seconds = compute_speech_duration_seconds_from_energy(waveform_numpy)
+
+        return mean_dbfs, speech_duration_seconds
+
     def _compute_boundaries_and_gop(
         self,
         aligned_token_sequence: list[int],
@@ -217,9 +293,7 @@ class Wav2Vec2Aligner:
         """
         total_frames = len(aligned_token_sequence)
         frame_duration_ms = (
-            audio_duration_milliseconds / total_frames
-            if total_frames > 0
-            else _FRAME_DURATION_MS
+            audio_duration_milliseconds / total_frames if total_frames > 0 else _FRAME_DURATION_MS
         )
 
         # token_id -> phoneme のマッピングを構築する
@@ -232,9 +306,7 @@ class Wav2Vec2Aligner:
         # aligned_token_sequence を走査して音素ごとのフレーム範囲を特定する
         current_token: int | None = None
         current_start_frame = 0
-        frame_indices: list[
-            tuple[int, int, int]
-        ] = []  # (token_id, start_frame, end_frame)
+        frame_indices: list[tuple[int, int, int]] = []  # (token_id, start_frame, end_frame)
 
         for frame_index, token_id in enumerate(aligned_token_sequence):
             blank_id = self._processor.tokenizer.pad_token_id
@@ -242,9 +314,7 @@ class Wav2Vec2Aligner:
                 continue
             if token_id != current_token:
                 if current_token is not None:
-                    frame_indices.append(
-                        (current_token, current_start_frame, frame_index - 1)
-                    )
+                    frame_indices.append((current_token, current_start_frame, frame_index - 1))
                 current_token = token_id
                 current_start_frame = frame_index
 
@@ -252,7 +322,7 @@ class Wav2Vec2Aligner:
             frame_indices.append((current_token, current_start_frame, total_frames - 1))
 
         # 各音素の境界と GOP を計算する
-        for index, (token_id, start_frame, end_frame) in enumerate(frame_indices):
+        for _index, (token_id, start_frame, end_frame) in enumerate(frame_indices):
             phoneme_str = id_to_phoneme.get(token_id, "?")
             if phoneme_str in ("<pad>", "<unk>"):
                 continue

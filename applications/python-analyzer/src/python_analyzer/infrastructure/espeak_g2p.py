@@ -4,7 +4,6 @@ import subprocess
 
 from python_analyzer.domain.phoneme import IpaSequence, PhonemeLabel
 
-
 # generalAmerican アクセントの espeak-ng 言語コード
 _ACCENT_LANGUAGE_MAP: dict[str, str] = {
     "generalAmerican": "en-us",
