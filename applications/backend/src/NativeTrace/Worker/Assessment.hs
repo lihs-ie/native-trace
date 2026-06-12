@@ -22,6 +22,10 @@ import NativeTrace.Worker.Scoring (
   ScoringOutput (..),
   TokenSegment (..),
   buildAssessmentScores,
+  buildDynamicSummary,
+  buildFocusSounds,
+  buildPerPhonemeHeatmap,
+  buildProsodyOutput,
   checkAudioQuality,
   generateFindingsFromGop,
   scoreAssessment,
@@ -36,6 +40,7 @@ import NativeTrace.Worker.Types (
   AssessmentSummary (..),
   AudioMetadata (..),
   AudioRange (..),
+  CefrScore (..),
   TextRange (..),
   WorkerResponseMetadata (..),
  )
@@ -133,19 +138,15 @@ buildAssessmentResponseFromGop request analyzerResult =
   let durationMs = audioDurationMilliseconds (requestAudio request)
       bodyText = sectionBodyText request
       meanDbfs = analyzedMeanDbfs analyzerResult
-      -- ② 短すぎ判定: 録音総時間（発話エネルギー時間ではなく）を使う。
-      -- analyzedSpeechDurationSeconds は計測値として保持するが判定には使わない。
-      -- ③ 音素検出率: detected/expected のスペース区切りトークン数
       detectedPhonemeCount = length (Text.words (analyzedDetectedIpa analyzerResult))
       expectedPhonemeCount = length (Text.words (analyzedExpectedIpa analyzerResult))
-      -- ④ per-phoneme GOP 値リスト
       gopValues = map gopValue (analyzedPerPhonemeGop analyzerResult)
       meta =
         WorkerResponseMetadata
-          { responseWorkerVersion = "0.1.0",
-            responseModelVersion = "model-v1",
-            responseRuleSetVersion = "rules-v1",
-            responseScoringRubricVersion = "rubric-v1"
+          { responseWorkerVersion = "0.2.0",
+            responseModelVersion = "model-v2",
+            responseRuleSetVersion = "rules-v2",
+            responseScoringRubricVersion = "rubric-v2"
           }
       lowQualitySummary =
         AssessmentSummary
@@ -159,7 +160,11 @@ buildAssessmentResponseFromGop request analyzerResult =
             nativeLikeness = 0,
             pronunciation = 0,
             connectedSpeech = 0,
-            prosody = 0
+            prosody = 0,
+            intelligibility = 0,
+            cefrOverall = CefrScore {cefrScoreValue = 0, cefrBand = "A2"},
+            cefrSegmental = CefrScore {cefrScoreValue = 0, cefrBand = "A2"},
+            cefrProsodic = CefrScore {cefrScoreValue = 0, cefrBand = "A2"}
           }
    in if checkAudioQuality meanDbfs durationMs detectedPhonemeCount expectedPhonemeCount gopValues
         then
@@ -171,31 +176,42 @@ buildAssessmentResponseFromGop request analyzerResult =
               responseSummary = lowQualitySummary,
               responseFindings = [],
               responseSegments = [],
-              responseMetadata = meta
+              responseMetadata = meta,
+              responsePerPhonemeGop = [],
+              responseFocusSounds = [],
+              responseProsody = Nothing
             }
         else
-          let
-            -- scoreAssessment でトークン化し、scoreFromGop で GOP スコアを上書きする
-            baseScoringOutput = scoreAssessment (ScoringInput bodyText (ByteString.length "") durationMs)
-            scoringOutput = scoreFromGop analyzerResult baseScoringOutput
-            segments = buildSegments request (outputTokens scoringOutput) durationMs
-            scores = buildAssessmentScores scoringOutput
-            summary =
-              AssessmentSummary
-                { messageJa = summaryMessageJa scoringOutput,
-                  messageEn = Just (summaryMessageEn scoringOutput)
+          let baseScoringOutput = scoreAssessment (ScoringInput bodyText (ByteString.length "") durationMs)
+              scoringOutput = scoreFromGop analyzerResult baseScoringOutput
+              segments = buildSegments request (outputTokens scoringOutput) durationMs
+              findings = generateFindingsFromGop bodyText analyzerResult
+              scores = buildAssessmentScores scoringOutput findings
+              focusSounds = buildFocusSounds findings
+              prosodyOutput = buildProsodyOutput analyzerResult
+              dynamicSummaryJa = buildDynamicSummary focusSounds scoringOutput
+              summary =
+                AssessmentSummary
+                  { messageJa = dynamicSummaryJa,
+                    messageEn = Nothing
+                  }
+              phonemeGops = analyzedPerPhonemeGop analyzerResult
+              tokens = outputTokens scoringOutput
+              tokenCount = length tokens
+              heatmap = buildPerPhonemeHeatmap phonemeGops tokens tokenCount
+           in AssessmentResponse
+                { responseAssessmentSchemaVersion = assessmentSchemaVersion request,
+                  responseTokenizerVersion = tokenizerVersion request,
+                  responseStatus = AssessmentStatusNormal,
+                  responseScores = scores,
+                  responseSummary = summary,
+                  responseFindings = findings,
+                  responseSegments = segments,
+                  responseMetadata = meta,
+                  responsePerPhonemeGop = heatmap,
+                  responseFocusSounds = focusSounds,
+                  responseProsody = prosodyOutput
                 }
-           in
-            AssessmentResponse
-              { responseAssessmentSchemaVersion = assessmentSchemaVersion request,
-                responseTokenizerVersion = tokenizerVersion request,
-                responseStatus = AssessmentStatusNormal,
-                responseScores = scores,
-                responseSummary = summary,
-                responseFindings = generateFindingsFromGop bodyText analyzerResult,
-                responseSegments = segments,
-                responseMetadata = meta
-              }
 
 -- | トークンリストから Segment を生成する。
 -- audioRange は duration を均等割り当てする。

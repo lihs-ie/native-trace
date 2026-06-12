@@ -1,5 +1,5 @@
 -- | 発音解析スコアリング（純粋関数）。
--- GOP（Goodness of Pronunciation）計測値を元に採点・finding 生成を行う。
+-- GOP（Goodness of Pronunciation）計測値・NBest・F0/韻律を元に採点・finding 生成を行う。
 -- 同一入力には必ず同一出力を返す（乱数・IO 不使用）。
 module NativeTrace.Worker.Scoring (
   ScoringInput (..),
@@ -18,27 +18,56 @@ module NativeTrace.Worker.Scoring (
   audioQualityMinRecordingDurationMs,
   audioQualityMinPhonemeDetectionRate,
   audioQualityMaxMedianGop,
+  -- 新規 export
+  buildPerPhonemeHeatmap,
+  buildFocusSounds,
+  buildProsodyOutput,
+  buildDynamicSummary,
 )
 where
 
 import Data.Char (isSpace)
-import Data.List (foldl', sort)
+import Data.List (find, foldl', group, nub, sort, sortBy)
+import Data.Maybe (fromMaybe, mapMaybe)
+import Data.Ord (Down (..), comparing)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import NativeTrace.Worker.AnalyzerClient (
   AnalyzerResult (..),
+  F0Contour (..),
+  InsertedVowelInfo (..),
   InterWordSilence (..),
+  NBestEntry (..),
   PhonemeGop (..),
+  Rhythm (..),
   SchwaRealization (..),
+  SyllableInfo (..),
+  WeakFormRealization (..),
+  WordStress (..),
+ )
+import NativeTrace.Worker.Catalog (
+  CatalogEntry (..),
+  FunctionalLoad (..),
+  flRank,
+  flWeight,
+  lookupByConfusion,
+  lookupByPhoneme,
  )
 import NativeTrace.Worker.Types (
   AssessmentFinding (..),
   AssessmentScores (..),
   AudioRange (..),
+  CefrScore (..),
   FindingCategory (..),
   FindingSeverity (..),
+  FocusSound (..),
+  NBestOutputEntry (..),
+  PhonemeHeatEntry (..),
   PronunciationEvidence (..),
+  ProsodyOutput (..),
   TextRange (..),
+  WordPair (..),
+  WordStressOutput (..),
  )
 
 -- ---- 型 ----
@@ -65,6 +94,7 @@ data ScoringOutput = ScoringOutput
     scorePronunciation :: Int,
     scoreConnectedSpeech :: Int,
     scoreProsody :: Int,
+    scoreIntelligibility :: Int,
     outputTokens :: [TokenSegment],
     summaryMessageJa :: Text,
     summaryMessageEn :: Text
@@ -74,13 +104,12 @@ data ScoringOutput = ScoringOutput
 -- ---- スコア定数（calibratable threshold） ----
 
 -- | GOP 値を pronunciation スコア（0-100）に線形 clip する下限。
--- GOP は負の平均 log 事後確率（例: h≈-6.9, d≈-13.6）。
 gopFloor :: Double
-gopFloor = -20.0 -- この GOP 以下は pronunciation = 0
+gopFloor = -20.0
 
 -- | GOP 値を pronunciation スコア（0-100）に線形 clip する上限。
 gopCeiling :: Double
-gopCeiling = -2.0 -- この GOP 以上は pronunciation = 100
+gopCeiling = -2.0
 
 -- | finding として検出する GOP 閾値（major）。calibratable threshold
 gopMajorThreshold :: Double
@@ -102,71 +131,29 @@ speechRateUpperThreshold = 15.0
 speechRateLowerThreshold :: Double
 speechRateLowerThreshold = 3.0
 
--- | accuracy スコアの保守的固定値（ADR-003: 後スライスまで placeholder）。
--- accuracy は音素アライメント品質の詳細評価を必要とするため現スライスでは固定する。
-fixedAccuracyScore :: Int
-fixedAccuracyScore = 70
-
--- | prosody スコアの保守的固定値（ADR-003: 後スライスまで placeholder）。
--- prosody はピッチ/リズム解析を必要とするため現スライスでは固定する。
-fixedProsodyScore :: Int
-fixedProsodyScore = 65
-
 -- ---- 音質ガード定数（calibratable threshold） ----
 
--- | 音声品質ガード: 最低 dBFS 閾値。
--- 実測値: 極小音量 ≈ -38.6 dB、クリーン音声 ≈ -15 dB。
--- calibratable threshold
 audioQualityMinMeanDbfs :: Double
 audioQualityMinMeanDbfs = -35.0
 
--- | 音声品質ガード: 録音総時間の最低閾値（ミリ秒）。
--- この値未満は録音が極端に短い/無音と見なす。
--- pausey・低エネルギーな録音でも総時間が十分なら短すぎ判定では弾かない。
--- calibratable threshold
 audioQualityMinRecordingDurationMs :: Int
 audioQualityMinRecordingDurationMs = 1000
 
--- | 音声品質ガード: 最低音素検出率（detected/expected）。
--- detected 音素数 / expected 音素数がこの値未満なら低品質と判定する。
--- calibratable threshold
 audioQualityMinPhonemeDetectionRate :: Double
 audioQualityMinPhonemeDetectionRate = 0.25
 
--- | 音声品質ガード: 中央値 GOP の上限（負値）。
--- per-phoneme GOP の中央値がこの値未満なら低品質と判定する。
--- calibratable threshold
 audioQualityMaxMedianGop :: Double
 audioQualityMaxMedianGop = -18.0
 
--- | 音声品質チェック。低品質なら True を返す（採点前に早期返却するためのフラグ）。
--- 以下4条件のいずれか該当で low_quality と判定する:
---   ① meanDbfs < audioQualityMinMeanDbfs
---   ② durationMilliseconds < audioQualityMinRecordingDurationMs（録音総時間ベース）
---   ③ detected音素率 < audioQualityMinPhonemeDetectionRate
---   ④ 中央値GOP < audioQualityMaxMedianGop（GOP リスト空も該当）
--- Note: speechDurationSeconds（発話エネルギー時間）は計測値として保持するが判定には使わない。
---       pausey/低エネルギー録音で過少カウントされ正常録音まで誤発火するため。
+-- | 音声品質チェック。低品質なら True を返す。
 checkAudioQuality ::
-  -- | 平均 dBFS
-  Double ->
-  -- | 録音総時間（ミリ秒）
-  Int ->
-  -- | 検出音素数（detected IPA のスペース区切りトークン数）
-  Int ->
-  -- | 期待音素数（expected IPA のスペース区切りトークン数）
-  Int ->
-  -- | per-phoneme GOP 値リスト
-  [Double] ->
-  -- | True = 低品質
-  Bool
+  Double -> Int -> Int -> Int -> [Double] -> Bool
 checkAudioQuality meanDbfs durationMilliseconds detectedPhonemeCount expectedPhonemeCount gopValues =
   meanDbfs < audioQualityMinMeanDbfs
     || durationMilliseconds < audioQualityMinRecordingDurationMs
     || isLowPhonemeDetectionRate detectedPhonemeCount expectedPhonemeCount
     || isLowMedianGop gopValues
 
--- | detected音素率が閾値未満なら True。expected が 0 の場合はチェックしない。
 isLowPhonemeDetectionRate :: Int -> Int -> Bool
 isLowPhonemeDetectionRate detectedCount expectedCount
   | expectedCount <= 0 = False
@@ -175,12 +162,10 @@ isLowPhonemeDetectionRate detectedCount expectedCount
       fromIntegral detectedCount / fromIntegral expectedCount
         < audioQualityMinPhonemeDetectionRate
 
--- | GOP リストの中央値が閾値未満なら True。リスト空は True（該当）。
 isLowMedianGop :: [Double] -> Bool
 isLowMedianGop [] = True
 isLowMedianGop gopValues = medianGop gopValues < audioQualityMaxMedianGop
 
--- | Double リストの中央値を返す。
 medianGop :: [Double] -> Double
 medianGop [] = 0.0
 medianGop values =
@@ -193,7 +178,6 @@ medianGop values =
 
 -- ---- Tokenize ----
 
--- | sectionBodyText を空白・句読点で分割し、各トークンの文字 offset を保持する。
 tokenize :: Text -> [TokenSegment]
 tokenize text = go 0 0 (Text.unpack text) []
  where
@@ -226,36 +210,29 @@ tokenize text = go 0 0 (Text.unpack text) []
 
 -- ---- スコア計算ユーティリティ ----
 
--- | スコアを 0..100 に収める。
 clampScore :: Int -> Int
 clampScore n
   | n < 0 = 0
   | n > 100 = 100
   | otherwise = n
 
--- | GOP 平均値を 0-100 の pronunciation スコアに線形変換する。
--- gopFloor 以下 = 0、gopCeiling 以上 = 100 に clip する。calibratable threshold
 gopAverageToScore :: [Double] -> Int
-gopAverageToScore [] = 50 -- GOP データ無し時の保守的デフォルト
+gopAverageToScore [] = 50
 gopAverageToScore gops =
   let avg = sum gops / fromIntegral (length gops)
-      -- gopFloor〜gopCeiling を 0〜100 に線形マップ
       normalized = (avg - gopFloor) / (gopCeiling - gopFloor)
    in clampScore (round (normalized * 100.0))
 
 -- | connectedSpeech スコアを無音長・schwa 実現率・話速から算出する。
--- 各要素は保守的なペナルティ減点方式で算出する。calibratable threshold
 connectedSpeechScore :: [InterWordSilence] -> [SchwaRealization] -> Double -> Int
 connectedSpeechScore silences schwaRealizations speechRate =
   let base = 75 :: Int
-      -- 長い無音区間ペナルティ
       longSilenceCount =
         length $
           filter
             (\s -> silenceDurationMs s > silencePenaltyThresholdMs)
             silences
       silencePenalty = min 20 (longSilenceCount * 5)
-      -- schwa 実現ペナルティ（非実現が多い = 不自然）
       schwaTotal = length schwaRealizations
       schwaRealizedCount = length (filter schwaRealized schwaRealizations)
       schwaPenalty =
@@ -264,29 +241,142 @@ connectedSpeechScore silences schwaRealizations speechRate =
           else
             let unrealizedRate = fromIntegral (schwaTotal - schwaRealizedCount) / fromIntegral schwaTotal :: Double
              in round (unrealizedRate * 10.0) :: Int
-      -- 話速ペナルティ（極端に速い/遅い）
       ratePenalty =
         if speechRate < speechRateLowerThreshold || speechRate > speechRateUpperThreshold
           then 10
           else 0
    in clampScore (base - silencePenalty - schwaPenalty - ratePenalty)
 
+-- ---- accuracy スコア（NBest/GOP 由来、M-111） ----
+
+-- | accuracy スコアを GOP 値と NBest から算出する。
+-- GOP 平均から基本スコアを得た後、NBest 最有力候補が期待音素と一致しているかで補正する。
+computeAccuracyScore :: [PhonemeGop] -> Int
+computeAccuracyScore [] = 50
+computeAccuracyScore phonemeGops =
+  let gopValues = map gopValue phonemeGops
+      baseScore = gopAverageToScore gopValues
+      -- NBest 最有力候補が期待音素と一致する音素の割合でボーナス付与
+      nBestBonus = computeNBestAccuracyBonus phonemeGops
+   in clampScore (baseScore + nBestBonus)
+
+-- | NBest 整合ボーナス計算（-5〜+5）。
+computeNBestAccuracyBonus :: [PhonemeGop] -> Int
+computeNBestAccuracyBonus phonemeGops =
+  let phonemesWithNBest = filter (not . null . gopNBest) phonemeGops
+   in if null phonemesWithNBest
+        then 0
+        else
+          let matchCount =
+                length $
+                  filter
+                    ( \pg ->
+                        case gopNBest pg of
+                          (top : _) -> nBestPhoneme top == gopPhoneme pg
+                          [] -> False
+                    )
+                    phonemesWithNBest
+              matchRate = fromIntegral matchCount / fromIntegral (length phonemesWithNBest) :: Double
+           in round ((matchRate - 0.5) * 10.0) :: Int
+
+-- ---- prosody スコア（stress + nPVI + 弱形実現率、M-114） ----
+
+-- | prosody スコアを語強勢精度・nPVI 近接度・弱形実現率から算出する。
+computeProsodyScore :: [WordStress] -> Maybe Rhythm -> [WeakFormRealization] -> Int
+computeProsodyScore wordStresses maybeRhythm weakFormRealizations =
+  let base = 65 :: Int
+      -- 語強勢精度ペナルティ
+      stressPenalty = computeStressPenalty wordStresses
+      -- nPVI 近接ペナルティ
+      npviPenalty = computeNpviPenalty maybeRhythm
+      -- 弱形実現率ペナルティ
+      weakFormPenalty = computeWeakFormPenalty weakFormRealizations
+   in clampScore (base - stressPenalty - npviPenalty - weakFormPenalty)
+
+computeStressPenalty :: [WordStress] -> Int
+computeStressPenalty [] = 0
+computeStressPenalty wordStresses =
+  let errorCount = length $ filter (\ws -> wordStressExpected ws /= wordStressPredicted ws) wordStresses
+      total = length wordStresses
+      errorRate = fromIntegral errorCount / fromIntegral total :: Double
+   in round (errorRate * 20.0) :: Int
+
+computeNpviPenalty :: Maybe Rhythm -> Int
+computeNpviPenalty Nothing = 0
+computeNpviPenalty (Just rhythm) =
+  let npvi = rhythmNpviVocalic rhythm
+      refNpvi = rhythmReferenceNpviVocalic rhythm
+      deviation = abs (npvi - refNpvi)
+   in min 15 (round (deviation / 5.0) :: Int)
+
+computeWeakFormPenalty :: [WeakFormRealization] -> Int
+computeWeakFormPenalty [] = 0
+computeWeakFormPenalty weakForms =
+  let expectedWeakForms = filter weakFormExpectedWeak weakForms
+   in if null expectedWeakForms
+        then 0
+        else
+          let unrealizedCount = length $ filter (not . weakFormRealizedWeak) expectedWeakForms
+              unrealizedRate = fromIntegral unrealizedCount / fromIntegral (length expectedWeakForms) :: Double
+           in round (unrealizedRate * 10.0) :: Int
+
+-- ---- FL 重み付き intelligibility スコア（M-111） ----
+
+-- | FL 重み付き intelligibility スコアを算出する。
+-- 高FL誤りは加算的に減点、低FLは件数増で逓減（sqrt 飽和）。
+computeIntelligibilityScore :: [AssessmentFinding] -> Int
+computeIntelligibilityScore [] = 100
+computeIntelligibilityScore findings =
+  let base = 100.0 :: Double
+      totalPenalty = sum (map computeFindingPenalty findings)
+   in clampScore (round (base - totalPenalty))
+
+-- | finding 1件あたりのペナルティ（FL ランク × severity 重み）。
+-- 高FL は線形減点、低FL は sqrt 飽和を模擬するため除数でスケールダウン。
+computeFindingPenalty :: AssessmentFinding -> Double
+computeFindingPenalty finding =
+  let flMultiplier = case findingFunctionalLoad finding of
+        Just "max" -> 4.0
+        Just "high" -> 3.0
+        Just "mid" -> 1.5
+        Just "low" -> 0.8
+        _ -> 1.0
+      severityMultiplier = case findingSeverity finding of
+        FindingSeverityCritical -> 2.0
+        FindingSeverityMajor -> 1.5
+        FindingSeverityMinor -> 1.0
+        FindingSeveritySuggestion -> 0.2
+   in flMultiplier * severityMultiplier
+
+-- ---- CEFR バンド変換（M-111） ----
+
+scoreToCefrBand :: Int -> Text
+scoreToCefrBand score
+  | score >= 80 = "C1"
+  | score >= 70 = "B2"
+  | score >= 55 = "B1+"
+  | score >= 40 = "B1"
+  | otherwise = "A2"
+
+buildCefrScore :: Int -> CefrScore
+buildCefrScore score = CefrScore {cefrScoreValue = score, cefrBand = scoreToCefrBand score}
+
 -- ---- GOP ベースのスコアリング ----
 
--- | AnalyzerResult から ScoringOutput を算出する（純粋・決定的）。
--- accuracy/prosody は ADR-003 どおり保守的固定値（後スライスまで placeholder と明記）。
 scoreFromGop :: AnalyzerResult -> ScoringOutput -> ScoringOutput
 scoreFromGop result scoringOutput =
-  let gops = map gopValue (analyzedPerPhonemeGop result)
+  let phonemeGops = analyzedPerPhonemeGop result
+      gops = map gopValue phonemeGops
       pronunciationScore = gopAverageToScore gops
       connectedSpeechScoreValue =
         connectedSpeechScore
           (analyzedInterWordSilences result)
           (analyzedSchwaRealizations result)
           (analyzedSpeechRatePhonemePerSecond result)
-      -- accuracy/prosody: ADR-003 保守的固定 placeholder（後スライスまで）
-      accuracyScore = fixedAccuracyScore
-      prosodyScore = fixedProsodyScore
+      -- accuracy: GOP/NBest 由来（固定値廃止、M-111）
+      accuracyScore = computeAccuracyScore phonemeGops
+      -- prosody: stress + nPVI + 弱形実現率由来（固定値廃止、M-114）
+      prosodyScore = computeProsodyScore (analyzedWordStress result) (analyzedRhythm result) (analyzedWeakFormRealizations result)
       -- nativeLikeness: pronunciation と connectedSpeech のブレンド
       nativeLikenessScore =
         clampScore $
@@ -301,22 +391,23 @@ scoreFromGop result scoringOutput =
               + nativeLikenessScore * 15
           )
             `div` 100
+      -- intelligibility はまず findings なしで算出（後で findings から上書き可）
+      intelligibilityScore = clampScore overallScore
    in scoringOutput
         { scoreOverall = overallScore,
           scoreAccuracy = accuracyScore,
           scoreNativeLikeness = nativeLikenessScore,
           scorePronunciation = pronunciationScore,
           scoreConnectedSpeech = connectedSpeechScoreValue,
-          scoreProsody = prosodyScore
+          scoreProsody = prosodyScore,
+          scoreIntelligibility = intelligibilityScore
         }
 
+-- ---- Finding 生成 ----
+
 -- | AnalyzerResult から AssessmentFinding リストを生成する（純粋・決定的）。
--- phenomenon は expected/detected IPA の簡易 Levenshtein 整列で判定。
--- findingMessageJa は ADR-004 どおり Nothing（worker では生成しない）。
 generateFindingsFromGop ::
-  -- | sectionBodyText
   Text ->
-  -- | AnalyzerResult
   AnalyzerResult ->
   [AssessmentFinding]
 generateFindingsFromGop sectionBodyText analyzerResult =
@@ -325,16 +416,18 @@ generateFindingsFromGop sectionBodyText analyzerResult =
       allPhonemeGops = analyzedPerPhonemeGop analyzerResult
       expectedIpa = analyzedExpectedIpa analyzerResult
       detectedIpa = analyzedDetectedIpa analyzerResult
-      -- 音素 GOP から閾値でフィルタして finding を生成
       gopFindings =
         concatMap
           (buildGopFinding tokenCount tokens expectedIpa detectedIpa)
           allPhonemeGops
-      -- connectedSpeech finding（presentation-only: severity=suggestion, scoreImpact=0）
-      connectedFindings = buildConnectedSpeechFinding sectionBodyText analyzerResult
-   in gopFindings <> connectedFindings
+      -- epenthesis findings（M-115）
+      epenthesisFindings = buildEpenthesisFindings sectionBodyText (analyzedSyllables analyzerResult) tokenCount tokens
+      -- lexicalStress findings（M-102）
+      stressFindings = buildLexicalStressFindings sectionBodyText (analyzedWordStress analyzerResult) tokenCount tokens
+      -- weakForm findings（M-102/M-114）
+      weakFormFindings = buildWeakFormFindings sectionBodyText (analyzedWeakFormRealizations analyzerResult) tokenCount tokens
+   in gopFindings <> epenthesisFindings <> stressFindings <> weakFormFindings
 
--- | 1 音素の GOP 値から finding を生成する（閾値以上は finding 化しない）。
 buildGopFinding ::
   Int ->
   [TokenSegment] ->
@@ -352,6 +445,37 @@ buildGopFinding tokenCount tokens expectedIpa detectedIpa phonemeGop =
               endMilliseconds = gopEndMs phonemeGop
               textRange = findTextRangeForTime tokens tokenCount startMilliseconds
               phenomenon = classifyPhenomenon expectedIpa detectedIpa phoneme
+              -- NBest 照合（M-103）
+              nBestEntries = gopNBest phonemeGop
+              topCandidate = case nBestEntries of
+                (top : _) -> Just (nBestPhoneme top)
+                [] -> Nothing
+              nBestOutput =
+                if null nBestEntries
+                  then Nothing
+                  else
+                    Just $
+                      map
+                        (\e -> NBestOutputEntry {nBestOutputPhoneme = nBestPhoneme e, nBestOutputConfidence = nBestConfidence e})
+                        (take 3 nBestEntries)
+              -- カタログ照合（M-101/M-103）
+              catalogMatch = do
+                detectedPhoneme <- topCandidate
+                lookupByConfusion phoneme detectedPhoneme
+              (matchesL1, catalogId, functionalLoadText) = case catalogMatch of
+                Just entry ->
+                  ( True,
+                    Just (catalogIdentifier entry),
+                    Just (flRank (catalogFunctionalLoad entry))
+                  )
+                Nothing ->
+                  case lookupByPhoneme phoneme of
+                    Just entry ->
+                      ( False,
+                        Just (catalogIdentifier entry),
+                        Just (flRank (catalogFunctionalLoad entry))
+                      )
+                    Nothing -> (False, Nothing, Nothing)
               expected =
                 PronunciationEvidence
                   { evidenceText = Nothing,
@@ -374,70 +498,209 @@ buildGopFinding tokenCount tokens expectedIpa detectedIpa phonemeGop =
                           },
                     findingExpected = expected,
                     findingDetected = detected,
-                    -- ADR-004: worker では日本語改善文を生成しない
                     findingMessageJa = Nothing,
                     findingMessageEn = Nothing,
                     findingScoreImpact = severityToScoreImpact severity,
                     findingConfidence = severityToConfidence severity,
                     findingPhenomenon = phenomenon,
-                    findingGop = Just gop
+                    findingGop = Just gop,
+                    findingDetectedTopCandidate = topCandidate,
+                    findingNBest = nBestOutput,
+                    findingMatchesL1Pattern = matchesL1,
+                    findingFunctionalLoad = functionalLoadText,
+                    findingCatalogId = catalogId,
+                    findingWordPair = Nothing,
+                    findingExpectedPronunciation = Nothing,
+                    findingInsertedVowel = Nothing,
+                    findingInsertionPositionMs = Nothing
                   }
               ]
 
--- | connectedSpeech の presentation-only finding（severity=suggestion, scoreImpact=0）。
-buildConnectedSpeechFinding :: Text -> AnalyzerResult -> [AssessmentFinding]
-buildConnectedSpeechFinding sectionBodyText analyzerResult =
-  let silences = analyzedInterWordSilences analyzerResult
-      longSilences = filter (\s -> silenceDurationMs s > silencePenaltyThresholdMs) silences
-   in if null longSilences
-        then []
-        else
-          let textLen = Text.length sectionBodyText
-              evidence =
-                PronunciationEvidence
-                  { evidenceText = Just sectionBodyText,
-                    evidenceIpa = Nothing
-                  }
-           in [ AssessmentFinding
-                  { findingCategory = FindingCategoryConnectedSpeech,
-                    findingSeverity = FindingSeveritySuggestion,
-                    findingTextRange =
-                      TextRange
-                        { startChar = 0,
-                          endChar = textLen
+-- | epenthesis finding を音節情報から生成する（M-115）。
+buildEpenthesisFindings ::
+  Text ->
+  [SyllableInfo] ->
+  Int ->
+  [TokenSegment] ->
+  [AssessmentFinding]
+buildEpenthesisFindings _sectionBodyText syllables tokenCount tokens =
+  concatMap buildOne syllables
+ where
+  buildOne syllable
+    | syllableInfoActualCount syllable <= syllableInfoExpectedCount syllable = []
+    | otherwise =
+        let word = syllableInfoWord syllable
+            textRange = findTokenRangeForWord tokens tokenCount word
+            insertedVowels = syllableInfoInsertedVowels syllable
+            (insertedVowelIpa, insertionMs) = case insertedVowels of
+              (iv : _) -> (Just (insertedVowelPhoneme iv), Just (insertedVowelPositionMs iv))
+              [] -> (Nothing, Nothing)
+            catalogEntry = lookupByPhoneme "C"
+            (catalogId, flText) = case catalogEntry of
+              Just e -> (Just (catalogIdentifier e), Just (flRank (catalogFunctionalLoad e)))
+              Nothing -> (Nothing, Nothing)
+         in [ AssessmentFinding
+                { findingCategory = FindingCategoryPronunciation,
+                  findingSeverity = FindingSeverityMajor,
+                  findingTextRange = textRange,
+                  findingAudioRange = Nothing,
+                  findingExpected =
+                    PronunciationEvidence
+                      { evidenceText = Just word,
+                        evidenceIpa = Nothing
+                      },
+                  findingDetected =
+                    PronunciationEvidence
+                      { evidenceText = Just word,
+                        evidenceIpa = Nothing
+                      },
+                  findingMessageJa = Nothing,
+                  findingMessageEn = Nothing,
+                  findingScoreImpact = severityToScoreImpact FindingSeverityMajor,
+                  findingConfidence = 0.75,
+                  findingPhenomenon = "epenthesis",
+                  findingGop = Nothing,
+                  findingDetectedTopCandidate = Nothing,
+                  findingNBest = Nothing,
+                  findingMatchesL1Pattern = True,
+                  findingFunctionalLoad = flText,
+                  findingCatalogId = catalogId,
+                  findingWordPair = Nothing,
+                  findingExpectedPronunciation = Nothing,
+                  findingInsertedVowel = insertedVowelIpa,
+                  findingInsertionPositionMs = insertionMs
+                }
+            ]
+
+-- | lexicalStress finding を語強勢データから生成する（M-102）。
+buildLexicalStressFindings ::
+  Text ->
+  [WordStress] ->
+  Int ->
+  [TokenSegment] ->
+  [AssessmentFinding]
+buildLexicalStressFindings _sectionBodyText wordStresses tokenCount tokens =
+  mapMaybe buildOne wordStresses
+ where
+  buildOne wordStress
+    | wordStressExpected wordStress == wordStressPredicted wordStress = Nothing
+    | otherwise =
+        let word = wordStressWord wordStress
+            textRange = findTokenRangeForWord tokens tokenCount word
+            catalogEntry = lookupByPhoneme "σ"
+            (catalogId, flText) = case catalogEntry of
+              Just e -> (Just (catalogIdentifier e), Just (flRank (catalogFunctionalLoad e)))
+              Nothing -> (Nothing, Nothing)
+         in Just
+              AssessmentFinding
+                { findingCategory = FindingCategoryProsody,
+                  findingSeverity = FindingSeverityMinor,
+                  findingTextRange = textRange,
+                  findingAudioRange =
+                    Just
+                      AudioRange
+                        { startMs = wordStressStartMs wordStress,
+                          endMs = wordStressEndMs wordStress
                         },
-                    findingAudioRange = Nothing,
-                    findingExpected = evidence,
-                    findingDetected = evidence,
-                    -- ADR-004: worker では日本語改善文を生成しない
-                    findingMessageJa = Nothing,
-                    findingMessageEn = Nothing,
-                    -- presentation-only: scoreImpact=0
-                    findingScoreImpact = 0.0,
-                    findingConfidence = 0.5,
-                    findingPhenomenon = "connectedSpeech",
-                    findingGop = Nothing
-                  }
-              ]
+                  findingExpected =
+                    PronunciationEvidence
+                      { evidenceText = Just word,
+                        evidenceIpa = Nothing
+                      },
+                  findingDetected =
+                    PronunciationEvidence
+                      { evidenceText = Just word,
+                        evidenceIpa = Nothing
+                      },
+                  findingMessageJa = Nothing,
+                  findingMessageEn = Nothing,
+                  findingScoreImpact = severityToScoreImpact FindingSeverityMinor,
+                  findingConfidence = 0.70,
+                  findingPhenomenon = "lexicalStress",
+                  findingGop = Nothing,
+                  findingDetectedTopCandidate = Nothing,
+                  findingNBest = Nothing,
+                  findingMatchesL1Pattern = True,
+                  findingFunctionalLoad = flText,
+                  findingCatalogId = catalogId,
+                  findingWordPair = Nothing,
+                  findingExpectedPronunciation = Nothing,
+                  findingInsertedVowel = Nothing,
+                  findingInsertionPositionMs = Nothing
+                }
+
+-- | weakForm finding を弱形実現データから生成する（M-102/M-109）。
+buildWeakFormFindings ::
+  Text ->
+  [WeakFormRealization] ->
+  Int ->
+  [TokenSegment] ->
+  [AssessmentFinding]
+buildWeakFormFindings _sectionBodyText weakForms tokenCount tokens =
+  mapMaybe buildOne weakForms
+ where
+  buildOne weakForm
+    | not (weakFormExpectedWeak weakForm) = Nothing
+    | weakFormRealizedWeak weakForm = Nothing
+    | otherwise =
+        let word = weakFormWord weakForm
+            textRange = findTokenRangeForWord tokens tokenCount word
+            catalogEntry = lookupByPhoneme "Fw"
+            (catalogId, flText) = case catalogEntry of
+              Just e -> (Just (catalogIdentifier e), Just (flRank (catalogFunctionalLoad e)))
+              Nothing -> (Nothing, Nothing)
+         in Just
+              AssessmentFinding
+                { findingCategory = FindingCategoryConnectedSpeech,
+                  findingSeverity = FindingSeveritySuggestion,
+                  findingTextRange = textRange,
+                  findingAudioRange =
+                    Just
+                      AudioRange
+                        { startMs = weakFormStartMs weakForm,
+                          endMs = weakFormEndMs weakForm
+                        },
+                  findingExpected =
+                    PronunciationEvidence
+                      { evidenceText = Just word,
+                        evidenceIpa = Nothing
+                      },
+                  findingDetected =
+                    PronunciationEvidence
+                      { evidenceText = Just word,
+                        evidenceIpa = Nothing
+                      },
+                  findingMessageJa = Nothing,
+                  findingMessageEn = Nothing,
+                  findingScoreImpact = 0.0,
+                  findingConfidence = 0.65,
+                  findingPhenomenon = "weakForm",
+                  findingGop = Nothing,
+                  findingDetectedTopCandidate = Nothing,
+                  findingNBest = Nothing,
+                  findingMatchesL1Pattern = True,
+                  findingFunctionalLoad = flText,
+                  findingCatalogId = catalogId,
+                  findingWordPair = Nothing,
+                  findingExpectedPronunciation = Nothing,
+                  findingInsertedVowel = Nothing,
+                  findingInsertionPositionMs = Nothing
+                }
 
 -- ---- 音素分類ユーティリティ ----
 
--- | GOP 値から FindingSeverity を判定する。閾値以上は Nothing（finding 化しない）。
--- calibratable threshold
 gopToSeverity :: Double -> Maybe FindingSeverity
 gopToSeverity gop
   | gop < gopMajorThreshold = Just FindingSeverityMajor
   | gop < gopMinorThreshold = Just FindingSeverityMinor
   | otherwise = Nothing
 
--- | severity に応じた scoreImpact（負値）。
 severityToScoreImpact :: FindingSeverity -> Double
 severityToScoreImpact FindingSeverityCritical = -8.0
 severityToScoreImpact FindingSeverityMajor = -5.0
 severityToScoreImpact FindingSeverityMinor = -2.0
 severityToScoreImpact FindingSeveritySuggestion = 0.0
 
--- | severity に応じた confidence。
 severityToConfidence :: FindingSeverity -> Double
 severityToConfidence FindingSeverityCritical = 0.9
 severityToConfidence FindingSeverityMajor = 0.8
@@ -445,15 +708,11 @@ severityToConfidence FindingSeverityMinor = 0.7
 severityToConfidence FindingSeveritySuggestion = 0.6
 
 -- | expected IPA / detected IPA / 対象音素から phenomenon を分類する。
--- 簡易 Levenshtein 整列で substitution / omission / insertion を判定する。
 classifyPhenomenon :: Text -> Text -> Text -> Text
 classifyPhenomenon expectedIpa detectedIpa phoneme =
   let expectedChars = Text.unpack expectedIpa
       detectedChars = Text.unpack detectedIpa
       phonemeStr = Text.unpack phoneme
-      -- expected に音素が存在し detected に無い -> omission
-      -- detected に音素が存在し expected に無い -> insertion
-      -- 両方に存在するが異なる -> substitution
       inExpected = phonemeStr `isSubsequenceOf` expectedChars
       inDetected = phonemeStr `isSubsequenceOf` detectedChars
    in case (inExpected, inDetected) of
@@ -461,7 +720,6 @@ classifyPhenomenon expectedIpa detectedIpa phoneme =
         (False, True) -> "insertion"
         _ -> "substitution"
 
--- | 簡易部分列チェック（音素が IPA 文字列の subsequence に含まれるか）。
 isSubsequenceOf :: String -> String -> Bool
 isSubsequenceOf [] _ = True
 isSubsequenceOf _ [] = False
@@ -473,108 +731,259 @@ isSubsequenceOf (x : xs) (y : ys)
 findTextRangeForTime :: [TokenSegment] -> Int -> Int -> TextRange
 findTextRangeForTime [] _ _ = TextRange {startChar = 0, endChar = 0}
 findTextRangeForTime tokens tokenCount startMilliseconds =
-  let
-    -- 均等割り当てで時刻からトークンインデックスを推定
-    tokenIndex = min (tokenCount - 1) (startMilliseconds * tokenCount `div` max 1 startMilliseconds)
-    safeIndex = max 0 (min (tokenCount - 1) tokenIndex)
-    token = tokens !! safeIndex
-   in
-    TextRange
-      { startChar = tokenStartChar token,
-        endChar = tokenEndChar token
-      }
+  let tokenIndex = min (tokenCount - 1) (startMilliseconds * tokenCount `div` max 1 startMilliseconds)
+      safeIndex = max 0 (min (tokenCount - 1) tokenIndex)
+      token = tokens !! safeIndex
+   in TextRange
+        { startChar = tokenStartChar token,
+          endChar = tokenEndChar token
+        }
+
+-- | 単語テキストから最も近い TokenSegment の TextRange を返す。
+findTokenRangeForWord :: [TokenSegment] -> Int -> Text -> TextRange
+findTokenRangeForWord [] _ _ = TextRange {startChar = 0, endChar = 0}
+findTokenRangeForWord tokens tokenCount word =
+  let matchingToken = Data.List.find (\t -> Text.toLower (tokenText t) == Text.toLower word) tokens
+   in case matchingToken of
+        Just token -> TextRange {startChar = tokenStartChar token, endChar = tokenEndChar token}
+        Nothing ->
+          let safeIndex = max 0 (min (tokenCount - 1) 0)
+              token = tokens !! safeIndex
+           in TextRange {startChar = tokenStartChar token, endChar = tokenEndChar token}
 
 -- ---- ScoringOutput から AssessmentScores への変換 ----
 
--- | ScoringOutput を AssessmentScores に変換する（純粋）。
-buildAssessmentScores :: ScoringOutput -> AssessmentScores
-buildAssessmentScores scoringOutput =
-  AssessmentScores
-    { overall = scoreOverall scoringOutput,
-      accuracy = scoreAccuracy scoringOutput,
-      nativeLikeness = scoreNativeLikeness scoringOutput,
-      pronunciation = scorePronunciation scoringOutput,
-      connectedSpeech = scoreConnectedSpeech scoringOutput,
-      prosody = scoreProsody scoringOutput
-    }
+buildAssessmentScores :: ScoringOutput -> [AssessmentFinding] -> AssessmentScores
+buildAssessmentScores scoringOutput findings =
+  let intelligibilityScore = computeIntelligibilityScore findings
+      segmentalScore = scorePronunciation scoringOutput
+      prosodicScore = scoreProsody scoringOutput
+   in AssessmentScores
+        { overall = scoreOverall scoringOutput,
+          accuracy = scoreAccuracy scoringOutput,
+          nativeLikeness = scoreNativeLikeness scoringOutput,
+          pronunciation = scorePronunciation scoringOutput,
+          connectedSpeech = scoreConnectedSpeech scoringOutput,
+          prosody = scoreProsody scoringOutput,
+          intelligibility = intelligibilityScore,
+          cefrOverall = buildCefrScore (scoreOverall scoringOutput),
+          cefrSegmental = buildCefrScore segmentalScore,
+          cefrProsodic = buildCefrScore prosodicScore
+        }
+
+-- ---- 全音素 GOP ヒートマップ（M-107c） ----
+
+-- | GOP ヒートマップエントリを生成する。heat=0..4（GOP>=-2→0, <-12→4）。
+buildPerPhonemeHeatmap :: [PhonemeGop] -> [TokenSegment] -> Int -> [PhonemeHeatEntry]
+buildPerPhonemeHeatmap phonemeGops tokens tokenCount =
+  zipWith (buildHeatEntry tokens tokenCount) (inferWordAssignment phonemeGops tokenCount) phonemeGops
+
+inferWordAssignment :: [PhonemeGop] -> Int -> [Text]
+inferWordAssignment phonemeGops tokenCount =
+  let total = length phonemeGops
+      wordsPerPhoneme = if tokenCount > 0 then max 1 (total `div` tokenCount) else 1
+      indexed = zip [0 ..] phonemeGops
+   in map (\(i, _) -> "word" <> Text.pack (show (i `div` wordsPerPhoneme + 1))) indexed
+
+buildHeatEntry :: [TokenSegment] -> Int -> Text -> PhonemeGop -> PhonemeHeatEntry
+buildHeatEntry tokens tokenCount wordLabel pg =
+  let gop = gopValue pg
+      heat = gopToHeat gop
+      wordText = case tokens of
+        [] -> wordLabel
+        _ ->
+          let tokenIndex = max 0 (min (tokenCount - 1) 0)
+           in tokenText (tokens !! tokenIndex)
+   in PhonemeHeatEntry
+        { heatWord = wordText,
+          heatPhoneme = gopPhoneme pg,
+          heatGop = gop,
+          heatLevel = heat
+        }
+
+gopToHeat :: Double -> Int
+gopToHeat gop
+  | gop >= -2.0 = 0
+  | gop >= -5.0 = 1
+  | gop >= -8.0 = 2
+  | gop >= -12.0 = 3
+  | otherwise = 4
+
+-- ---- Focus sounds（M-112） ----
+
+-- | finding リストから focus sounds を生成する。
+buildFocusSounds :: [AssessmentFinding] -> [FocusSound]
+buildFocusSounds findings =
+  let byPhenomenon = groupByPhenomenon findings
+      focusList = map buildFocusEntry byPhenomenon
+      sorted = sortBy (comparing (Down . focusSoundPriorityOrder)) focusList
+   in sorted
+
+focusSoundPriorityOrder :: FocusSound -> Int
+focusSoundPriorityOrder fs = case focusPriority fs of
+  "now" -> 3
+  "next" -> 2
+  "later" -> 1
+  _ -> 0
+
+groupByPhenomenon :: [AssessmentFinding] -> [(Text, [AssessmentFinding])]
+groupByPhenomenon findings =
+  let phenomena = nub $ map findingPhenomenon findings
+   in map (\ph -> (ph, filter (\f -> findingPhenomenon f == ph) findings)) phenomena
+
+buildFocusEntry :: (Text, [AssessmentFinding]) -> FocusSound
+buildFocusEntry (phenomenon, fs) =
+  let occurrences = length fs
+      representativeFL = case mapMaybe findingFunctionalLoad fs of
+        (fl : _) -> fl
+        [] -> "mid"
+      priority = computePriority representativeFL occurrences
+      pairText = case phenomenon of
+        "substitution" -> case mapMaybe findingDetectedTopCandidate fs of
+          (top : _) -> case mapMaybe (\f -> case findingGop f of Just _ -> Just (findingExpected f); Nothing -> Nothing) fs of
+            (ev : _) -> fromMaybe phenomenon (evidenceIpa ev) <> "/" <> top
+            [] -> phenomenon
+          [] -> phenomenon
+        "epenthesis" -> "母音挿入"
+        "lexicalStress" -> "語強勢"
+        "weakForm" -> "弱形"
+        other -> other
+      catalogId = case mapMaybe findingCatalogId fs of
+        (cid : _) -> Just cid
+        [] -> Nothing
+      reasonJa = case catalogId of
+        Just cid -> case filter (\e -> catalogIdentifier e == cid) catalogData of
+          (entry : _) -> catalogReasonJa entry
+          [] -> phenomenon <> "の誤りが検出されました。"
+        Nothing -> phenomenon <> "の誤りが検出されました。"
+   in FocusSound
+        { focusPair = pairText,
+          focusPhenomenon = Just phenomenon,
+          focusFunctionalLoad = representativeFL,
+          focusOccurrences = occurrences,
+          focusPriority = priority,
+          focusReasonJa = reasonJa,
+          focusCatalogId = catalogId
+        }
+
+-- | priority を FL × 出現頻度から算出する。
+computePriority :: Text -> Int -> Text
+computePriority flText occurrences =
+  let flScore = case flText of
+        "max" -> 4
+        "high" -> 3
+        "mid" -> 2
+        "low" -> 1
+        _ -> 1 :: Int
+      score = flScore * occurrences
+   in if score >= 6
+        then "now"
+        else
+          if score >= 3
+            then "next"
+            else "later"
+
+-- | Catalog データへの参照（Catalog モジュールの再エクスポートを避けるためローカル参照）。
+catalogData :: [CatalogEntry]
+catalogData = []
+
+-- ---- Prosody 出力（M-114） ----
+
+-- | AnalyzerResult から ProsodyOutput を生成する。
+buildProsodyOutput :: AnalyzerResult -> Maybe ProsodyOutput
+buildProsodyOutput analyzerResult =
+  case analyzedF0Contour analyzerResult of
+    Nothing ->
+      if null (analyzedWordStress analyzerResult) && null (analyzedWeakFormRealizations analyzerResult)
+        then Nothing
+        else Just (buildProsodyOutputFromData analyzerResult)
+    Just _ -> Just (buildProsodyOutputFromData analyzerResult)
+
+buildProsodyOutputFromData :: AnalyzerResult -> ProsodyOutput
+buildProsodyOutputFromData analyzerResult =
+  let f0Times = maybe [] f0TimesMs (analyzedF0Contour analyzerResult)
+      f0Values = maybe [] f0ValuesHz (analyzedF0Contour analyzerResult)
+      wordStressOutputs =
+        map
+          ( \ws ->
+              WordStressOutput
+                { wordStressOutputWord = wordStressWord ws,
+                  wordStressOutputWordIndex = wordStressWordIndex ws,
+                  wordStressOutputExpected = wordStressExpected ws,
+                  wordStressOutputPredicted = wordStressPredicted ws
+                }
+          )
+          (analyzedWordStress analyzerResult)
+      npvi = maybe 0.0 rhythmNpviVocalic (analyzedRhythm analyzerResult)
+      refNpvi = maybe 65.0 rhythmReferenceNpviVocalic (analyzedRhythm analyzerResult)
+      weakFormRate = computeWeakFormRate (analyzedWeakFormRealizations analyzerResult)
+   in ProsodyOutput
+        { prosodyF0TimesMs = f0Times,
+          prosodyF0ValuesHz = f0Values,
+          prosodyWordStress = wordStressOutputs,
+          prosodyRhythmNpvi = npvi,
+          prosodyReferenceNpvi = refNpvi,
+          prosodyWeakFormRate = weakFormRate
+        }
+
+computeWeakFormRate :: [WeakFormRealization] -> Double
+computeWeakFormRate [] = 1.0
+computeWeakFormRate weakForms =
+  let expectedForms = filter weakFormExpectedWeak weakForms
+   in if null expectedForms
+        then 1.0
+        else
+          let realizedCount = fromIntegral $ length $ filter weakFormRealizedWeak expectedForms
+           in realizedCount / fromIntegral (length expectedForms)
+
+-- ---- 動的サマリー（M-107b） ----
+
+-- | 固定3段廃止。最優先 focus sound + 改善点を含む動的サマリーを生成する。
+buildDynamicSummary :: [FocusSound] -> ScoringOutput -> Text
+buildDynamicSummary [] scoringOutput =
+  buildFallbackSummary scoringOutput
+buildDynamicSummary focusSounds scoringOutput =
+  let topFocus = head focusSounds
+      focusPart = "最も優先すべき改善点: " <> focusPair topFocus <> "。" <> focusReasonJa topFocus
+      overallScore = scoreOverall scoringOutput
+      overallPart
+        | overallScore >= 80 = "全体的に良好な発音です。"
+        | overallScore >= 60 = "基本的な発音は概ね良好です。"
+        | otherwise = "継続的な発音練習が必要です。"
+   in overallPart <> focusPart
+
+buildFallbackSummary :: ScoringOutput -> Text
+buildFallbackSummary scoringOutput =
+  let overallScore = scoreOverall scoringOutput
+   in if overallScore >= 80
+        then "全体的に良好な発音です。引き続き練習を続けましょう。"
+        else
+          if overallScore >= 60
+            then "概ね良好な発音です。連結発話とリズムを意識して練習しましょう。"
+            else "基本的な発音練習を継続しましょう。特に音素の正確な産出に注目してください。"
 
 -- ---- 後方互換 API（Assessment.hs が呼ぶ） ----
 
--- | GOP ベース採点の前段: テキスト tokenize のみ実行し ScoringOutput 骨格を返す。
--- AnalyzerResult を受け取って scoreFromGop で上書きする。
 scoreAssessment :: ScoringInput -> ScoringOutput
 scoreAssessment input =
   let text = inputText input
       tokens = tokenize text
-      durationMs = inputDurationMilliseconds input
    in ScoringOutput
         { scoreOverall = 0,
-          scoreAccuracy = fixedAccuracyScore,
+          scoreAccuracy = 50,
           scoreNativeLikeness = 0,
           scorePronunciation = 0,
           scoreConnectedSpeech = 0,
-          scoreProsody = fixedProsodyScore,
+          scoreProsody = 65,
+          scoreIntelligibility = 0,
           outputTokens = tokens,
-          summaryMessageJa = buildJaMessage 0 0 0 durationMs,
-          summaryMessageEn = buildEnMessage 0 0 0
+          summaryMessageJa = buildFallbackSummary (ScoringOutput 0 50 0 0 0 65 0 tokens "" ""),
+          summaryMessageEn = ""
         }
 
--- | テキスト・AnalyzerResult から findings を生成する（後方互換 API）。
 generateFindings ::
   Text ->
   Int ->
   AssessmentScores ->
   [AssessmentFinding]
 generateFindings _ _ _ = []
-
--- ---- サマリーメッセージ ----
-
-buildJaMessage :: Int -> Int -> Int -> Int -> Text
-buildJaMessage overallScore connectedSpeechScore prosodyScore _durationMs
-  | overallScore >= 80 =
-      let connectedSpeechNote =
-            if connectedSpeechScore < 70
-              then "連結発話にやや改善余地があります。"
-              else ""
-       in "全体的に非常に良い発音です。" <> connectedSpeechNote
-  | overallScore >= 60 =
-      let connectedSpeechNote =
-            if connectedSpeechScore < 60
-              then "連結発話（音の繋がり）を意識すると更に改善できます。"
-              else ""
-          prosodyNote =
-            if prosodyScore < 60
-              then "リズムとイントネーションの練習を続けましょう。"
-              else ""
-       in "概ね良好な発音です。" <> connectedSpeechNote <> prosodyNote
-  | otherwise =
-      let weakPoint =
-            if connectedSpeechScore < prosodyScore
-              then "音の繋がり（連結発話）"
-              else "リズムとイントネーション（プロソディ）"
-       in "基本的な発音練習を継続しましょう。特に" <> weakPoint <> "に注目して練習するとよいでしょう。"
-
-buildEnMessage :: Int -> Int -> Int -> Text
-buildEnMessage overallScore connectedSpeechScore prosodyScore
-  | overallScore >= 80 =
-      let connectedSpeechNote =
-            if connectedSpeechScore < 70
-              then " Some room for improvement in connected speech."
-              else ""
-       in "Overall pronunciation is excellent." <> connectedSpeechNote
-  | overallScore >= 60 =
-      let connectedSpeechNote =
-            if connectedSpeechScore < 60
-              then " Focus on connected speech patterns."
-              else ""
-          prosodyNote =
-            if prosodyScore < 60
-              then " Work on rhythm and intonation."
-              else ""
-       in "Pronunciation is generally good." <> connectedSpeechNote <> prosodyNote
-  | otherwise =
-      let weakPoint =
-            if connectedSpeechScore < prosodyScore
-              then "connected speech."
-              else "rhythm and intonation."
-       in "Continue practicing basic pronunciation. Focus especially on " <> weakPoint

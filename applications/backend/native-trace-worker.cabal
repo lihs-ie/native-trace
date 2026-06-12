@@ -27,6 +27,7 @@ library
         NativeTrace.Worker.Api
         NativeTrace.Worker.Application
         NativeTrace.Worker.Assessment
+        NativeTrace.Worker.Catalog
         NativeTrace.Worker.Scoring
         NativeTrace.Worker.Types
 
