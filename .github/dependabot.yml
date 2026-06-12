@@ -19,6 +19,25 @@ updates:
           - "patch"
     open-pull-requests-limit: 10
 
+  # python-analyzer (pyproject.toml)
+  - package-ecosystem: "pip"
+    directory: "/applications/python-analyzer"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      timezone: "Asia/Tokyo"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "deps"
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    open-pull-requests-limit: 10
+
   # NOTE: applications/backend (cabal) is not supported by Dependabot — update manually.
 
   - package-ecosystem: "github-actions"
