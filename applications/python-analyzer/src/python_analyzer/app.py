@@ -25,7 +25,6 @@ from python_analyzer.interface.schema import (
 )
 from python_analyzer.usecase.analyze_pronunciation import AnalyzePronunciationUseCase
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -175,6 +174,8 @@ def create_app() -> FastAPI:
                 for schwa in result.schwa_realizations
             ],
             speechRatePhonemePerSecond=result.speech_rate_phoneme_per_second,
+            meanDbfs=result.mean_dbfs,
+            speechDurationSeconds=result.speech_duration_seconds,
         )
 
     return application

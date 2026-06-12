@@ -59,3 +59,6 @@ class RawMeasurementResult:
     schwa_realizations: tuple[SchwaRealization, ...]
     speech_rate_phoneme_per_second: float
     alignment_boundaries: tuple[AlignmentBoundary, ...] = field(default_factory=tuple)
+    # 録音品質計測値。低品質判定は採点層(Haskell worker)が行う。
+    mean_dbfs: float = 0.0
+    speech_duration_seconds: float = 0.0

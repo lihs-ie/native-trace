@@ -10,7 +10,6 @@ from fastapi import APIRouter
 
 from python_analyzer.interface.schema import HealthResponse
 
-
 logger = logging.getLogger(__name__)
 
 router = APIRouter()

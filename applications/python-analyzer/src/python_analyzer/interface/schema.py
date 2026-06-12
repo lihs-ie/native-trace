@@ -50,6 +50,11 @@ class AnalysisResponse(BaseModel):
     interWordSilences: list[InterWordSilenceResponse]
     schwaRealizations: list[SchwaRealizationResponse]
     speechRatePhonemePerSecond: float
+    # 録音品質計測値（採点はしない。低品質判定は Haskell worker が行う）。
+    meanDbfs: float = Field(default=0.0, description="波形 RMS の dBFS 値（0 dBFS = フルスケール）")
+    speechDurationSeconds: float = Field(
+        default=0.0, description="forced_align 非 blank フレームから推定した実音声長（秒）"
+    )
 
 
 class ErrorDetail(BaseModel):
