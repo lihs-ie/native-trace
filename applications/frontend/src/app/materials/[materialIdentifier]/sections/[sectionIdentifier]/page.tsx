@@ -19,6 +19,7 @@ import {
   DetailPanel,
   LiveWave,
   HighlightedWorkspaceText,
+  WorkspaceResultV2,
 } from "@/components/workspace";
 import { computeRmsLevel, rmsLevelToDisplayPercentage } from "@/components/workspace/volume-meter";
 
@@ -349,31 +350,17 @@ export default function WorkspacePage({ params }: PageProps) {
       {/* process ribbon */}
       <Ribbon state={state} />
 
-      {/* body */}
-      <div className="ws-body">
-        {/* main reading area */}
-        <div className="ws-main">
-          {workspace ? (
-            <HighlightedWorkspaceText
-              bodyText={workspace.section.bodyText}
-              findings={activeFindings}
-              selectedFindingIdentifier={selectedFinding?.finding ?? null}
-              onSelect={setSelectedFinding}
-              showMarks={state === "result"}
-            />
-          ) : (
-            <p className="ws-text" />
-          )}
-          <div className="reading-hint">
-            読み上げて録音してください。解析結果はこの本文の上に直接表示されます。
-          </div>
-        </div>
-
-        {/* result rail */}
-        <div className="ws-rail">
-          {/* engine tabs */}
-          <div className="rail-block">
-            {workspace && workspace.resultsByEngine.length > 0 && (
+      {/* body — 結果状態は v2 レイアウト、それ以外は v1 */}
+      {state === "result" && activeResult ? (
+        <>
+          {/* engine tabs (v2 ではタブを ws2 の上部に配置) */}
+          {workspace && workspace.resultsByEngine.length > 0 && (
+            <div
+              style={{
+                padding: "var(--sp-3) var(--sp-6) 0",
+                borderTop: "1px solid var(--border-faint)",
+              }}
+            >
               <EngineTabs
                 engines={workspace.resultsByEngine}
                 activeEngine={activeEngineResult}
@@ -383,41 +370,71 @@ export default function WorkspacePage({ params }: PageProps) {
                 }}
                 onAddEngine={handleAddEngine}
               />
+            </div>
+          )}
+          <WorkspaceResultV2
+            bodyText={workspace!.section.bodyText}
+            engineResult={activeResult}
+            sectionIdentifier={sectionIdentifier}
+          />
+        </>
+      ) : (
+        <div className="ws-body">
+          {/* main reading area */}
+          <div className="ws-main">
+            {workspace ? (
+              <HighlightedWorkspaceText
+                bodyText={workspace.section.bodyText}
+                findings={activeFindings}
+                selectedFindingIdentifier={selectedFinding?.finding ?? null}
+                onSelect={setSelectedFinding}
+                showMarks={false}
+              />
+            ) : (
+              <p className="ws-text" />
             )}
-
-            {/* gauge + score rows */}
-            {activeResult && (
-              <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-                <Gauge overall={activeResult.scores.overall} />
-                <ScoreRows scores={activeResult.scores} />
-              </div>
-            )}
-
-            {/* sevcount */}
-            {activeResult && (
-              <div className="sevcount">
-                {(["critical", "major", "minor", "suggestion"] as const).map((sev) => {
-                  const cssClass = toSeverityClass(sev);
-                  const count = activeResult.counts[sev];
-                  const label = SEVERITY_DISPLAY_LABELS[cssClass];
-                  return (
-                    <span key={sev} className="sevpill">
-                      <span className="dot" style={{ background: `var(--sev-${cssClass})` }} />
-                      {count} {label}
-                    </span>
-                  );
-                })}
-              </div>
-            )}
+            <div className="reading-hint">
+              読み上げて録音してください。解析結果はこの本文の上に直接表示されます。
+            </div>
           </div>
 
-          {/* detail panel */}
-          <div className="rail-block">
-            <div className="rail-h">選択中の指摘</div>
-            <DetailPanel finding={selectedFinding} onClose={() => setSelectedFinding(null)} />
+          {/* result rail (v1 — idle/recording/analyzing/failed 状態のみ) */}
+          <div className="ws-rail">
+            <div className="rail-block">
+              {/* gauge + score rows */}
+              {activeResult && (
+                <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                  <Gauge overall={activeResult.scores.overall} />
+                  <ScoreRows scores={activeResult.scores} />
+                </div>
+              )}
+
+              {/* sevcount */}
+              {activeResult && (
+                <div className="sevcount">
+                  {(["critical", "major", "minor", "suggestion"] as const).map((sev) => {
+                    const cssClass = toSeverityClass(sev);
+                    const count = activeResult.counts[sev];
+                    const label = SEVERITY_DISPLAY_LABELS[cssClass];
+                    return (
+                      <span key={sev} className="sevpill">
+                        <span className="dot" style={{ background: `var(--sev-${cssClass})` }} />
+                        {count} {label}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* detail panel (v1) */}
+            <div className="rail-block">
+              <div className="rail-h">選択中の指摘</div>
+              <DetailPanel finding={selectedFinding} onClose={() => setSelectedFinding(null)} />
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* dock */}
       <div className="ws-dock">

@@ -154,6 +154,51 @@ export type SectionTokenDto = {
   endChar: number;
 };
 
+// ---- v2 DTO 補助型 ----
+
+export type NBestCandidateDto = {
+  phoneme: string;
+  confidence: number;
+};
+
+export type FeedbackLayersDto = {
+  whatJa: string;
+  whyJa: string;
+  howJa: string;
+};
+
+export type PerPhonemeGopDto = {
+  word: string;
+  phoneme: string;
+  gop: number;
+  heat: number;
+};
+
+export type FocusSoundDto = {
+  pair: string;
+  phenomenon: string | null;
+  functionalLoad: string;
+  occurrences: number;
+  priority: string;
+  reasonJa: string;
+  catalogId: string | null;
+};
+
+export type ProsodyDto = {
+  f0Contour: { timesMs: number[]; valuesHz: number[] } | null;
+  wordStress:
+    | { word: string; wordIndex: number; expectedStress: number; predictedStress: number }[]
+    | null;
+  rhythmNpvi: number | null;
+  referenceNpvi: number | null;
+  weakFormRate: number | null;
+};
+
+export type CefrSubscaleDto = {
+  score: number;
+  band: string;
+};
+
 export type EngineFindingDto = {
   finding: string;
   phenomenon: FindingPhenomenon | null;
@@ -168,6 +213,17 @@ export type EngineFindingDto = {
   messageEn: string | null;
   scoreImpact: number;
   confidence: number;
+  // ---- v2 フィールド (M-103/104/108/109/112/115) ----
+  detectedTopCandidate: string | null;
+  nBest: NBestCandidateDto[] | null;
+  matchesL1Pattern: boolean;
+  functionalLoad: string | null;
+  catalogId: string | null;
+  wordPair: { first: string; second: string } | null;
+  expectedPronunciation: string | null;
+  insertedVowel: string | null;
+  feedbackLayers: FeedbackLayersDto | null;
+  dismissed: boolean;
 };
 
 export type EngineResultDto = {
@@ -182,6 +238,11 @@ export type EngineResultDto = {
     pronunciation: number;
     connectedSpeech: number;
     prosody: number;
+    // ---- v2 (M-111): 二段階ゴール + CEFR 3 下位尺度 ----
+    intelligibility: number | null;
+    cefrOverall: CefrSubscaleDto | null;
+    cefrSegmental: CefrSubscaleDto | null;
+    cefrProsodic: CefrSubscaleDto | null;
   };
   counts: {
     critical: number;
@@ -190,6 +251,11 @@ export type EngineResultDto = {
     suggestion: number;
   };
   findings: EngineFindingDto[];
+  // ---- v2 (M-107b/c, M-112, M-114) ----
+  engineSummaryMessageJa: string | null;
+  perPhonemeGop: PerPhonemeGopDto[] | null;
+  focusSounds: FocusSoundDto[] | null;
+  prosody: ProsodyDto | null;
 };
 
 export type WorkspaceDto = {
