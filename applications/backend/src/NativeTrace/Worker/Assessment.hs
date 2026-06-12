@@ -2,7 +2,8 @@
 -- multipart リクエストの検証と解析結果の組み立てを担当する。
 module NativeTrace.Worker.Assessment (
   AssessmentError (..),
-  assessPronunciationRequest,
+  validatePronunciationRequest,
+  buildAssessmentResponseFromGop,
   errorCode,
   errorMessage,
 )
@@ -12,18 +13,26 @@ import Data.ByteString (ByteString)
 import Data.ByteString qualified as ByteString
 import Data.Text (Text)
 import Data.Text qualified as Text
+import NativeTrace.Worker.AnalyzerClient (
+  AnalyzerResult (..),
+  PhonemeGop (..),
+ )
 import NativeTrace.Worker.Scoring (
   ScoringInput (..),
   ScoringOutput (..),
   TokenSegment (..),
-  generateFindings,
+  buildAssessmentScores,
+  checkAudioQuality,
+  generateFindingsFromGop,
   scoreAssessment,
+  scoreFromGop,
  )
 import NativeTrace.Worker.Types (
   AssessmentRequest (..),
   AssessmentResponse (..),
   AssessmentScores (..),
   AssessmentSegment (..),
+  AssessmentStatus (..),
   AssessmentSummary (..),
   AudioMetadata (..),
   AudioRange (..),
@@ -70,8 +79,9 @@ errorMessage (AudioMimeTypeMismatch declared _actual) =
 
 -- ---- Validation ----
 
-validateRequest :: AssessmentRequest -> ByteString -> Maybe Text -> Either AssessmentError ()
-validateRequest request audioBytes audioPart = do
+-- | リクエストの検証のみを行う純粋関数。
+validatePronunciationRequest :: AssessmentRequest -> ByteString -> Maybe Text -> Either AssessmentError ()
+validatePronunciationRequest request audioBytes audioPart = do
   -- sectionBodyText 非空
   if Text.null (sectionBodyText request)
     then Left EmptySectionBodyText
@@ -112,57 +122,80 @@ validateRequest request audioBytes audioPart = do
 
 -- ---- Assembly ----
 
--- | 検証済みリクエストと音声バイト列から AssessmentResponse を組み立てる。
-assessPronunciationRequest ::
+-- | AnalyzerResult から AssessmentResponse を組み立てる（純粋）。
+-- handler で analyzeAudio を呼んだ後にこの関数でレスポンスを構築する。
+-- meanDbfs / speechDurationSeconds が閾値未満なら low_quality として早期返却する。
+buildAssessmentResponseFromGop ::
   AssessmentRequest ->
-  ByteString ->
-  Maybe Text ->
-  Either AssessmentError AssessmentResponse
-assessPronunciationRequest request audioBytes audioPart = do
-  validateRequest request audioBytes audioPart
-  let scoringInput =
-        ScoringInput
-          { inputText = sectionBodyText request,
-            inputByteLength = ByteString.length audioBytes,
-            inputDurationMilliseconds = audioDurationMilliseconds (requestAudio request)
-          }
-  let scoringOutput = scoreAssessment scoringInput
-  let segments = buildSegments request (outputTokens scoringOutput) (audioDurationMilliseconds (requestAudio request))
-  let scores =
-        AssessmentScores
-          { overall = scoreOverall scoringOutput,
-            accuracy = scoreAccuracy scoringOutput,
-            nativeLikeness = scoreNativeLikeness scoringOutput,
-            pronunciation = scorePronunciation scoringOutput,
-            connectedSpeech = scoreConnectedSpeech scoringOutput,
-            prosody = scoreProsody scoringOutput
-          }
-  let summary =
-        AssessmentSummary
-          { messageJa = summaryMessageJa scoringOutput,
-            messageEn = Just (summaryMessageEn scoringOutput)
-          }
-  let meta =
+  AnalyzerResult ->
+  AssessmentResponse
+buildAssessmentResponseFromGop request analyzerResult =
+  let durationMs = audioDurationMilliseconds (requestAudio request)
+      bodyText = sectionBodyText request
+      meanDbfs = analyzedMeanDbfs analyzerResult
+      -- ② 短すぎ判定: 録音総時間（発話エネルギー時間ではなく）を使う。
+      -- analyzedSpeechDurationSeconds は計測値として保持するが判定には使わない。
+      -- ③ 音素検出率: detected/expected のスペース区切りトークン数
+      detectedPhonemeCount = length (Text.words (analyzedDetectedIpa analyzerResult))
+      expectedPhonemeCount = length (Text.words (analyzedExpectedIpa analyzerResult))
+      -- ④ per-phoneme GOP 値リスト
+      gopValues = map gopValue (analyzedPerPhonemeGop analyzerResult)
+      meta =
         WorkerResponseMetadata
           { responseWorkerVersion = "0.1.0",
             responseModelVersion = "model-v1",
             responseRuleSetVersion = "rules-v1",
             responseScoringRubricVersion = "rubric-v1"
           }
-  Right
-    AssessmentResponse
-      { responseAssessmentSchemaVersion = assessmentSchemaVersion request,
-        responseTokenizerVersion = tokenizerVersion request,
-        responseScores = scores,
-        responseSummary = summary,
-        responseFindings =
-          generateFindings
-            (sectionBodyText request)
-            (audioDurationMilliseconds (requestAudio request))
-            scores,
-        responseSegments = segments,
-        responseMetadata = meta
-      }
+      lowQualitySummary =
+        AssessmentSummary
+          { messageJa = "音声品質が不十分です。録音環境を改善して再度お試しください。",
+            messageEn = Just "Audio quality is insufficient. Please improve your recording environment and try again."
+          }
+      zeroScores =
+        AssessmentScores
+          { overall = 0,
+            accuracy = 0,
+            nativeLikeness = 0,
+            pronunciation = 0,
+            connectedSpeech = 0,
+            prosody = 0
+          }
+   in if checkAudioQuality meanDbfs durationMs detectedPhonemeCount expectedPhonemeCount gopValues
+        then
+          AssessmentResponse
+            { responseAssessmentSchemaVersion = assessmentSchemaVersion request,
+              responseTokenizerVersion = tokenizerVersion request,
+              responseStatus = AssessmentStatusLowQuality,
+              responseScores = zeroScores,
+              responseSummary = lowQualitySummary,
+              responseFindings = [],
+              responseSegments = [],
+              responseMetadata = meta
+            }
+        else
+          let
+            -- scoreAssessment でトークン化し、scoreFromGop で GOP スコアを上書きする
+            baseScoringOutput = scoreAssessment (ScoringInput bodyText (ByteString.length "") durationMs)
+            scoringOutput = scoreFromGop analyzerResult baseScoringOutput
+            segments = buildSegments request (outputTokens scoringOutput) durationMs
+            scores = buildAssessmentScores scoringOutput
+            summary =
+              AssessmentSummary
+                { messageJa = summaryMessageJa scoringOutput,
+                  messageEn = Just (summaryMessageEn scoringOutput)
+                }
+           in
+            AssessmentResponse
+              { responseAssessmentSchemaVersion = assessmentSchemaVersion request,
+                responseTokenizerVersion = tokenizerVersion request,
+                responseStatus = AssessmentStatusNormal,
+                responseScores = scores,
+                responseSummary = summary,
+                responseFindings = generateFindingsFromGop bodyText analyzerResult,
+                responseSegments = segments,
+                responseMetadata = meta
+              }
 
 -- | トークンリストから Segment を生成する。
 -- audioRange は duration を均等割り当てする。

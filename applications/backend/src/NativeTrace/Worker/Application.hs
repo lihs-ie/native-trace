@@ -9,12 +9,18 @@ import Data.ByteString.Lazy qualified as LBS
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding (encodeUtf8)
+import NativeTrace.Worker.AnalyzerClient (analyzeAudio)
 import NativeTrace.Worker.Api (WorkerApi, workerApi)
-import NativeTrace.Worker.Assessment (AssessmentError, assessPronunciationRequest)
+import NativeTrace.Worker.Assessment (
+  AssessmentError,
+  buildAssessmentResponseFromGop,
+  validatePronunciationRequest,
+ )
 import NativeTrace.Worker.Assessment qualified as Assessment
 import NativeTrace.Worker.Types (
-  AssessmentRequest,
+  AssessmentRequest (..),
   AssessmentResponse,
+  AudioMetadata (..),
   HealthResponse (..),
   VersionResponse (..),
   WorkerError (..),
@@ -27,6 +33,7 @@ import Servant (
   Server,
   ServerError (..),
   err400,
+  err502,
   serve,
   throwError,
   (:<|>) (..),
@@ -56,9 +63,19 @@ assessPronunciation multipart = do
   metadataBytes <- lookupMetadataBytes multipart
   request <- parseMetadata metadataBytes
   (audioBytes, audioContentType) <- lookupAudioBytes multipart
-  case assessPronunciationRequest request audioBytes (Just audioContentType) of
+  case validatePronunciationRequest request audioBytes (Just audioContentType) of
     Left err -> throwError (toServantError err)
-    Right response -> pure response
+    Right () -> do
+      -- python-analyzer に音声を送って GOP 計測値を取得する（失敗時は throwError で 502）
+      let audio = requestAudio request
+      analyzerResult <-
+        analyzeAudio
+          audioBytes
+          audioContentType
+          (sectionBodyText request)
+          (targetAccent request)
+          (audioDurationMilliseconds audio)
+      pure (buildAssessmentResponseFromGop request analyzerResult)
 
 lookupMetadataBytes :: MultipartData Mem -> Handler ByteString
 lookupMetadataBytes multipart =
@@ -106,6 +123,11 @@ toServantError err =
         { errBody = encode body,
           errHeaders = [(hContentType, "application/json; charset=utf-8")]
         }
+
+-- | analyzer エラー（ServerError）を 502 として上位に伝播する。
+-- analyzeAudio は既に ServerError を返すので、ここでは型合わせのみ行う。
+analyzerErrorToServant :: ServerError -> ServerError
+analyzerErrorToServant _ = err502
 
 badRequest :: Text -> Text -> ServerError
 badRequest code message =

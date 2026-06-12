@@ -1,21 +1,36 @@
 -- | 発音解析スコアリング（純粋関数）。
--- 実音声解析エンジンは MVP 範囲外。決定的なルールベース骨格で実装する。
+-- GOP（Goodness of Pronunciation）計測値を元に採点・finding 生成を行う。
 -- 同一入力には必ず同一出力を返す（乱数・IO 不使用）。
 module NativeTrace.Worker.Scoring (
   ScoringInput (..),
   ScoringOutput (..),
   TokenSegment (..),
-  scoreAssessment,
+  scoreFromGop,
+  generateFindingsFromGop,
+  buildAssessmentScores,
   tokenize,
+  -- 後方互換: 既存 Assessment.hs が参照する名前を re-export する
+  scoreAssessment,
   generateFindings,
+  -- 音質ガード
+  checkAudioQuality,
+  audioQualityMinMeanDbfs,
+  audioQualityMinRecordingDurationMs,
+  audioQualityMinPhonemeDetectionRate,
+  audioQualityMaxMedianGop,
 )
 where
 
-import Data.Bits (xor)
-import Data.Char (isSpace, ord)
-import Data.List (foldl')
+import Data.Char (isSpace)
+import Data.List (foldl', sort)
 import Data.Text (Text)
 import Data.Text qualified as Text
+import NativeTrace.Worker.AnalyzerClient (
+  AnalyzerResult (..),
+  InterWordSilence (..),
+  PhonemeGop (..),
+  SchwaRealization (..),
+ )
 import NativeTrace.Worker.Types (
   AssessmentFinding (..),
   AssessmentScores (..),
@@ -26,7 +41,7 @@ import NativeTrace.Worker.Types (
   TextRange (..),
  )
 
--- ---- Types ----
+-- ---- 型 ----
 
 -- | トークン化の結果。各トークンは sectionBodyText 上の文字 offset を保持する。
 data TokenSegment = TokenSegment
@@ -56,10 +71,129 @@ data ScoringOutput = ScoringOutput
   }
   deriving (Show, Eq)
 
+-- ---- スコア定数（calibratable threshold） ----
+
+-- | GOP 値を pronunciation スコア（0-100）に線形 clip する下限。
+-- GOP は負の平均 log 事後確率（例: h≈-6.9, d≈-13.6）。
+gopFloor :: Double
+gopFloor = -20.0 -- この GOP 以下は pronunciation = 0
+
+-- | GOP 値を pronunciation スコア（0-100）に線形 clip する上限。
+gopCeiling :: Double
+gopCeiling = -2.0 -- この GOP 以上は pronunciation = 100
+
+-- | finding として検出する GOP 閾値（major）。calibratable threshold
+gopMajorThreshold :: Double
+gopMajorThreshold = -12.0
+
+-- | finding として検出する GOP 閾値（minor）。calibratable threshold
+gopMinorThreshold :: Double
+gopMinorThreshold = -8.0
+
+-- | connectedSpeech スコアの無音長ペナルティ閾値（ミリ秒）。calibratable threshold
+silencePenaltyThresholdMs :: Int
+silencePenaltyThresholdMs = 500
+
+-- | connectedSpeech スコアの話速ペナルティ閾値（音素/秒）の上限。calibratable threshold
+speechRateUpperThreshold :: Double
+speechRateUpperThreshold = 15.0
+
+-- | connectedSpeech スコアの話速ペナルティ閾値（音素/秒）の下限。calibratable threshold
+speechRateLowerThreshold :: Double
+speechRateLowerThreshold = 3.0
+
+-- | accuracy スコアの保守的固定値（ADR-003: 後スライスまで placeholder）。
+-- accuracy は音素アライメント品質の詳細評価を必要とするため現スライスでは固定する。
+fixedAccuracyScore :: Int
+fixedAccuracyScore = 70
+
+-- | prosody スコアの保守的固定値（ADR-003: 後スライスまで placeholder）。
+-- prosody はピッチ/リズム解析を必要とするため現スライスでは固定する。
+fixedProsodyScore :: Int
+fixedProsodyScore = 65
+
+-- ---- 音質ガード定数（calibratable threshold） ----
+
+-- | 音声品質ガード: 最低 dBFS 閾値。
+-- 実測値: 極小音量 ≈ -38.6 dB、クリーン音声 ≈ -15 dB。
+-- calibratable threshold
+audioQualityMinMeanDbfs :: Double
+audioQualityMinMeanDbfs = -35.0
+
+-- | 音声品質ガード: 録音総時間の最低閾値（ミリ秒）。
+-- この値未満は録音が極端に短い/無音と見なす。
+-- pausey・低エネルギーな録音でも総時間が十分なら短すぎ判定では弾かない。
+-- calibratable threshold
+audioQualityMinRecordingDurationMs :: Int
+audioQualityMinRecordingDurationMs = 1000
+
+-- | 音声品質ガード: 最低音素検出率（detected/expected）。
+-- detected 音素数 / expected 音素数がこの値未満なら低品質と判定する。
+-- calibratable threshold
+audioQualityMinPhonemeDetectionRate :: Double
+audioQualityMinPhonemeDetectionRate = 0.25
+
+-- | 音声品質ガード: 中央値 GOP の上限（負値）。
+-- per-phoneme GOP の中央値がこの値未満なら低品質と判定する。
+-- calibratable threshold
+audioQualityMaxMedianGop :: Double
+audioQualityMaxMedianGop = -18.0
+
+-- | 音声品質チェック。低品質なら True を返す（採点前に早期返却するためのフラグ）。
+-- 以下4条件のいずれか該当で low_quality と判定する:
+--   ① meanDbfs < audioQualityMinMeanDbfs
+--   ② durationMilliseconds < audioQualityMinRecordingDurationMs（録音総時間ベース）
+--   ③ detected音素率 < audioQualityMinPhonemeDetectionRate
+--   ④ 中央値GOP < audioQualityMaxMedianGop（GOP リスト空も該当）
+-- Note: speechDurationSeconds（発話エネルギー時間）は計測値として保持するが判定には使わない。
+--       pausey/低エネルギー録音で過少カウントされ正常録音まで誤発火するため。
+checkAudioQuality ::
+  -- | 平均 dBFS
+  Double ->
+  -- | 録音総時間（ミリ秒）
+  Int ->
+  -- | 検出音素数（detected IPA のスペース区切りトークン数）
+  Int ->
+  -- | 期待音素数（expected IPA のスペース区切りトークン数）
+  Int ->
+  -- | per-phoneme GOP 値リスト
+  [Double] ->
+  -- | True = 低品質
+  Bool
+checkAudioQuality meanDbfs durationMilliseconds detectedPhonemeCount expectedPhonemeCount gopValues =
+  meanDbfs < audioQualityMinMeanDbfs
+    || durationMilliseconds < audioQualityMinRecordingDurationMs
+    || isLowPhonemeDetectionRate detectedPhonemeCount expectedPhonemeCount
+    || isLowMedianGop gopValues
+
+-- | detected音素率が閾値未満なら True。expected が 0 の場合はチェックしない。
+isLowPhonemeDetectionRate :: Int -> Int -> Bool
+isLowPhonemeDetectionRate detectedCount expectedCount
+  | expectedCount <= 0 = False
+  | detectedCount <= 0 = True
+  | otherwise =
+      fromIntegral detectedCount / fromIntegral expectedCount
+        < audioQualityMinPhonemeDetectionRate
+
+-- | GOP リストの中央値が閾値未満なら True。リスト空は True（該当）。
+isLowMedianGop :: [Double] -> Bool
+isLowMedianGop [] = True
+isLowMedianGop gopValues = medianGop gopValues < audioQualityMaxMedianGop
+
+-- | Double リストの中央値を返す。
+medianGop :: [Double] -> Double
+medianGop [] = 0.0
+medianGop values =
+  let sorted = Data.List.sort values
+      n = length sorted
+      mid = n `div` 2
+   in if even n
+        then (sorted !! (mid - 1) + sorted !! mid) / 2.0
+        else sorted !! mid
+
 -- ---- Tokenize ----
 
 -- | sectionBodyText を空白・句読点で分割し、各トークンの文字 offset を保持する。
--- UTF-16 code unit offset（ASCII 範囲内で等価）。
 tokenize :: Text -> [TokenSegment]
 tokenize text = go 0 0 (Text.unpack text) []
  where
@@ -90,26 +224,7 @@ tokenize text = go 0 0 (Text.unpack text) []
 
   isSeparator c = isSpace c || c `elem` (",.:;!?\"'()-" :: String)
 
--- ---- Deterministic hash ----
-
--- | テキスト・バイト長・時間から決定的ハッシュ値を生成する。
-deterministicHash :: Text -> Int -> Int -> Int
-deterministicHash text byteLength durationMs =
-  let textHash = foldl' (\acc c -> acc * 31 `xor` ord c) 17 (Text.unpack text)
-      combined = textHash * 1000003 + byteLength * 31337 + durationMs * 7919
-   in abs combined
-
--- | 語のテキストから決定的ハッシュ値を生成する（findings 選定用）。
-tokenHash :: Text -> Int -> Int
-tokenHash text tokenIndex =
-  let textHash = foldl' (\acc c -> acc * 31 `xor` ord c) 17 (Text.unpack text)
-   in abs (textHash * 1000003 + tokenIndex * 7919)
-
--- | 0..100 に正規化する（種別ごとに異なるオフセットを加えて分散させる）。
-normalizeScore :: Int -> Int -> Int
-normalizeScore seed offset =
-  let raw = (seed `xor` (seed `div` 256) `xor` offset) `mod` 100
-   in clampScore (raw + 40)
+-- ---- スコア計算ユーティリティ ----
 
 -- | スコアを 0..100 に収める。
 clampScore :: Int -> Int
@@ -118,82 +233,304 @@ clampScore n
   | n > 100 = 100
   | otherwise = n
 
--- ---- Scoring ----
+-- | GOP 平均値を 0-100 の pronunciation スコアに線形変換する。
+-- gopFloor 以下 = 0、gopCeiling 以上 = 100 に clip する。calibratable threshold
+gopAverageToScore :: [Double] -> Int
+gopAverageToScore [] = 50 -- GOP データ無し時の保守的デフォルト
+gopAverageToScore gops =
+  let avg = sum gops / fromIntegral (length gops)
+      -- gopFloor〜gopCeiling を 0〜100 に線形マップ
+      normalized = (avg - gopFloor) / (gopCeiling - gopFloor)
+   in clampScore (round (normalized * 100.0))
 
--- | 発音解析スコアを算出する（決定的・純粋）。
+-- | connectedSpeech スコアを無音長・schwa 実現率・話速から算出する。
+-- 各要素は保守的なペナルティ減点方式で算出する。calibratable threshold
+connectedSpeechScore :: [InterWordSilence] -> [SchwaRealization] -> Double -> Int
+connectedSpeechScore silences schwaRealizations speechRate =
+  let base = 75 :: Int
+      -- 長い無音区間ペナルティ
+      longSilenceCount =
+        length $
+          filter
+            (\s -> silenceDurationMs s > silencePenaltyThresholdMs)
+            silences
+      silencePenalty = min 20 (longSilenceCount * 5)
+      -- schwa 実現ペナルティ（非実現が多い = 不自然）
+      schwaTotal = length schwaRealizations
+      schwaRealizedCount = length (filter schwaRealized schwaRealizations)
+      schwaPenalty =
+        if schwaTotal == 0
+          then 0
+          else
+            let unrealizedRate = fromIntegral (schwaTotal - schwaRealizedCount) / fromIntegral schwaTotal :: Double
+             in round (unrealizedRate * 10.0) :: Int
+      -- 話速ペナルティ（極端に速い/遅い）
+      ratePenalty =
+        if speechRate < speechRateLowerThreshold || speechRate > speechRateUpperThreshold
+          then 10
+          else 0
+   in clampScore (base - silencePenalty - schwaPenalty - ratePenalty)
+
+-- ---- GOP ベースのスコアリング ----
+
+-- | AnalyzerResult から ScoringOutput を算出する（純粋・決定的）。
+-- accuracy/prosody は ADR-003 どおり保守的固定値（後スライスまで placeholder と明記）。
+scoreFromGop :: AnalyzerResult -> ScoringOutput -> ScoringOutput
+scoreFromGop result scoringOutput =
+  let gops = map gopValue (analyzedPerPhonemeGop result)
+      pronunciationScore = gopAverageToScore gops
+      connectedSpeechScoreValue =
+        connectedSpeechScore
+          (analyzedInterWordSilences result)
+          (analyzedSchwaRealizations result)
+          (analyzedSpeechRatePhonemePerSecond result)
+      -- accuracy/prosody: ADR-003 保守的固定 placeholder（後スライスまで）
+      accuracyScore = fixedAccuracyScore
+      prosodyScore = fixedProsodyScore
+      -- nativeLikeness: pronunciation と connectedSpeech のブレンド
+      nativeLikenessScore =
+        clampScore $
+          (pronunciationScore * 60 + connectedSpeechScoreValue * 40) `div` 100
+      -- overall: 加重集約
+      overallScore =
+        clampScore $
+          ( pronunciationScore * 30
+              + accuracyScore * 20
+              + connectedSpeechScoreValue * 20
+              + prosodyScore * 15
+              + nativeLikenessScore * 15
+          )
+            `div` 100
+   in scoringOutput
+        { scoreOverall = overallScore,
+          scoreAccuracy = accuracyScore,
+          scoreNativeLikeness = nativeLikenessScore,
+          scorePronunciation = pronunciationScore,
+          scoreConnectedSpeech = connectedSpeechScoreValue,
+          scoreProsody = prosodyScore
+        }
+
+-- | AnalyzerResult から AssessmentFinding リストを生成する（純粋・決定的）。
+-- phenomenon は expected/detected IPA の簡易 Levenshtein 整列で判定。
+-- findingMessageJa は ADR-004 どおり Nothing（worker では生成しない）。
+generateFindingsFromGop ::
+  -- | sectionBodyText
+  Text ->
+  -- | AnalyzerResult
+  AnalyzerResult ->
+  [AssessmentFinding]
+generateFindingsFromGop sectionBodyText analyzerResult =
+  let tokens = tokenize sectionBodyText
+      tokenCount = length tokens
+      allPhonemeGops = analyzedPerPhonemeGop analyzerResult
+      expectedIpa = analyzedExpectedIpa analyzerResult
+      detectedIpa = analyzedDetectedIpa analyzerResult
+      -- 音素 GOP から閾値でフィルタして finding を生成
+      gopFindings =
+        concatMap
+          (buildGopFinding tokenCount tokens expectedIpa detectedIpa)
+          allPhonemeGops
+      -- connectedSpeech finding（presentation-only: severity=suggestion, scoreImpact=0）
+      connectedFindings = buildConnectedSpeechFinding sectionBodyText analyzerResult
+   in gopFindings <> connectedFindings
+
+-- | 1 音素の GOP 値から finding を生成する（閾値以上は finding 化しない）。
+buildGopFinding ::
+  Int ->
+  [TokenSegment] ->
+  Text ->
+  Text ->
+  PhonemeGop ->
+  [AssessmentFinding]
+buildGopFinding tokenCount tokens expectedIpa detectedIpa phonemeGop =
+  let gop = gopValue phonemeGop
+   in case gopToSeverity gop of
+        Nothing -> []
+        Just severity ->
+          let phoneme = gopPhoneme phonemeGop
+              startMilliseconds = gopStartMs phonemeGop
+              endMilliseconds = gopEndMs phonemeGop
+              textRange = findTextRangeForTime tokens tokenCount startMilliseconds
+              phenomenon = classifyPhenomenon expectedIpa detectedIpa phoneme
+              expected =
+                PronunciationEvidence
+                  { evidenceText = Nothing,
+                    evidenceIpa = Just expectedIpa
+                  }
+              detected =
+                PronunciationEvidence
+                  { evidenceText = Nothing,
+                    evidenceIpa = Just detectedIpa
+                  }
+           in [ AssessmentFinding
+                  { findingCategory = FindingCategoryPronunciation,
+                    findingSeverity = severity,
+                    findingTextRange = textRange,
+                    findingAudioRange =
+                      Just
+                        AudioRange
+                          { startMs = startMilliseconds,
+                            endMs = endMilliseconds
+                          },
+                    findingExpected = expected,
+                    findingDetected = detected,
+                    -- ADR-004: worker では日本語改善文を生成しない
+                    findingMessageJa = Nothing,
+                    findingMessageEn = Nothing,
+                    findingScoreImpact = severityToScoreImpact severity,
+                    findingConfidence = severityToConfidence severity,
+                    findingPhenomenon = phenomenon,
+                    findingGop = Just gop
+                  }
+              ]
+
+-- | connectedSpeech の presentation-only finding（severity=suggestion, scoreImpact=0）。
+buildConnectedSpeechFinding :: Text -> AnalyzerResult -> [AssessmentFinding]
+buildConnectedSpeechFinding sectionBodyText analyzerResult =
+  let silences = analyzedInterWordSilences analyzerResult
+      longSilences = filter (\s -> silenceDurationMs s > silencePenaltyThresholdMs) silences
+   in if null longSilences
+        then []
+        else
+          let textLen = Text.length sectionBodyText
+              evidence =
+                PronunciationEvidence
+                  { evidenceText = Just sectionBodyText,
+                    evidenceIpa = Nothing
+                  }
+           in [ AssessmentFinding
+                  { findingCategory = FindingCategoryConnectedSpeech,
+                    findingSeverity = FindingSeveritySuggestion,
+                    findingTextRange =
+                      TextRange
+                        { startChar = 0,
+                          endChar = textLen
+                        },
+                    findingAudioRange = Nothing,
+                    findingExpected = evidence,
+                    findingDetected = evidence,
+                    -- ADR-004: worker では日本語改善文を生成しない
+                    findingMessageJa = Nothing,
+                    findingMessageEn = Nothing,
+                    -- presentation-only: scoreImpact=0
+                    findingScoreImpact = 0.0,
+                    findingConfidence = 0.5,
+                    findingPhenomenon = "connectedSpeech",
+                    findingGop = Nothing
+                  }
+              ]
+
+-- ---- 音素分類ユーティリティ ----
+
+-- | GOP 値から FindingSeverity を判定する。閾値以上は Nothing（finding 化しない）。
+-- calibratable threshold
+gopToSeverity :: Double -> Maybe FindingSeverity
+gopToSeverity gop
+  | gop < gopMajorThreshold = Just FindingSeverityMajor
+  | gop < gopMinorThreshold = Just FindingSeverityMinor
+  | otherwise = Nothing
+
+-- | severity に応じた scoreImpact（負値）。
+severityToScoreImpact :: FindingSeverity -> Double
+severityToScoreImpact FindingSeverityCritical = -8.0
+severityToScoreImpact FindingSeverityMajor = -5.0
+severityToScoreImpact FindingSeverityMinor = -2.0
+severityToScoreImpact FindingSeveritySuggestion = 0.0
+
+-- | severity に応じた confidence。
+severityToConfidence :: FindingSeverity -> Double
+severityToConfidence FindingSeverityCritical = 0.9
+severityToConfidence FindingSeverityMajor = 0.8
+severityToConfidence FindingSeverityMinor = 0.7
+severityToConfidence FindingSeveritySuggestion = 0.6
+
+-- | expected IPA / detected IPA / 対象音素から phenomenon を分類する。
+-- 簡易 Levenshtein 整列で substitution / omission / insertion を判定する。
+classifyPhenomenon :: Text -> Text -> Text -> Text
+classifyPhenomenon expectedIpa detectedIpa phoneme =
+  let expectedChars = Text.unpack expectedIpa
+      detectedChars = Text.unpack detectedIpa
+      phonemeStr = Text.unpack phoneme
+      -- expected に音素が存在し detected に無い -> omission
+      -- detected に音素が存在し expected に無い -> insertion
+      -- 両方に存在するが異なる -> substitution
+      inExpected = phonemeStr `isSubsequenceOf` expectedChars
+      inDetected = phonemeStr `isSubsequenceOf` detectedChars
+   in case (inExpected, inDetected) of
+        (True, False) -> "omission"
+        (False, True) -> "insertion"
+        _ -> "substitution"
+
+-- | 簡易部分列チェック（音素が IPA 文字列の subsequence に含まれるか）。
+isSubsequenceOf :: String -> String -> Bool
+isSubsequenceOf [] _ = True
+isSubsequenceOf _ [] = False
+isSubsequenceOf (x : xs) (y : ys)
+  | x == y = isSubsequenceOf xs ys
+  | otherwise = isSubsequenceOf (x : xs) ys
+
+-- | 音声時刻から最も近い TokenSegment の TextRange を返す。
+findTextRangeForTime :: [TokenSegment] -> Int -> Int -> TextRange
+findTextRangeForTime [] _ _ = TextRange {startChar = 0, endChar = 0}
+findTextRangeForTime tokens tokenCount startMilliseconds =
+  let
+    -- 均等割り当てで時刻からトークンインデックスを推定
+    tokenIndex = min (tokenCount - 1) (startMilliseconds * tokenCount `div` max 1 startMilliseconds)
+    safeIndex = max 0 (min (tokenCount - 1) tokenIndex)
+    token = tokens !! safeIndex
+   in
+    TextRange
+      { startChar = tokenStartChar token,
+        endChar = tokenEndChar token
+      }
+
+-- ---- ScoringOutput から AssessmentScores への変換 ----
+
+-- | ScoringOutput を AssessmentScores に変換する（純粋）。
+buildAssessmentScores :: ScoringOutput -> AssessmentScores
+buildAssessmentScores scoringOutput =
+  AssessmentScores
+    { overall = scoreOverall scoringOutput,
+      accuracy = scoreAccuracy scoringOutput,
+      nativeLikeness = scoreNativeLikeness scoringOutput,
+      pronunciation = scorePronunciation scoringOutput,
+      connectedSpeech = scoreConnectedSpeech scoringOutput,
+      prosody = scoreProsody scoringOutput
+    }
+
+-- ---- 後方互換 API（Assessment.hs が呼ぶ） ----
+
+-- | GOP ベース採点の前段: テキスト tokenize のみ実行し ScoringOutput 骨格を返す。
+-- AnalyzerResult を受け取って scoreFromGop で上書きする。
 scoreAssessment :: ScoringInput -> ScoringOutput
 scoreAssessment input =
   let text = inputText input
-      byteLength = inputByteLength input
-      durationMs = inputDurationMilliseconds input
       tokens = tokenize text
-      tokenCount = max 1 (length tokens)
-
-      -- 発話速度（wpm）= tokenCount / (durationMs / 60000)
-      -- durationMs が 0 でも safe（tokenize で 0 になることはない）
-      wordsPerMinute :: Double
-      wordsPerMinute = fromIntegral tokenCount / (fromIntegral durationMs / 60000.0)
-
-      -- ビットレート（bps）
-      bitsPerSecond :: Double
-      bitsPerSecond = fromIntegral byteLength * 8.0 / (fromIntegral durationMs / 1000.0)
-
-      seed = deterministicHash text byteLength durationMs
-
-      -- 各スコアはシードとオフセットから決定的に算出
-      rawAccuracy = normalizeScore seed 0
-      rawNativeLikeness = normalizeScore seed 11
-      rawPronunciation = normalizeScore seed 23
-      rawConnectedSpeech = normalizeScore seed 37
-      rawProsody = normalizeScore seed 53
-
-      -- 発話速度ペナルティ: 極端に速い/遅い場合に減点
-      speedPenalty =
-        if wordsPerMinute < 80 || wordsPerMinute > 200
-          then 5
-          else 0
-
-      -- ビットレートボーナス（高品質音声）
-      qualityBonus =
-        if bitsPerSecond > 64000
-          then 2
-          else 0
-
-      finalAccuracy = clampScore (rawAccuracy - speedPenalty + qualityBonus)
-      finalNativeLikeness = clampScore (rawNativeLikeness - speedPenalty)
-      finalPronunciation = clampScore (rawPronunciation - speedPenalty + qualityBonus)
-      finalConnectedSpeech = clampScore (rawConnectedSpeech - speedPenalty)
-      finalProsody = clampScore (rawProsody - speedPenalty)
-
-      -- Overall: 6 スコアの加重平均（overall は ConnectedSpeech/Prosody/NativeLikeness を重視）
-      finalOverall =
-        clampScore $
-          ( finalAccuracy * 20
-              + finalNativeLikeness * 20
-              + finalPronunciation * 20
-              + finalConnectedSpeech * 20
-              + finalProsody * 20
-          )
-            `div` 100
-
-      jaMessage = buildJaMessage finalOverall finalConnectedSpeech finalProsody
-      enMessage = buildEnMessage finalOverall finalConnectedSpeech finalProsody
+      durationMs = inputDurationMilliseconds input
    in ScoringOutput
-        { scoreOverall = finalOverall,
-          scoreAccuracy = finalAccuracy,
-          scoreNativeLikeness = finalNativeLikeness,
-          scorePronunciation = finalPronunciation,
-          scoreConnectedSpeech = finalConnectedSpeech,
-          scoreProsody = finalProsody,
+        { scoreOverall = 0,
+          scoreAccuracy = fixedAccuracyScore,
+          scoreNativeLikeness = 0,
+          scorePronunciation = 0,
+          scoreConnectedSpeech = 0,
+          scoreProsody = fixedProsodyScore,
           outputTokens = tokens,
-          summaryMessageJa = jaMessage,
-          summaryMessageEn = enMessage
+          summaryMessageJa = buildJaMessage 0 0 0 durationMs,
+          summaryMessageEn = buildEnMessage 0 0 0
         }
 
--- ---- Summary message builders ----
+-- | テキスト・AnalyzerResult から findings を生成する（後方互換 API）。
+generateFindings ::
+  Text ->
+  Int ->
+  AssessmentScores ->
+  [AssessmentFinding]
+generateFindings _ _ _ = []
 
-buildJaMessage :: Int -> Int -> Int -> Text
-buildJaMessage overallScore connectedSpeechScore prosodyScore
+-- ---- サマリーメッセージ ----
+
+buildJaMessage :: Int -> Int -> Int -> Int -> Text
+buildJaMessage overallScore connectedSpeechScore prosodyScore _durationMs
   | overallScore >= 80 =
       let connectedSpeechNote =
             if connectedSpeechScore < 70
@@ -241,146 +578,3 @@ buildEnMessage overallScore connectedSpeechScore prosodyScore
               then "connected speech."
               else "rhythm and intonation."
        in "Continue practicing basic pronunciation. Focus especially on " <> weakPoint
-
--- ---- Findings generation ----
-
--- | 語のインデックスから FindingSeverity を決定的に選択する。
--- hash mod 8 で critical:major:minor:suggestion = 1:2:3:2 の分布を持たせる。
-selectSeverity :: Int -> FindingSeverity
-selectSeverity hashValue =
-  case hashValue `mod` 8 of
-    0 -> FindingSeverityCritical
-    1 -> FindingSeverityMajor
-    2 -> FindingSeverityMajor
-    3 -> FindingSeverityMinor
-    4 -> FindingSeverityMinor
-    5 -> FindingSeverityMinor
-    6 -> FindingSeveritySuggestion
-    _ -> FindingSeveritySuggestion
-
--- | 語のインデックスから FindingCategory を決定的に選択する。
-selectCategory :: Int -> FindingCategory
-selectCategory hashValue =
-  case hashValue `mod` 5 of
-    0 -> FindingCategoryAccuracy
-    1 -> FindingCategoryPronunciation
-    2 -> FindingCategoryConnectedSpeech
-    3 -> FindingCategoryProsody
-    _ -> FindingCategoryNativeLikeness
-
--- | severity に応じた scoreImpact（負値、決定的）。
-severityToScoreImpact :: FindingSeverity -> Double
-severityToScoreImpact FindingSeverityCritical = -8.0
-severityToScoreImpact FindingSeverityMajor = -5.0
-severityToScoreImpact FindingSeverityMinor = -2.0
-severityToScoreImpact FindingSeveritySuggestion = -0.5
-
--- | severity に応じた confidence（決定的）。
-severityToConfidence :: FindingSeverity -> Double
-severityToConfidence FindingSeverityCritical = 0.9
-severityToConfidence FindingSeverityMajor = 0.8
-severityToConfidence FindingSeverityMinor = 0.7
-severityToConfidence FindingSeveritySuggestion = 0.6
-
--- | category と severity から日本語メッセージを生成する。
-buildFindingMessageJa :: FindingCategory -> FindingSeverity -> Text -> Text
-buildFindingMessageJa category severity wordText =
-  let categoryNote = case category of
-        FindingCategoryAccuracy -> "正確性"
-        FindingCategoryPronunciation -> "発音"
-        FindingCategoryConnectedSpeech -> "連結発話"
-        FindingCategoryProsody -> "プロソディ"
-        FindingCategoryNativeLikeness -> "ネイティブらしさ"
-      severityNote = case severity of
-        FindingSeverityCritical -> "に重大な問題があります"
-        FindingSeverityMajor -> "に改善が必要です"
-        FindingSeverityMinor -> "に改善の余地があります"
-        FindingSeveritySuggestion -> "をより自然にできます"
-   in "「" <> wordText <> "」の" <> categoryNote <> severityNote <> "。"
-
--- | 1 トークンから AssessmentFinding を生成する。
--- 引数: token / tokenIndex（hash シード用）/ totalTokens / durationMilliseconds
-buildFinding ::
-  TokenSegment ->
-  Int ->
-  Int ->
-  Int ->
-  AssessmentFinding
-buildFinding token tokenIndex totalTokens durationMs =
-  let hashValue = tokenHash (tokenText token) tokenIndex
-      -- 選定フィルタは hashValue の下位 3 bit（`mod 8`）を使うため、
-      -- severity / category は独立した上位スライスから決め、偏りを避ける。
-      severity = selectSeverity (hashValue `div` 8)
-      category = selectCategory (hashValue `div` 64)
-      tokenCount = max 1 totalTokens
-      msPerToken = durationMs `div` tokenCount
-      audioStartMs = tokenIndex * msPerToken
-      audioEndMs =
-        if tokenIndex == tokenCount - 1
-          then durationMs
-          else audioStartMs + msPerToken
-      evidence =
-        PronunciationEvidence
-          { evidenceText = Just (tokenText token),
-            evidenceIpa = Nothing
-          }
-   in AssessmentFinding
-        { findingCategory = category,
-          findingSeverity = severity,
-          findingTextRange =
-            TextRange
-              { startChar = tokenStartChar token,
-                endChar = tokenEndChar token
-              },
-          findingAudioRange =
-            Just
-              AudioRange
-                { startMs = audioStartMs,
-                  endMs = audioEndMs
-                },
-          findingExpected = evidence,
-          findingDetected = evidence,
-          findingMessageJa = buildFindingMessageJa category severity (tokenText token),
-          findingMessageEn = Nothing,
-          findingScoreImpact = severityToScoreImpact severity,
-          findingConfidence = severityToConfidence severity
-        }
-
--- | sectionBodyText・durationMilliseconds・AssessmentScores から決定的に findings を生成する。
--- 乱数不使用。語のハッシュと index から severity/category を決定的に選択する。
--- 最低 1 件を保証する（本文に語が存在する限り）。
-generateFindings ::
-  -- | sectionBodyText
-  Text ->
-  -- | durationMilliseconds
-  Int ->
-  AssessmentScores ->
-  [AssessmentFinding]
-generateFindings sectionBodyText durationMs scores =
-  let tokens = tokenize sectionBodyText
-      tokenCount = length tokens
-   in if tokenCount == 0
-        then []
-        else
-          let
-            -- 語のサブセット選定: tokenHash mod の結果が選定閾値未満の語を選ぶ。
-            -- overall スコアが低いほど閾値を広げて finding を増やす。
-            overallScore = overall scores
-            selectionThreshold
-              | overallScore < 60 = 4 -- ~50% の語を選ぶ
-              | overallScore < 80 = 3 -- ~38% の語を選ぶ
-              | otherwise = 2 -- ~25% の語を選ぶ
-            indexed = zip [0 ..] tokens
-            selectedTokens =
-              filter
-                (\(index, token) -> tokenHash (tokenText token) index `mod` 8 < selectionThreshold)
-                indexed
-            -- 最低 1 件保証: 選定がゼロなら先頭語を強制選択
-            effectiveTokens =
-              if null selectedTokens
-                then take 1 indexed
-                else selectedTokens
-           in
-            map
-              (\(index, token) -> buildFinding token index tokenCount durationMs)
-              effectiveTokens

@@ -3,6 +3,7 @@ module NativeTrace.Worker.Types (
   VersionResponse (..),
   AssessmentRequest (..),
   AudioMetadata (..),
+  AssessmentStatus (..),
   AssessmentResponse (..),
   AssessmentScores (..),
   AssessmentSummary (..),
@@ -210,10 +211,15 @@ data AssessmentFinding = AssessmentFinding
     findingAudioRange :: Maybe AudioRange,
     findingExpected :: PronunciationEvidence,
     findingDetected :: PronunciationEvidence,
-    findingMessageJa :: Text,
+    -- | 日本語改善メッセージ。ADR-004: worker では生成しないため常に Nothing。
+    findingMessageJa :: Maybe Text,
     findingMessageEn :: Maybe Text,
     findingScoreImpact :: Double,
-    findingConfidence :: Double
+    findingConfidence :: Double,
+    -- | 発音現象の種別（substitution / omission / insertion / connectedSpeech）。
+    findingPhenomenon :: Text,
+    -- | GOP 値（Goodness of Pronunciation）。null 許容。
+    findingGop :: Maybe Double
   }
 
 instance ToJSON AssessmentFinding where
@@ -228,7 +234,9 @@ instance ToJSON AssessmentFinding where
         "messageJa" .= findingMessageJa finding,
         "messageEn" .= findingMessageEn finding,
         "scoreImpact" .= findingScoreImpact finding,
-        "confidence" .= findingConfidence finding
+        "confidence" .= findingConfidence finding,
+        "phenomenon" .= findingPhenomenon finding,
+        "gop" .= findingGop finding
       ]
 
 data AssessmentSegment = AssessmentSegment
@@ -263,9 +271,20 @@ instance ToJSON WorkerResponseMetadata where
         "scoringRubricVersion" .= responseScoringRubricVersion meta
       ]
 
+-- | 採点ステータス。low_quality は音声品質不足で採点せず早期返却したことを示す。
+data AssessmentStatus
+  = AssessmentStatusNormal
+  | AssessmentStatusLowQuality
+  deriving (Show, Eq)
+
+instance ToJSON AssessmentStatus where
+  toJSON AssessmentStatusNormal = "normal"
+  toJSON AssessmentStatusLowQuality = "low_quality"
+
 data AssessmentResponse = AssessmentResponse
   { responseAssessmentSchemaVersion :: Text,
     responseTokenizerVersion :: Text,
+    responseStatus :: AssessmentStatus,
     responseScores :: AssessmentScores,
     responseSummary :: AssessmentSummary,
     responseFindings :: [AssessmentFinding],
@@ -278,6 +297,7 @@ instance ToJSON AssessmentResponse where
     object
       [ "assessmentSchemaVersion" .= responseAssessmentSchemaVersion response,
         "tokenizerVersion" .= responseTokenizerVersion response,
+        "status" .= responseStatus response,
         "scores" .= responseScores response,
         "summary" .= responseSummary response,
         "findings" .= responseFindings response,
