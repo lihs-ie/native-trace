@@ -24,9 +24,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: haskell-actions/run-fourmolu@v11
+      - uses: haskell-actions/run-fourmolu@v12
         with:
           pattern: |
             applications/backend/**/*.hs
@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: haskell-actions/hlint-setup@v2
 
@@ -51,7 +51,7 @@ jobs:
       run:
         working-directory: applications/backend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: haskell-actions/setup@v2
         id: setup-haskell
@@ -62,7 +62,7 @@ jobs:
       - name: Generate dependency freeze for cache key
         run: cabal freeze
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: |
             ${{ steps.setup-haskell.outputs.cabal-store }}
