@@ -29,7 +29,6 @@ RUN pip install --no-cache-dir --upgrade pip \
        "uvicorn[standard]>=0.30.0" \
        "pydantic>=2.7.0" \
        "transformers>=4.45.0" \
-       "phonemizer>=3.3.0" \
        "httpx>=0.27.0" \
        "python-multipart>=0.0.9" \
        "soundfile>=0.12.0" \
@@ -37,6 +36,8 @@ RUN pip install --no-cache-dir --upgrade pip \
        "praat-parselmouth>=0.4.3" \
        "kokoro>=0.9.4" \
        "misaki[en]>=0.9.4" \
+       "phonemizer-fork>=3.3.2" \
+       "espeakng-loader>=0.2.4" \
        "pytest>=8.3.0" \
        "pytest-asyncio>=0.24.0" \
        "ruff>=0.7.0" \

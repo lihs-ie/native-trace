@@ -44,9 +44,9 @@ def top_n_phonemes(
 
     Returns:
         確率降順で上位 n 件の NBestCandidate タプル。
-        特殊トークン (<pad>/<unk>/|) は除外。
+        特殊トークン (<pad>/<unk>/<s>/</s>/|) は除外。
     """
-    special_tokens = {"<pad>", "<unk>", "|", ""}
+    special_tokens = {"<pad>", "<unk>", "<s>", "</s>", "|", ""}
     # 確率降順でソートしてインデックスを取得する
     sorted_indices = torch.argsort(avg_probs, descending=True)
     candidates: list[NBestCandidate] = []

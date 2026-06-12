@@ -42,10 +42,20 @@ def extract_f0_contour(
 
     import io
 
+    import numpy as np
+    import soundfile as sf
+
     try:
-        # parselmouth は WAV ファイルパスか Sound オブジェクトを受け付ける
-        # BytesIO から直接読み込む
-        sound = parselmouth.Sound(io.BytesIO(audio_bytes))
+        # parselmouth.Sound は BytesIO を受け付けないため、soundfile でデコードして
+        # numpy 波形 + サンプリングレートから Sound を構築する。
+        samples, decoded_rate = sf.read(io.BytesIO(audio_bytes), dtype="float64")
+        # ステレオはモノにまとめる
+        if samples.ndim > 1:
+            samples = samples.mean(axis=1)
+        sound = parselmouth.Sound(
+            np.asarray(samples, dtype="float64"),
+            sampling_frequency=decoded_rate,
+        )
         pitch = sound.to_pitch()
         times = pitch.xs()  # seconds
         times_ms = tuple(int(round(t * 1000)) for t in times)
