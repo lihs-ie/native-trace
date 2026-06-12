@@ -16,7 +16,7 @@ import torchaudio  # type: ignore[import-untyped]
 from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor  # type: ignore[import-untyped]
 
 from python_analyzer.domain.audio import AudioInput
-from python_analyzer.domain.measurement import PhonemeGopMeasurement
+from python_analyzer.domain.measurement import NBestCandidate, PhonemeGopMeasurement
 from python_analyzer.domain.phoneme import (
     AlignmentBoundary,
     GopScore,
@@ -28,6 +28,40 @@ from python_analyzer.infrastructure.audio_energy import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def top_n_phonemes(
+    avg_probs: "torch.Tensor",
+    vocabulary: list[str],
+    n: int = 3,
+) -> tuple[NBestCandidate, ...]:
+    """softmax 確率テンソルから上位 n 件の IPA 候補を返す純関数。
+
+    Args:
+        avg_probs: shape (V,) の softmax 確率テンソル（1 音素フレーム区間の平均値）。
+        vocabulary: モデルの語彙リスト（wav2vec2 vocab）。
+        n: 取得する上位候補数（デフォルト 3）。
+
+    Returns:
+        確率降順で上位 n 件の NBestCandidate タプル。
+        特殊トークン (<pad>/<unk>/|) は除外。
+    """
+    special_tokens = {"<pad>", "<unk>", "|", ""}
+    # 確率降順でソートしてインデックスを取得する
+    sorted_indices = torch.argsort(avg_probs, descending=True)
+    candidates: list[NBestCandidate] = []
+    for idx in sorted_indices.tolist():
+        if len(candidates) >= n:
+            break
+        if idx >= len(vocabulary):
+            continue
+        token = vocabulary[idx]
+        if token in special_tokens:
+            continue
+        confidence = float(avg_probs[idx].item())
+        candidates.append(NBestCandidate(phoneme=token, confidence=confidence))
+    return tuple(candidates)
+
 
 # Hugging Face モデル ID（ADR-001 で確定）
 _MODEL_ID = "facebook/wav2vec2-lv-60-espeak-cv-ft"
@@ -227,6 +261,7 @@ class Wav2Vec2Aligner:
             token_ids,
             reference_ipa,
             audio.duration_milliseconds,
+            vocabulary,
         )
         return boundaries, gop_measurements
 
@@ -286,10 +321,13 @@ class Wav2Vec2Aligner:
         token_ids: list[int],
         reference_ipa: IpaSequence,
         audio_duration_milliseconds: int,
+        vocabulary: list[str] | None = None,
     ) -> tuple[tuple[AlignmentBoundary, ...], tuple[PhonemeGopMeasurement, ...]]:
         """整列結果から時間境界と GOP を計算する。
 
         GOP(p) = (1/T) * sum(log P(p|x_t)) （ADR-001）
+
+        vocabulary: top_n_phonemes に使用する語彙リスト。None の場合は n_best 算出をスキップ。
         """
         total_frames = len(aligned_token_sequence)
         frame_duration_ms = (
@@ -336,8 +374,18 @@ class Wav2Vec2Aligner:
             if frame_count > 0:
                 gop_frames = log_probs[start_frame : end_frame + 1, token_id]
                 gop_value = float(gop_frames.mean().item())
+                # n_best: 整列フレーム区間の softmax 平均から上位候補を取得する
+                if vocabulary is not None:
+                    frame_log_probs = log_probs[start_frame : end_frame + 1, :]
+                    avg_log_probs = frame_log_probs.mean(dim=0)
+                    # log_probs は log_softmax 値なので exp() で softmax 確率に戻す
+                    avg_softmax_probs = torch.exp(avg_log_probs)
+                    n_best = top_n_phonemes(avg_softmax_probs, vocabulary, n=3)
+                else:
+                    n_best = ()
             else:
                 gop_value = float("-inf")
+                n_best = ()
 
             boundaries.append(
                 AlignmentBoundary(
@@ -352,6 +400,7 @@ class Wav2Vec2Aligner:
                     gop=GopScore(value=gop_value),
                     start_milliseconds=start_ms,
                     end_milliseconds=end_ms,
+                    n_best=n_best,
                 )
             )
 

@@ -1,7 +1,8 @@
 """FastAPI アプリケーション生成 + DI 結線（Composition Root）。
 
-http_handler の router をここで include_router して /health を登録する。
+http_handler の router をここで include_router して /health と /v1/tts を登録する。
 /v1/analyze は Composition Root でインスタンス化された use_case を使って直接定義する。
+C1 全フィールド（NBest/F0/wordStress/rhythm/weakForm/syllables）を AnalysisResponse に組み込む。
 """
 
 import json
@@ -11,6 +12,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 
 from python_analyzer.domain.audio import AudioInput
 from python_analyzer.infrastructure.espeak_g2p import EspeakG2P
+from python_analyzer.infrastructure.prosody_analyzer import ProsodyAnalyzer
 from python_analyzer.infrastructure.speech_rate import SpeechRateAnalyzer
 from python_analyzer.infrastructure.wav2vec2_aligner import Wav2Vec2Aligner
 from python_analyzer.interface import http_handler
@@ -19,9 +21,16 @@ from python_analyzer.interface.schema import (
     AnalysisResponse,
     ErrorDetail,
     ErrorResponse,
+    F0ContourResponse,
+    InsertedVowelResponse,
     InterWordSilenceResponse,
+    NBestCandidateResponse,
     PhonemeGopResponse,
+    RhythmResponse,
     SchwaRealizationResponse,
+    SyllableResponse,
+    WeakFormRealizationResponse,
+    WordStressResponse,
 )
 from python_analyzer.usecase.analyze_pronunciation import AnalyzePronunciationUseCase
 
@@ -32,27 +41,29 @@ def create_app() -> FastAPI:
     """FastAPI アプリを生成して返す。
 
     infrastructure の実インスタンスを生成し、AnalyzePronunciationUseCase に注入する。
-    /health と /v1/analyze の両 endpoint を登録する。
+    /health, /v1/tts, /v1/analyze の全 endpoint を登録する。
     """
     application = FastAPI(
         title="NativeTrace Python Analyzer",
-        description="発音解析 HTTP API: espeak-ng g2p + wav2vec2 phoneme-CTC + 強制整列",
-        version="1.0.0",
+        description="発音解析 HTTP API: espeak-ng g2p + wav2vec2 phoneme-CTC + 強制整列 + 韻律計測",
+        version="2.0.0",
     )
 
     # infrastructure の実インスタンスを生成する
     g2p = EspeakG2P()
     aligner = Wav2Vec2Aligner()
     speech_rate_analyzer = SpeechRateAnalyzer()
+    prosody_analyzer = ProsodyAnalyzer()
 
-    # usecase を生成する
+    # usecase を生成する（ProsodyPort 注入）
     use_case = AnalyzePronunciationUseCase(
         g2p_port=g2p,
         aligner_port=aligner,
         speech_rate_port=speech_rate_analyzer,
+        prosody_port=prosody_analyzer,
     )
 
-    # /health を http_handler router から include する
+    # /health と /v1/tts を http_handler router から include する
     application.include_router(http_handler.router)
 
     # /v1/analyze を Composition Root で直接定義して use_case を注入する
@@ -71,6 +82,7 @@ def create_app() -> FastAPI:
         """発音解析エンドポイント。
 
         multipart/form-data で音声と metadata を受け取り生計測結果を返す。採点はしない。
+        C1 全フィールド（NBest/F0/wordStress/rhythm/weakForm/syllables）を返す。
         """
         # metadata を JSON パースする
         try:
@@ -144,15 +156,39 @@ def create_app() -> FastAPI:
                 ).model_dump(),
             )
 
+        # C1-b F0 輪郭を schema に変換する
+        f0_contour_response: F0ContourResponse | None = None
+        if result.f0_contour is not None:
+            f0_contour_response = F0ContourResponse(
+                timesMs=list(result.f0_contour.times_milliseconds),
+                valuesHz=list(result.f0_contour.values_hz),
+            )
+
+        # C1-d リズムを schema に変換する
+        rhythm_response: RhythmResponse | None = None
+        if result.rhythm is not None:
+            rhythm_response = RhythmResponse(
+                npviVocalic=result.rhythm.npvi_vocalic,
+                referenceNpviVocalic=result.rhythm.reference_npvi_vocalic,
+            )
+
         return AnalysisResponse(
             expectedIpa=result.expected_ipa.to_string(),
             detectedIpa=result.detected_ipa.to_string(),
+            # C1-a nBest を含む perPhonemeGop
             perPhonemeGop=[
                 PhonemeGopResponse(
                     phoneme=gop_m.phoneme.value,
                     gop=gop_m.gop.value,
                     startMs=gop_m.start_milliseconds,
                     endMs=gop_m.end_milliseconds,
+                    nBest=[
+                        NBestCandidateResponse(
+                            phoneme=candidate.phoneme,
+                            confidence=candidate.confidence,
+                        )
+                        for candidate in gop_m.n_best
+                    ],
                 )
                 for gop_m in result.per_phoneme_gop
             ],
@@ -176,6 +212,51 @@ def create_app() -> FastAPI:
             speechRatePhonemePerSecond=result.speech_rate_phoneme_per_second,
             meanDbfs=result.mean_dbfs,
             speechDurationSeconds=result.speech_duration_seconds,
+            # C1-b F0
+            f0Contour=f0_contour_response,
+            # C1-c 語強勢
+            wordStress=[
+                WordStressResponse(
+                    word=ws.word,
+                    wordIndex=ws.word_index,
+                    startMs=ws.start_milliseconds,
+                    endMs=ws.end_milliseconds,
+                    expectedStress=ws.expected_stress,
+                    predictedStress=ws.predicted_stress,
+                )
+                for ws in result.word_stresses
+            ],
+            # C1-d リズム
+            rhythm=rhythm_response,
+            # C1-e 弱形実現
+            weakFormRealizations=[
+                WeakFormRealizationResponse(
+                    word=wf.word,
+                    wordIndex=wf.word_index,
+                    startMs=wf.start_milliseconds,
+                    endMs=wf.end_milliseconds,
+                    expectedWeak=wf.expected_weak,
+                    realizedWeak=wf.realized_weak,
+                )
+                for wf in result.weak_form_realizations
+            ],
+            # C1-f 音節
+            syllables=[
+                SyllableResponse(
+                    word=syl.word,
+                    wordIndex=syl.word_index,
+                    expectedSyllableCount=syl.expected_syllable_count,
+                    actualSyllableCount=syl.actual_syllable_count,
+                    insertedVowels=[
+                        InsertedVowelResponse(
+                            positionMs=iv.position_milliseconds,
+                            vowel=iv.vowel,
+                        )
+                        for iv in syl.inserted_vowels
+                    ],
+                )
+                for syl in result.syllables
+            ],
         )
 
     return application
