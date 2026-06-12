@@ -5,55 +5,70 @@
 強制は hook / CI / reviewer が担い、この文書は意図共有に徹する。正本: `~/.claude/docs/agent-policy.md`。
 
 ## このリポジトリの構成 (Repo layout)
-- pnpm モノレポ。
+- pnpm モノレポ + 3 言語サービス。
 - `applications/frontend/` — Next.js (App Router) UI / Route Handlers / ジョブ実行器 / SQLite+Drizzle (オニオン)。
 - `applications/backend/` — Haskell (Servant) 発音解析 worker (同期 HTTP API, port 8787)。
-- `docs/` — 要件〜DB 設計の設計書一式 (実装の正)。
+- `applications/python-analyzer/` — Python (FastAPI) GOP 発音誤り検出 analyzer (HTTP API, port 8788, オニオン)。
+- `docs/` — 要件〜DB 設計の設計書一式 (実装の正)。設計判断は `adr/`。
 - `.ast-grep/rules/` — 静的検査ルール (`sgconfig.yml` から参照)。
+- `rubric/` — 配線/仕様レビュー rubric (core + 検出言語 pack: haskell / nextjs / python)。
 
 ## Build / Test / Lint
 - frontend: `pnpm build` / `pnpm lint` / `pnpm typecheck` / `pnpm test` / `pnpm format` / `pnpm test:e2e`
 - backend (`applications/backend/`): `cabal build all` / `cabal test all` / `fourmolu --mode check src app test` / `hlint src app test`
+- python-analyzer (`applications/python-analyzer/`): `ruff check src/ test/` / `ruff format --check src/ test/` / `pyright src/` / `PYTHONPATH=src pytest test/`
 - 適応度関数: `pnpm fitness` (ast-grep scan + eslint 依存方向)
-- agent-policy gate: `bash scripts/verify-no-prod-doubles.sh` / `verify-test-bypass.sh` / `verify-wiring.sh` / `verify-allowlist-expiry.sh`
+- agent-policy gate: `bash scripts/verify-no-prod-doubles.sh` / `verify-test-bypass.sh` / `verify-wiring.sh` / `verify-no-stub-placeholder.sh` / `verify-allowlist-expiry.sh`
+
+## 仕様 (Spec layer)
+- 実装前に要求を `docs/specs/<feature>.md` に正規化する (Must / Should / 受入条件 / Non-goals / risk)。
+- **設計の正は `docs/` (01-requirements…06-research)**。per-feature の Must / 受入はそこから抽出して `docs/specs/` に落とす。
+- 人間との認識合わせは `/grill-me`、正規化は spec-curator が行う。Must は機械検証可能な形にする。
 
 ## Non-negotiable rules (禁止事項)
 - 本番コードに **mock/stub/fake/dummy/spy** を導入しない。テストダブルは次のパスのみ:
-  `applications/frontend/src/test/`, `**/*.test.ts(x)`, `applications/backend/test/`。
-- 本番経路に **test-only bypass** (`process.env.NODE_ENV === 'test'`, Haskell の `isTestEnv` 分岐等) を入れない。環境差は config 層に閉じ込める。
+  `applications/frontend/src/test/`, `**/*.test.ts(x)`, `applications/backend/test/`, `applications/python-analyzer/test/`。
+- 本番経路に **test-only bypass** (`process.env.NODE_ENV === 'test'`, Haskell の `isTestEnv` 分岐, Python の env 分岐等) を入れない。環境差は config 層に閉じ込める。
+- placeholder stub (`throwError err501` / `notImplemented` / `raise NotImplementedError` / 本体 `...`・`pass` のみ等) を本番に残さない。
 - 例外は `ci/allowlist.yml` に **owner / reason / expires_at** 付きで登録する (無期限禁止・期限切れは CI fail)。
-- 指定スコープ外を変更しない。オニオンの依存方向・命名規約を尊重する (既存 ast-grep / eslint ルール)。
+- spec の Non-goals / 指定スコープ外を変更しない。オニオンの依存方向・命名規約を尊重する (既存 ast-grep / eslint ルール)。
 
-## Done when (完了条件)
-- 要求挙動が **real public entrypoint から到達可能** である。
+## Done when (完了条件) — 二段門
+- 要求挙動が **real public entrypoint から到達可能** で、**観測可能挙動を実行 assert** した。
   - backend: `WorkerApi` 型 (Api.hs) に endpoint があり、`Application.hs` の Server に handler が結線され、`Main.hs` 経由で起動して到達する。
+  - python-analyzer: `interface/http_handler.py` の `APIRouter` が `app.py` の FastAPI Composition Root で `include_router` され、起動して当該 path に到達する。
   - frontend: App Router のファイル (`src/app/**/{page,route,layout}.tsx`) として配置され、UI/Route から到達する。
 - build / lint / typecheck / unit / contract が通る。
-- 必要な配線更新が存在する (下記 Wiring points)。
-- 完了報告に 実行コマンド・artifact・wiring map を含める。
+- 必要な配線更新が存在する (構造配線 + データフロー配線。結線点は下記)。
+- **① 構造ゲート** (Stop hook `scripts/agent-evidence-gate.sh`): 証跡が非空で揃う。
+- **② 意味ゲート** (done-evaluator agent): spec の Must × evidence を fresh context で照合し done。
 
 ### このリポジトリの結線点 (Wiring points)
 - **backend (Servant)**: `Api.hs` の `WorkerApi` 型に route を足したら `Application.hs` の Server に handler を結線する (型↔handler は compile-time 保証だが、早期シグナルとして `wiring_manifest.yml` でも検査)。新規モジュールは cabal `exposed-modules` に登録 (未登録は cabal build が落ちる)。
+- **python-analyzer (FastAPI)**: `interface/http_handler.py` の `APIRouter` を `app.py` の Composition Root で `include_router` する (定義だけで include 漏れは未配線)。worker→analyzer は `AnalyzerClient.hs` の HTTP 依存で、`ANALYZER_URL` を `compose.yaml` に配線する。
 - **frontend (Next.js App Router)**: `src/app/**` のファイル配置自体がルーティング登録。server action / feature module は参照元 component との結線を手で確認する。
 機械チェックは `wiring_manifest.yml` + `scripts/verify-wiring.sh`。
 
 ## Evidence required (完了報告の証跡 → .agent-evidence/)
 - changed files / public entrypoint(s) exercised / runtime commands (`commands.txt`)
-- artifact paths / `wiring-map.json` / remaining risks
-- `/agent-dev` 実行中は Stop hook (`scripts/agent-evidence-gate.sh`) が上記の提出を強制する。
+- artifact paths / `wiring-map.json` / spec 参照 / remaining risks
+- `/proven-done` 実行中は Stop hook (`scripts/agent-evidence-gate.sh`) が上記の提出を強制する。
 
-## Review guidelines
+## Review guidelines (rubric)
+- 判定は `rubric/core/wiring.md` (配線) / `rubric/core/spec.md` (仕様) と、検出言語の `rubric/packs/{haskell,nextjs,python}.md` に沿う。
 - 配線漏れ・未結線は **P0/P1**。境界跨ぎ変更で unit test のみを根拠にした done は却下。
-- allowlist 外の本番 test double は無条件却下。
-- 指摘は具体的コードパス/artifact に紐付ける。証跡不十分なら PASS でなく FAIL。
+- allowlist 外の本番 test double は無条件却下。「成功 toast」は証拠にしない (reload / read-back まで確認)。
+- 指摘は具体的コードパス/artifact/Must 番号に紐付ける。証跡不十分なら PASS でなく FAIL。
 - レビューは 2 周まで。残れば人間にエスカレーション。
-- 次に触れたら reviewer を最上位に昇格: `DI`/`routing`/`auth`/`config`/`migration`/`schema`/`public export`/`background job`/`event subscription`。
+- 次に触れたら reviewer/verifier を最深ティアに昇格: `DI`/`routing`/`auth`/`config`/`migration`/`schema`/`public export`/`background job`/`event subscription`。
 
 ## Smoke (v1: 宣言のみ)
 - backend: `docker compose up -d worker && curl -fsS localhost:8787/health` が 200。
+- python-analyzer: `docker compose up -d analyzer && curl -fsS localhost:8788/health` が 200。
 - frontend: `pnpm build` 成功 + 起動して主要ルート 1 本が描画。
 - v1 では宣言のみ。CI (`pr-gate.yml`) は宣言を log し実行は follow-up で有効化する。
 
 ## エージェント開発フロー
-`/agent-dev <task>` で Planner→Explorer→Implementer→決定論ゲート→Static→Integration→Final を駆動できる。
-ガード一式が無い repo では先に `agent-policy-kit` skill で scaffold する。
+- `/proven-done <task>` で spec-curator→topology-mapper→implementer→決定論ゲート→static-verifier→runtime-verifier→spec-grader→done-evaluator (二段門) を駆動できる (2 周ループ→人間エスカレーション)。
+- `/self-improve` で失敗事例を eval/rule に昇格する外側ループを回す (incidents → evals / rules/promoted)。
+- ハーネス一式が無い repo では先に `agent-policy-kit` skill で scaffold する。

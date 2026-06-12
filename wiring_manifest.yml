@@ -30,3 +30,11 @@ rules:
       - "wiring_manifest.yml"
     reason: "python-analyzer の変更は compose.yaml または wiring_manifest.yml も共変更して配線を明示する"
     smoke: "docker compose up -d analyzer && curl -fsS localhost:8788/health"
+
+  - id: worker-analyzer-http-edge
+    when: "applications/backend/src/NativeTrace/Worker/AnalyzerClient.hs"
+    require_one_of:
+      - "compose.yaml"
+      - "wiring_manifest.yml"
+    reason: "AnalyzerClient.hs は worker→python-analyzer の HTTP 依存。ANALYZER_URL の配線を compose.yaml に明示する"
+    smoke: "docker compose up -d analyzer worker && curl -fsS localhost:8787/health && curl -fsS localhost:8788/health"

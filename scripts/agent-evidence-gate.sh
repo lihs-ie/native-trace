@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # agent-policy: Stop hook 証跡完了ゲート。
-# agent-dev 実行中マーカー (.agent-evidence/.active) がある時だけ発火し、
+# proven-done 実行中マーカー (.agent-evidence/.active) がある時だけ発火し、
 # 完了報告に必要な証跡が揃っていなければ exit 2 で停止をブロックする。
 # マーカーが無い通常セッションでは完全な no-op (他作業を妨げない)。
 set -uo pipefail
@@ -24,14 +24,14 @@ done
 if [ -n "$missing" ]; then
   {
     echo "完了報告をブロックしました (agent-policy 証跡ゲート)。"
-    echo "agent-dev 実行中ですが、以下の証跡が未提出/空です:${missing}"
+    echo "proven-done 実行中ですが、以下の証跡が未提出/空です:${missing}"
     echo ""
     echo "agent-policy 正本 §3 に従い、.agent-evidence/ に次を用意してから完了してください:"
     echo "  - completion-report.md (changed files / entrypoints / commands / artifacts / wiring map / risks)"
     echo "  - commands.txt         (実行した build/test/lint コマンドと結果)"
     echo "  - wiring-map.json      (変更シンボルと結線点の対応)"
     echo ""
-    echo "agent-dev を実行していないのにこれが出る場合は、古いマーカーが残っています。"
+    echo "proven-done を実行していないのにこれが出る場合は、古いマーカーが残っています。"
     echo "次で解除してください: rm '$marker'"
   } >&2
   exit 2

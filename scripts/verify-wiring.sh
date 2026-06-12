@@ -93,6 +93,7 @@ flush_rule() {
     [ -n "$smoke" ] && violations="${violations}    smoke (declared): $smoke
 "
   fi
+  return 0   # flush_rule の末尾が [ -n "$smoke" ] (smoke 無しで status 1) で終わると set -e が落ちるのを防ぐ
 }
 
 while IFS=$'\t' read -r tag v; do

@@ -8,4 +8,9 @@
 #     owner: "@lihs-ie"
 #     reason: "protoc 生成コードに stub 命名が含まれるため"
 #     expires_at: "2026-09-30"
-entries: []
+entries:
+  - rule: no-prod-doubles
+    path: "applications/frontend/src/app/page.test.tsx"
+    owner: "@lihs-ie"
+    reason: "page.tsx の client fetch をテストするためのモック。テストファイル専用で本番パスへの混入なし。"
+    expires_at: "2027-06-30"
