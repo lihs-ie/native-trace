@@ -858,3 +858,27 @@ summary.fold-head { list-style: none; } summary.fold-head::-webkit-details-marke
 .llm-toggle .tg::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--text-tertiary); transition: all .15s; }
 .llm-toggle .tg.is-on { background: var(--accent-soft); border-color: var(--accent-line); }
 .llm-toggle .tg.is-on::after { left: 16px; background: var(--accent-text); }
+
+/* ============================================================
+   workspace-v2 画面レイアウト (screens/workspace-v2.html の <style> 由来) — M-DS/M-WS
+   ============================================================ */
+.hl-ico { font-family: var(--font-mono); font-size: 0.6em; vertical-align: super; opacity: 0.85; margin-left: 1px; }
+.passage { line-height: 1.9; color: var(--text-secondary); }
+.ws2 { display: grid; grid-template-columns: 1fr 332px; min-height: 640px; }
+@media (max-width: 1020px) { .ws2 { grid-template-columns: 1fr; } }
+.ws2-main { padding: var(--sp-6) var(--sp-8); min-width: 0; }
+.ws2-rail { border-left: 1px solid var(--border-faint); background: var(--bg-sunken); padding: var(--sp-5); }
+.rail-h { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-faint);
+  text-transform: uppercase; letter-spacing: var(--tracking-caps); margin-bottom: 12px; }
+.rail-block { margin-bottom: var(--sp-5); padding-bottom: var(--sp-5); border-bottom: 1px solid var(--border-faint); }
+.rail-block:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+.eng-summary { display: flex; gap: 10px; align-items: flex-start; background: var(--surface-1); border: 1px solid var(--border-faint);
+  border-radius: var(--r-md); padding: 12px 14px; font-family: var(--font-jp); font-size: var(--text-xs);
+  color: var(--text-secondary); line-height: 1.7; margin-bottom: var(--sp-5); }
+.view-toggle { display: flex; gap: 4px; margin-bottom: var(--sp-4); }
+.mini-axis { display: flex; flex-direction: column; gap: 10px; }
+.mini-axis .ma { display: grid; grid-template-columns: 86px 1fr 34px; gap: 10px; align-items: center; }
+.mini-axis .ma .k { font-size: var(--text-xs); color: var(--text-tertiary); }
+.mini-axis .ma .n { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--text-secondary); text-align: right; }
+.ws2-main .panel { max-width: none; margin-top: var(--sp-6); }
+.gop-strip { margin-top: var(--sp-5); padding-top: var(--sp-5); border-top: 1px solid var(--border-faint); }

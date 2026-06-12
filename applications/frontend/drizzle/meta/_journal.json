@@ -8,6 +8,13 @@
       "when": 1781102844773,
       "tag": "0000_bouncy_giant_girl",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1781271024639,
+      "tag": "0001_daffy_dragon_lord",
+      "breakpoints": true
     }
   ]
 }

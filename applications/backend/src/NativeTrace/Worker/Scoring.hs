@@ -48,6 +48,7 @@ import NativeTrace.Worker.AnalyzerClient (
 import NativeTrace.Worker.Catalog (
   CatalogEntry (..),
   FunctionalLoad (..),
+  catalog,
   flRank,
   flWeight,
   lookupByConfusion,
@@ -883,9 +884,9 @@ computePriority flText occurrences =
             then "next"
             else "later"
 
--- | Catalog データへの参照（Catalog モジュールの再エクスポートを避けるためローカル参照）。
+-- | Catalog データへの参照（M-112: focusSounds の reasonJa をカタログ由来にする）。
 catalogData :: [CatalogEntry]
-catalogData = []
+catalogData = catalog
 
 -- ---- Prosody 出力（M-114） ----
 

@@ -4,6 +4,7 @@
 module NativeTrace.Worker.Catalog (
   FunctionalLoad (..),
   CatalogEntry (..),
+  catalog,
   lookupByPhoneme,
   lookupByConfusion,
   flWeight,

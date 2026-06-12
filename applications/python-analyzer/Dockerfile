@@ -34,6 +34,9 @@ RUN pip install --no-cache-dir --upgrade pip \
        "python-multipart>=0.0.9" \
        "soundfile>=0.12.0" \
        "numpy>=1.24.0" \
+       "praat-parselmouth>=0.4.3" \
+       "kokoro>=0.9.4" \
+       "misaki[en]>=0.9.4" \
        "pytest>=8.3.0" \
        "pytest-asyncio>=0.24.0" \
        "ruff>=0.7.0" \
