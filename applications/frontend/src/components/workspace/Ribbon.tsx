@@ -1,6 +1,6 @@
 "use client";
 
-type WorkspaceState = "idle" | "recording" | "analyzing" | "result";
+type WorkspaceState = "idle" | "recording" | "analyzing" | "result" | "failed" | "low_quality";
 
 type RibbonProps = {
   state: WorkspaceState;
@@ -11,6 +11,8 @@ const STEP_INDEX: Record<WorkspaceState, number> = {
   recording: 0,
   analyzing: 1,
   result: 2,
+  failed: 1,
+  low_quality: 1,
 };
 
 const steps = [

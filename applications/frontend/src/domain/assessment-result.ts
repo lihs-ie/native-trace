@@ -39,6 +39,22 @@ export const createConfidence0To1 = (value: number): Result<Confidence0To1, Doma
 export const createTokenizerVersion = (value: string): TokenizerVersion | null =>
   value.trim().length > 0 ? (value as TokenizerVersion) : null;
 
+export const FindingPhenomenon = {
+  SUBSTITUTION: "substitution",
+  OMISSION: "omission",
+  INSERTION: "insertion",
+  CONNECTED_SPEECH: "connectedSpeech",
+  WEAK_FORM: "weakForm",
+  LINKING: "linking",
+  FLAP: "flap",
+  ASSIMILATION: "assimilation",
+  REDUCTION: "reduction",
+} as const;
+export type FindingPhenomenon = (typeof FindingPhenomenon)[keyof typeof FindingPhenomenon];
+
+export const isValidFindingPhenomenon = (value: string): value is FindingPhenomenon =>
+  Object.values(FindingPhenomenon).includes(value as FindingPhenomenon);
+
 export const FindingCategory = {
   ACCURACY: "accuracy",
   PRONUNCIATION: "pronunciation",
@@ -88,6 +104,8 @@ export type PronunciationEvidence = Readonly<{
 
 export type AssessmentFinding = Readonly<{
   identifier: AssessmentFindingIdentifier;
+  phenomenon: FindingPhenomenon | null;
+  gop: number | null;
   category: FindingCategory;
   severity: FindingSeverity;
   textRange: TextRange;

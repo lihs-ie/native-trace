@@ -105,6 +105,7 @@ const makeDraft = (): AssessmentResultDraft => ({
     enabled: true,
     configuration: {},
   },
+  status: "normal",
   scores: {
     overall: 80,
     accuracy: 80,
@@ -228,6 +229,7 @@ const makeDependencies = (
   entropyProvider: makeEntropyProvider(),
   clock: makeClock(),
   logger: makeLogger(),
+  improvementMessageGenerator: { generate: () => "テスト用改善メッセージ" },
   ...overrides,
 });
 
@@ -401,5 +403,154 @@ describe("runAssessmentJob", () => {
     const output = result._unsafeUnwrap();
     expect(output.job?.state).toBe("failed");
     expect(output.retryScheduled).toBe(false);
+  });
+
+  // Done When (c): OSS Worker fixture(phenomenon="omission",gop=-12.164,messageJa=null) を通して
+  // domain finding の phenomenon="omission"/gop=-12.164/messageJa が非null(RuleBased生成) になること
+  it("fills messageJa via RuleBased generator when finding.messageJa is null, preserves phenomenon and gop", async () => {
+    ulidCounter = 0;
+
+    const ossWorkerDraft: AssessmentResultDraft = {
+      ...makeDraft(),
+      engine: {
+        type: "oss_worker" as const,
+        identifier: "oss-worker-1" as never,
+        displayName: "OSS Worker" as never,
+        workerVersion: "1.0.0",
+        modelName: "v1",
+        rulesetVersion: "v1",
+        enabled: true,
+        configuration: {},
+      },
+      findings: [
+        {
+          phenomenon: "omission",
+          gop: -12.164,
+          category: "accuracy" as const,
+          severity: "major" as const,
+          textRange: { startChar: 0, endChar: 11 },
+          audioRange: null,
+          expected: { text: null, ipa: "h ə l oʊ w ɜː l d" },
+          detected: { text: null, ipa: "f ʌ n ɔ w ɜː l d" },
+          messageJa: null,
+          messageEn: null,
+          scoreImpact: -5,
+          confidence: 0.9,
+        },
+      ],
+    };
+
+    const generatedMessage = "「h ə l oʊ w ɜː l d」の音が抜けています";
+    const deps = makeDependencies({
+      engineRegistry: {
+        find: () => ok({ assess: () => okAsync(ossWorkerDraft) }),
+      },
+      improvementMessageGenerator: {
+        generate: (input) => {
+          if (input.phenomenon === "omission") {
+            return generatedMessage;
+          }
+          return "フォールバックメッセージ";
+        },
+      },
+    });
+    const execute = createRunAssessmentJob(deps);
+
+    const result = await execute({ leaseOwner: "runner-1", leaseDurationSeconds: 60 });
+
+    expect(result.isOk()).toBe(true);
+    const output = result._unsafeUnwrap();
+    expect(output.job?.state).toBe("succeeded");
+    expect(output.result).not.toBeNull();
+
+    // events に AssessmentResultCreated が含まれ、その findings を検証する
+    const resultCreatedEvent = output.events.find((e) => e.type === "assessmentResultCreated");
+    expect(resultCreatedEvent).toBeDefined();
+    if (resultCreatedEvent?.type === "assessmentResultCreated") {
+      const domainFinding = resultCreatedEvent.assessmentResult.findings[0];
+      expect(domainFinding).toBeDefined();
+      expect(domainFinding?.phenomenon).toBe("omission");
+      expect(domainFinding?.gop).toBeCloseTo(-12.164);
+      expect(domainFinding?.messageJa).toBe(generatedMessage);
+      expect(domainFinding?.messageJa.length).toBeGreaterThan(0);
+    }
+  });
+
+  // Done When (c): messageJa が非null の場合はそのまま使われ、generator を呼ばないこと
+  // low_quality パス: draft.status === "low_quality" のとき採点なし・nonRetryable 失敗になること
+  it("fails nonRetryably with errorCode=low_quality_audio when draft.status is low_quality", async () => {
+    ulidCounter = 0;
+
+    const lowQualityDraft: AssessmentResultDraft = {
+      ...makeDraft(),
+      status: "low_quality",
+    };
+    const deps = makeDependencies({
+      engineRegistry: {
+        find: () => ok({ assess: () => okAsync(lowQualityDraft) }),
+      },
+    });
+    const execute = createRunAssessmentJob(deps);
+
+    const result = await execute({ leaseOwner: "runner-1", leaseDurationSeconds: 60 });
+
+    expect(result.isOk()).toBe(true);
+    const output = result._unsafeUnwrap();
+    expect(output.job?.state).toBe("failed");
+    expect(output.retryScheduled).toBe(false);
+    // AssessmentResult は保存されない
+    expect(output.result).toBeNull();
+  });
+
+  it("keeps existing messageJa when finding.messageJa is non-null, does not call generator", async () => {
+    ulidCounter = 0;
+
+    const existingMessage = "既存の改善メッセージ";
+    let generatorCallCount = 0;
+
+    const draftWithMessage: AssessmentResultDraft = {
+      ...makeDraft(),
+      findings: [
+        {
+          phenomenon: "substitution",
+          gop: -8.0,
+          category: "accuracy" as const,
+          severity: "minor" as const,
+          textRange: { startChar: 0, endChar: 5 },
+          audioRange: null,
+          expected: { text: "hello", ipa: null },
+          detected: { text: "helo", ipa: null },
+          messageJa: existingMessage,
+          messageEn: null,
+          scoreImpact: -2,
+          confidence: 0.8,
+        },
+      ],
+    };
+
+    const deps = makeDependencies({
+      engineRegistry: {
+        find: () => ok({ assess: () => okAsync(draftWithMessage) }),
+      },
+      improvementMessageGenerator: {
+        generate: () => {
+          generatorCallCount++;
+          return "generator-message";
+        },
+      },
+    });
+    const execute = createRunAssessmentJob(deps);
+
+    const result = await execute({ leaseOwner: "runner-1", leaseDurationSeconds: 60 });
+
+    expect(result.isOk()).toBe(true);
+    expect(generatorCallCount).toBe(0);
+
+    const resultCreatedEvent = result
+      ._unsafeUnwrap()
+      .events.find((e) => e.type === "assessmentResultCreated");
+    if (resultCreatedEvent?.type === "assessmentResultCreated") {
+      expect(resultCreatedEvent.assessmentResult.findings[0]?.messageJa).toBe(existingMessage);
+    }
   });
 });

@@ -85,8 +85,12 @@
   --positive:      oklch(0.72 0.14 158);
   --positive-text: oklch(0.80 0.12 158);
   --positive-soft: oklch(0.72 0.14 158 / 0.16);
+  --positive-line: oklch(0.72 0.14 158 / 0.4);
   --warning:       oklch(0.78 0.14 78);
   --danger:        oklch(0.64 0.20 22);
+
+  /* ---- Overlay ---- */
+  --scrim: oklch(0.10 0.008 256 / 0.66);
 
   /* engine identity */
   --engine-openai: oklch(0.74 0.12 168);

@@ -68,8 +68,14 @@ export async function GET(request: NextRequest): Promise<Response> {
       analysisRuns: sv.recordingAttempts.flatMap((ra) =>
         ra.analysisRuns.map((ar) => ({
           identifier: ar.identifier,
+          mode: ar.mode,
           status: ar.mode,
           createdAt: ar.createdAt,
+          assessmentResults: ar.assessmentResults.map((r) => ({
+            identifier: r.identifier,
+            overallScore: r.overallScore,
+            createdAt: r.createdAt,
+          })),
         })),
       ),
     })),

@@ -20,12 +20,19 @@ import {
   LiveWave,
   HighlightedWorkspaceText,
 } from "@/components/workspace";
+import { computeRmsLevel, rmsLevelToDisplayPercentage } from "@/components/workspace/volume-meter";
 
 type PageProps = {
   params: Promise<{ materialIdentifier: string; sectionIdentifier: string }>;
 };
 
-type WorkspaceState = "idle" | "recording" | "analyzing" | "result";
+type WorkspaceState = "idle" | "recording" | "analyzing" | "result" | "failed" | "low_quality";
+
+// dBFS display scale threshold: -35dBFS ≈ 43% in the log scale
+// ((−35 + 60) / 60) * 98 + 2 ≈ 43
+// Aligned with the backend quality-guard lower bound (meanDbfs < −35).
+// Voices below this level are likely to be rejected by the quality guard.
+const LOW_VOLUME_DISPLAY_THRESHOLD = 43;
 
 const detectBrowserInfo = () => ({
   browserName: navigator.userAgent.includes("Chrome")
@@ -39,7 +46,7 @@ const detectBrowserInfo = () => ({
   deviceType: /Mobi|Android|iPhone/i.test(navigator.userAgent) ? "mobile" : "desktop",
 });
 
-const deriveWorkspaceState = (
+export const deriveWorkspaceState = (
   workspace: WorkspaceDto | null,
   isRecording: boolean,
   submitting: boolean,
@@ -51,8 +58,16 @@ const deriveWorkspaceState = (
   const runStatus = workspace.latestAnalysisRun?.status;
   if (!runStatus) return "idle";
 
-  if (runStatus === "succeeded" || runStatus === "partial_succeeded" || runStatus === "failed") {
-    return workspace.resultsByEngine.length > 0 ? "result" : "idle";
+  if (runStatus === "failed") {
+    const errorCode = workspace.latestAnalysisRun?.errorCode;
+    if (errorCode === "low_quality_audio" && workspace.resultsByEngine.length === 0) {
+      return "low_quality";
+    }
+    return workspace.resultsByEngine.length > 0 ? "result" : "failed";
+  }
+
+  if (runStatus === "succeeded" || runStatus === "partial_succeeded") {
+    return workspace.resultsByEngine.length > 0 ? "result" : "failed";
   }
 
   if (runStatus === "running" || runStatus === "queued") return "analyzing";
@@ -80,12 +95,20 @@ export default function WorkspacePage({ params }: PageProps) {
   const [selectedFinding, setSelectedFinding] = useState<EngineFindingDto | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [recSeconds, setRecSeconds] = useState(0);
+  const [playerTime, setPlayerTime] = useState<{ currentTime: number; duration: number }>({
+    currentTime: 0,
+    duration: 0,
+  });
+
+  const [volumeLevel, setVolumeLevel] = useState(0);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startedAtRef = useRef<number>(0);
   const recTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
 
   const state = deriveWorkspaceState(workspace, isRecording, submitting);
 
@@ -119,6 +142,18 @@ export default function WorkspacePage({ params }: PageProps) {
     return () => clearInterval(intervalId);
   }, [refresh]);
 
+  // AudioContext のアンマウント時 cleanup
+  useEffect(() => {
+    return () => {
+      if (animationFrameRef.current !== null) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      if (audioContextRef.current !== null) {
+        void audioContextRef.current.close();
+      }
+    };
+  }, []);
+
   const submitRecording = useCallback(
     async (blob: Blob) => {
       setSubmitting(true);
@@ -148,11 +183,48 @@ export default function WorkspacePage({ params }: PageProps) {
     [analysisMode, sectionIdentifier, refresh],
   );
 
+  const cleanupAudioContext = () => {
+    if (animationFrameRef.current !== null) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    if (audioContextRef.current !== null) {
+      void audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+    setVolumeLevel(0);
+  };
+
   const startRecording = async () => {
     setRecordError(null);
     setSelectedFinding(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          autoGainControl: false,
+          noiseSuppression: false,
+          echoCancellation: false,
+        },
+      });
+
+      // Set up AudioContext for real-time volume metering
+      const audioContext = new AudioContext();
+      audioContextRef.current = audioContext;
+      const analyserNode = audioContext.createAnalyser();
+      analyserNode.fftSize = 512;
+      const mediaStreamSource = audioContext.createMediaStreamSource(stream);
+      mediaStreamSource.connect(analyserNode);
+
+      const timeDomainBuffer = new Uint8Array(analyserNode.fftSize);
+
+      const updateVolumeMeter = () => {
+        analyserNode.getByteTimeDomainData(timeDomainBuffer);
+        const rmsLevel = computeRmsLevel(timeDomainBuffer);
+        setVolumeLevel(rmsLevelToDisplayPercentage(rmsLevel));
+        animationFrameRef.current = requestAnimationFrame(updateVolumeMeter);
+      };
+      animationFrameRef.current = requestAnimationFrame(updateVolumeMeter);
+
       const recorder = new MediaRecorder(stream);
       chunksRef.current = [];
       recorder.ondataavailable = (event) => {
@@ -160,6 +232,7 @@ export default function WorkspacePage({ params }: PageProps) {
       };
       recorder.onstop = () => {
         stream.getTracks().forEach((track) => track.stop());
+        cleanupAudioContext();
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
         void submitRecording(blob);
       };
@@ -173,6 +246,7 @@ export default function WorkspacePage({ params }: PageProps) {
         setRecSeconds((s) => s + 1);
       }, 1000);
     } catch {
+      cleanupAudioContext();
       setRecordError("マイクへのアクセスに失敗しました。ブラウザの権限を確認してください。");
     }
   };
@@ -184,6 +258,7 @@ export default function WorkspacePage({ params }: PageProps) {
     }
     mediaRecorderRef.current?.stop();
     setIsRecording(false);
+    // AudioContext cleanup happens in recorder.onstop after stream tracks are stopped
   };
 
   const handleAddEngine = async () => {
@@ -208,6 +283,14 @@ export default function WorkspacePage({ params }: PageProps) {
   // 録音秒数のフォーマット
   const formattedRecTime = `${Math.floor(recSeconds / 60)}:${String(recSeconds % 60).padStart(2, "0")}`;
 
+  // 秒数を m:ss 形式にフォーマット
+  const formatTime = (seconds: number): string => {
+    const safeSeconds = isFinite(seconds) ? seconds : 0;
+    const minutes = Math.floor(safeSeconds / 60);
+    const remainingSeconds = Math.floor(safeSeconds % 60);
+    return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
+  };
+
   // 現在アクティブなエンジン結果
   const activeResult: EngineResultDto | null =
     workspace?.resultsByEngine.find((r) => r.result === activeEngineResult) ?? null;
@@ -220,6 +303,10 @@ export default function WorkspacePage({ params }: PageProps) {
   const audioUrl = latestReadyAttempt
     ? `/api/v1/recording-attempts/${latestReadyAttempt.identifier}/audio`
     : null;
+
+  const formattedPlayerTime = audioUrl
+    ? `${formatTime(playerTime.currentTime)} / ${formatTime(playerTime.duration)}`
+    : "0:00 / 0:00";
 
   const attemptNumber = workspace?.recordingAttempts.length ?? 0;
 
@@ -294,6 +381,7 @@ export default function WorkspacePage({ params }: PageProps) {
                   setActiveEngineResult(resultId);
                   setSelectedFinding(null);
                 }}
+                onAddEngine={handleAddEngine}
               />
             )}
 
@@ -382,6 +470,17 @@ export default function WorkspacePage({ params }: PageProps) {
         <div className="dock-row dock-rec">
           <span className="rec-time">{formattedRecTime}</span>
           <LiveWave />
+          <div
+            className={`volume-meter${volumeLevel < LOW_VOLUME_DISPLAY_THRESHOLD ? " volume-meter--low" : ""}`}
+            aria-label={`音量レベル ${Math.round(volumeLevel)}%`}
+          >
+            <div className="volume-meter-track">
+              <div className="volume-meter-bar" style={{ width: `${volumeLevel.toFixed(1)}%` }} />
+            </div>
+            <span className="volume-meter-label">
+              {volumeLevel < LOW_VOLUME_DISPLAY_THRESHOLD ? "音量小" : "音量OK"}
+            </span>
+          </div>
           <span className="status status--fail" style={{ border: "none", background: "none" }}>
             <span className="sd" />
             REC
@@ -413,8 +512,8 @@ export default function WorkspacePage({ params }: PageProps) {
                   />
                   {engine.engineName}
                 </span>
-                <span className="job-prog">
-                  <i style={{ width: "100%" }} />
+                <span className="job-prog job-prog--indeterminate">
+                  <i />
                 </span>
                 <span
                   className="status status--running"
@@ -431,8 +530,8 @@ export default function WorkspacePage({ params }: PageProps) {
                   <span className="eng-dot" style={{ background: "var(--engine-openai)" }} />
                   解析中...
                 </span>
-                <span className="job-prog">
-                  <i style={{ width: "60%" }} />
+                <span className="job-prog job-prog--indeterminate">
+                  <i />
                 </span>
                 <span
                   className="status status--running"
@@ -473,6 +572,12 @@ export default function WorkspacePage({ params }: PageProps) {
                   const audio = new Audio(audioUrl);
                   audioRef.current = audio;
                   audio.onended = () => setIsPlaying(false);
+                  audio.addEventListener("loadedmetadata", () => {
+                    setPlayerTime((prev) => ({ ...prev, duration: audio.duration }));
+                  });
+                  audio.addEventListener("timeupdate", () => {
+                    setPlayerTime({ currentTime: audio.currentTime, duration: audio.duration });
+                  });
                   void audio.play();
                   setIsPlaying(true);
                 }
@@ -485,7 +590,7 @@ export default function WorkspacePage({ params }: PageProps) {
                 <i key={index} style={{ height: `${height}%` }} className={index < 6 ? "on" : ""} />
               ))}
             </div>
-            <span className="tt">0:00</span>
+            <span className="tt">{formattedPlayerTime}</span>
           </div>
           <div className="actions">
             <button className="btn btn--sm btn--ghost" type="button" onClick={handleAddEngine}>
@@ -495,6 +600,38 @@ export default function WorkspacePage({ params }: PageProps) {
               ● 録音し直す
             </button>
           </div>
+        </div>
+
+        {/* failed */}
+        <div className="dock-failed dock-row">
+          <div className="failed-message">
+            <span className="status status--fail">
+              <span className="sd" />
+              解析に失敗しました
+            </span>
+            <span className="failed-hint">
+              サーバーとの通信でエラーが発生しました。再度録音してお試しください。
+            </span>
+          </div>
+          <button className="btn btn--sm btn--primary" type="button" onClick={startRecording}>
+            ● 録音し直す
+          </button>
+        </div>
+
+        {/* low_quality */}
+        <div className="dock-low-quality dock-row">
+          <div className="failed-message">
+            <span className="status status--fail">
+              <span className="sd" />
+              音声を認識できませんでした
+            </span>
+            <span className="failed-hint">
+              音量が小さいか、録音時間が短すぎます。マイクに近づいて、はっきりと録音してください。
+            </span>
+          </div>
+          <button className="btn btn--sm btn--primary" type="button" onClick={startRecording}>
+            ● 録音し直す
+          </button>
         </div>
       </div>
     </div>

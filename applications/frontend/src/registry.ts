@@ -25,6 +25,7 @@ import { createStructuredLogger } from "./infrastructure/logger";
 import { createOpenAiPronunciationAssessmentAdaptor } from "./acl/pronunciation-assessment/openai/create-open-ai-pronunciation-assessment-adaptor";
 import { createOssWorkerPronunciationAssessmentAdaptor } from "./acl/pronunciation-assessment/oss-worker/create-oss-worker-pronunciation-assessment-adaptor";
 import { createPronunciationAssessmentEngineRegistry } from "./acl/pronunciation-assessment/registry/create-pronunciation-assessment-engine-registry";
+import { createRuleBasedImprovementMessageGenerator } from "./acl/improvement-message/rule-based/create-rule-based-improvement-message-generator";
 
 import { createBrowsePracticeMaterials } from "./usecase/browse-practice-materials/index";
 import { createCancelAssessmentRun } from "./usecase/cancel-assessment-run/index";
@@ -203,6 +204,7 @@ const buildContainer = (): Container => {
   });
   const ossWorkerEngine = createOssWorkerPronunciationAssessmentAdaptor({
     workerApiEndpoint: config.workerApiEndpoint,
+    timeoutMilliseconds: config.ossWorkerTimeoutMilliseconds,
     clock,
     logger,
   });
@@ -210,6 +212,9 @@ const buildContainer = (): Container => {
     cloudEngine,
     ossWorkerEngine,
   });
+
+  // ACL: improvement message generator
+  const improvementMessageGenerator = createRuleBasedImprovementMessageGenerator();
 
   // Shared deps bundle for convenience
   const sharedRepositories = {
@@ -337,6 +342,7 @@ const buildContainer = (): Container => {
       entropyProvider,
       clock,
       logger,
+      improvementMessageGenerator,
     }),
 
     submitPracticeAttempt: createSubmitPracticeAttempt({

@@ -18,10 +18,7 @@ import { type AnalysisEngine } from "../../../domain/analysis-engine";
 import { type DomainError } from "../../../domain/shared";
 import { buildStoredRawEngineResponse } from "../shared/stored-raw-engine-response";
 import { assessmentSchemaInvalid } from "../shared/errors";
-import {
-  openAiAssessmentResponseSchema,
-  type OpenAiAssessmentResponse,
-} from "./schema";
+import { openAiAssessmentResponseSchema, type OpenAiAssessmentResponse } from "./schema";
 import { PROMPT_VERSION } from "./prompts/v1";
 
 /** スコアリングルーブリックのバージョン（prompt v1 に対応する固定値） */
@@ -30,14 +27,16 @@ const SCORING_RUBRIC_VERSION = "v1";
 /**
  * OpenAI Structured Outputs のレスポンス JSON を AssessmentResultDraft へ変換する。
  */
-export const mapOpenAiResponse = (input: Readonly<{
-  rawResponseContent: unknown;
-  capturedAt: Date;
-  engine: AnalysisEngine;
-  model: string;
-  assessmentSchemaVersion: string;
-  tokenizerVersion: string;
-}>): Result<AssessmentResultDraft, DomainError> => {
+export const mapOpenAiResponse = (
+  input: Readonly<{
+    rawResponseContent: unknown;
+    capturedAt: Date;
+    engine: AnalysisEngine;
+    model: string;
+    assessmentSchemaVersion: string;
+    tokenizerVersion: string;
+  }>,
+): Result<AssessmentResultDraft, DomainError> => {
   const capturedAt = createInstant(input.capturedAt);
   const rawResponse = buildStoredRawEngineResponse({
     provider: RawEngineResponseProvider.OPENAI,
@@ -49,9 +48,7 @@ export const mapOpenAiResponse = (input: Readonly<{
   const parsed = openAiAssessmentResponseSchema.safeParse(input.rawResponseContent);
   if (!parsed.success) {
     return err(
-      assessmentSchemaInvalid(
-        `OpenAI response schema validation failed: ${parsed.error.message}`,
-      ),
+      assessmentSchemaInvalid(`OpenAI response schema validation failed: ${parsed.error.message}`),
     );
   }
 
@@ -63,12 +60,14 @@ export const mapOpenAiResponse = (input: Readonly<{
   });
 };
 
-const mapValidatedResponse = (input: Readonly<{
-  response: OpenAiAssessmentResponse;
-  rawResponse: ReturnType<typeof buildStoredRawEngineResponse>;
-  engine: AnalysisEngine;
-  model: string;
-}>): Result<AssessmentResultDraft, DomainError> => {
+const mapValidatedResponse = (
+  input: Readonly<{
+    response: OpenAiAssessmentResponse;
+    rawResponse: ReturnType<typeof buildStoredRawEngineResponse>;
+    engine: AnalysisEngine;
+    model: string;
+  }>,
+): Result<AssessmentResultDraft, DomainError> => {
   const { response, rawResponse, engine, model } = input;
 
   const schemaVersion = createAssessmentSchemaVersion(response.assessmentSchemaVersion);
@@ -86,7 +85,9 @@ const mapValidatedResponse = (input: Readonly<{
   const metadata: AssessmentEngineMetadataDraft = {
     assessmentSchemaVersion: schemaVersion,
     scoringRubricVersion: rubricVersion,
-    promptVersion: promptVersion as ReturnType<typeof import("../../../usecase/assessment-result-draft").createPromptVersion>,
+    promptVersion: promptVersion as ReturnType<
+      typeof import("../../../usecase/assessment-result-draft").createPromptVersion
+    >,
     model,
     workerVersion: null,
     modelVersion: null,
@@ -96,6 +97,8 @@ const mapValidatedResponse = (input: Readonly<{
 
   const draft: AssessmentResultDraft = {
     engine,
+    // OpenAI は採点ステータスを持たないため常に "normal"
+    status: "normal",
     scores: {
       overall: response.scores.overall,
       accuracy: response.scores.accuracy,
@@ -105,6 +108,8 @@ const mapValidatedResponse = (input: Readonly<{
       prosody: response.scores.prosody,
     },
     findings: response.findings.map((finding) => ({
+      phenomenon: null,
+      gop: null,
       category: finding.category,
       severity: finding.severity,
       textRange: {

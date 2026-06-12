@@ -31,14 +31,16 @@ import {
  * HTTP レスポンスを AssessmentResultDraft へ変換する。
  * 400/413/415/422 は nonRetryable、500/502/503/504 は retryable。
  */
-export const mapOssWorkerResponse = (input: Readonly<{
-  status: number;
-  rawBody: unknown;
-  capturedAt: Date;
-  engine: AnalysisEngine;
-  assessmentSchemaVersion: string;
-  tokenizerVersion: string;
-}>): Result<AssessmentResultDraft, DomainError> => {
+export const mapOssWorkerResponse = (
+  input: Readonly<{
+    status: number;
+    rawBody: unknown;
+    capturedAt: Date;
+    engine: AnalysisEngine;
+    assessmentSchemaVersion: string;
+    tokenizerVersion: string;
+  }>,
+): Result<AssessmentResultDraft, DomainError> => {
   const capturedAt = createInstant(input.capturedAt);
   const rawResponse = buildStoredRawEngineResponse({
     provider: RawEngineResponseProvider.OSS_WORKER,
@@ -55,13 +57,7 @@ export const mapOssWorkerResponse = (input: Readonly<{
       ? `HTTP ${input.status}: ${errorParsed.data.error.code} - ${errorParsed.data.error.message}`
       : `HTTP ${input.status}`;
 
-    return err(
-      assessmentEngineFailed(
-        String(input.engine.type),
-        reason,
-        failureKind,
-      ),
-    );
+    return err(assessmentEngineFailed(String(input.engine.type), reason, failureKind));
   }
 
   // 成功レスポンス Zod 検証
@@ -83,13 +79,15 @@ export const mapOssWorkerResponse = (input: Readonly<{
   });
 };
 
-const mapSuccessResponse = (input: Readonly<{
-  response: OssWorkerSuccessResponse;
-  rawResponse: ReturnType<typeof buildStoredRawEngineResponse>;
-  engine: AnalysisEngine;
-  requestedAssessmentSchemaVersion: string;
-  requestedTokenizerVersion: string;
-}>): Result<AssessmentResultDraft, DomainError> => {
+const mapSuccessResponse = (
+  input: Readonly<{
+    response: OssWorkerSuccessResponse;
+    rawResponse: ReturnType<typeof buildStoredRawEngineResponse>;
+    engine: AnalysisEngine;
+    requestedAssessmentSchemaVersion: string;
+    requestedTokenizerVersion: string;
+  }>,
+): Result<AssessmentResultDraft, DomainError> => {
   const { response, rawResponse, engine } = input;
 
   const schemaVersion = createAssessmentSchemaVersion(response.assessmentSchemaVersion);
@@ -115,6 +113,7 @@ const mapSuccessResponse = (input: Readonly<{
 
   const draft: AssessmentResultDraft = {
     engine,
+    status: response.status,
     scores: {
       overall: response.scores.overall,
       accuracy: response.scores.accuracy,
@@ -124,6 +123,8 @@ const mapSuccessResponse = (input: Readonly<{
       prosody: response.scores.prosody,
     },
     findings: response.findings.map((finding) => ({
+      phenomenon: finding.phenomenon,
+      gop: finding.gop,
       category: finding.category,
       severity: finding.severity,
       textRange: {

@@ -7,20 +7,21 @@
 
 import { okAsync, errAsync, fromPromise } from "neverthrow";
 import { type ResultAsync } from "neverthrow";
-import { type PronunciationAssessmentEngine, type AssessPronunciationInput } from "../../../usecase/port/pronunciation-assessment-engine";
+import {
+  type PronunciationAssessmentEngine,
+  type AssessPronunciationInput,
+} from "../../../usecase/port/pronunciation-assessment-engine";
 import { type AssessmentResultDraft } from "../../../usecase/assessment-result-draft";
 import { type DomainError } from "../../../domain/shared";
 import { type Clock } from "../../../usecase/port/clock";
 import { type Logger } from "../../../usecase/port/logger";
-import {
-  assessmentEngineFailed,
-  classifyFetchError,
-} from "../shared/errors";
+import { assessmentEngineFailed, classifyFetchError } from "../shared/errors";
 import { buildOssWorkerRequest } from "./request-mapper";
 import { mapOssWorkerResponse } from "./response-mapper";
 
 export type OssWorkerPronunciationAssessmentAdaptorDependencies = Readonly<{
   workerApiEndpoint: string;
+  timeoutMilliseconds: number;
   clock: Clock;
   logger: Logger;
 }>;
@@ -41,10 +42,14 @@ export const createOssWorkerPronunciationAssessmentAdaptor = (
       url,
     });
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), dependencies.timeoutMilliseconds);
+
     return fromPromise(
       globalThis
-        .fetch(url, { method: "POST", body })
+        .fetch(url, { method: "POST", body, signal: controller.signal })
         .then(async (response) => {
+          clearTimeout(timeoutId);
           const status = response.status;
           let rawBody: unknown;
           try {
@@ -53,6 +58,10 @@ export const createOssWorkerPronunciationAssessmentAdaptor = (
             rawBody = null;
           }
           return { status, rawBody };
+        })
+        .catch((error: unknown) => {
+          clearTimeout(timeoutId);
+          throw error;
         }),
       (fetchError): DomainError =>
         assessmentEngineFailed(

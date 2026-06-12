@@ -36,13 +36,15 @@ const pronunciationEvidenceSchema = z.object({
 // ---- Finding / Segment ----
 
 const findingSchema = z.object({
+  phenomenon: z.string().nullable(),
+  gop: z.number().nullable(),
   category: findingCategorySchema,
   severity: findingSeveritySchema,
   textRange: textRangeSchema,
   audioRange: audioRangeSchema.nullable(),
   expected: pronunciationEvidenceSchema,
   detected: pronunciationEvidenceSchema,
-  messageJa: z.string().min(1),
+  messageJa: z.string().nullable(),
   messageEn: z.string().nullable(),
   scoreImpact: z.number(),
   confidence: z.number().min(0).max(1),
@@ -70,7 +72,11 @@ const scoresSchema = z.object({
 
 const summarySchema = z.object({
   messageJa: z.string().min(1),
-  messageEn: z.string().nullable().optional().transform((v) => v ?? null),
+  messageEn: z
+    .string()
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
 });
 
 // ---- Worker Metadata ----
@@ -87,6 +93,8 @@ const workerMetadataSchema = z.object({
 export const ossWorkerSuccessResponseSchema = z.object({
   assessmentSchemaVersion: z.string().min(1),
   tokenizerVersion: z.string().min(1),
+  // status: "normal" = 採点完了、"low_quality" = 音声品質不足で採点せず早期返却
+  status: z.enum(["normal", "low_quality"]).optional().default("normal"),
   scores: scoresSchema,
   summary: summarySchema,
   findings: z.array(findingSchema),

@@ -47,6 +47,7 @@ export async function GET(_request: NextRequest, context: RouteContext): Promise
           identifier: output.latestAnalysisRun.identifier,
           mode: output.latestAnalysisRun.mode,
           status: output.latestAnalysisRun.status,
+          errorCode: output.latestAnalysisRun.errorCode ?? null,
         }
       : null,
     highlightRangesByEngine: output.highlightRangesByEngine.map((byEngine) => ({

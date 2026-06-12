@@ -149,6 +149,8 @@ describe("DrizzleAssessmentResultRepository", () => {
       findings: [
         {
           identifier: findingId,
+          phenomenon: "substitution" as const,
+          gop: -5.0,
           category: "accuracy",
           severity: "minor",
           textRange,
