@@ -52,3 +52,8 @@ pnpm-debug.log*
 
 # --- agent-policy: 証跡はローカル生成・CI で再生成 (.active マーカー含む) ---
 .agent-evidence/
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo

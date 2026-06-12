@@ -8,6 +8,10 @@ services:
       - "8787:8787"
     environment:
       WORKER_PORT: "8787"
+      ANALYZER_URL: "http://analyzer:8788"
+    depends_on:
+      analyzer:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8787/health"]
       interval: 10s

@@ -1,8 +1,10 @@
 name: pr-gate
 
 # agent-policy merge gate: 文書ではなくハードゲート。
-# policy (no-prod-doubles / test-bypass / wiring / allowlist-expiry) を required check にする。
-# build/test は既存の backend-ci.yml / frontend-ci.yml が担うためここでは再実行しない。
+# policy (no-prod-doubles / test-bypass / wiring / no-stub-placeholder / allowlist-expiry) を required check にする。
+# build/test は既存の backend-ci.yml / frontend-ci.yml / python-analyzer-ci.yml が担うためここでは再実行しない。
+# AI review (codex / claude) は repo variable ENABLE_CODEX_REVIEW / ENABLE_CLAUDE_REVIEW + secret で
+# 有効化する opt-in job (未設定なら skip・merge gate は決定論ゲートのみで判定)。
 on:
   pull_request:
 
@@ -59,6 +61,43 @@ jobs:
           name: smoke-evidence
           path: smoke.log
 
+  # --- opt-in AI review (merge gate の required には含めない / 助言的) ---
+  codex_review:
+    if: ${{ vars.ENABLE_CODEX_REVIEW == 'true' }}
+    needs: [policy]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Codex review (AGENTS.md の review guideline に従う)
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt-file: .github/codex/review.md
+          output-file: codex-output.md
+      - name: Upload codex review
+        if: ${{ success() || failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-review
+          path: codex-output.md
+          if-no-files-found: ignore
+
+  claude_review:
+    if: ${{ vars.ENABLE_CLAUDE_REVIEW == 'true' }}
+    needs: [policy]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Claude review (CLAUDE.md / AGENTS.md の review guideline に従う)
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: "Review this PR against AGENTS.md review guidelines: 配線漏れ・偽成功・本番 test double を最優先で検査。"
+
   summary:
     if: ${{ success() || failure() }}
     needs: [policy, integration_smoke]
@@ -68,7 +107,8 @@ jobs:
         run: |
           {
             echo "## PR Gate Summary"
-            echo "- policy: ${{ needs.policy.result }}"
+            echo "- policy (決定論ゲート, required): ${{ needs.policy.result }}"
             echo "- integration_smoke: ${{ needs.integration_smoke.result }} (v1 declare-only)"
+            echo "- AI review は opt-in (ENABLE_CODEX_REVIEW / ENABLE_CLAUDE_REVIEW)。merge gate の required ではない。"
             echo "- evidence artifacts uploaded"
           } >> "$GITHUB_STEP_SUMMARY"

@@ -135,10 +135,12 @@ skill には大きく 2 種類あり、invoke 方針を分ける:
 モック濫用と未配線完了報告を防ぐ規約。詳細は `AGENTS.md`、正本は `~/.claude/docs/agent-policy.md`。
 強制は hook / CI / reviewer が担い、ここは意図共有。
 
-- **禁止**: 本番コードに mock/stub/fake/dummy/spy を入れない (テストは `src/test` / `*.test.ts` / `backend/test` のみ)。本番経路に `NODE_ENV==='test'` 等の test-bypass を入れない。例外は `ci/allowlist.yml` に owner/expiry 付きで。
-- **完了条件 (Done When)**: real public entrypoint から到達可能 + build/lint/typecheck/test 通過 + 必要な配線更新あり + 証跡 (`.agent-evidence/` の commands.txt / wiring-map.json / completion-report.md) を提出。テストが緑なだけでは完了としない。
-- **配線点**: backend は `Api.hs` の `WorkerApi` 型↔`Application.hs` の handler、新規モジュールは cabal exposed-modules。frontend は App Router のファイル配置。
-- **強制レイヤ**: `scripts/verify-*.sh` (no-prod-doubles / test-bypass / wiring / allowlist-expiry) を fitness hook (`scripts/agent-policy-hook.sh`) と CI (`.github/workflows/pr-gate.yml`) で実行。`/agent-dev` 実行中は Stop hook が証跡提出を強制。
-- **開発フロー**: `/agent-dev <task>` で Planner→Explorer→Implementer→ゲート→Static→Integration→Final reviewer を駆動 (2 周ループ→人間エスカレーション)。
+- **禁止**: 本番コードに mock/stub/fake/dummy/spy を入れない (テストは `applications/frontend/src/test` / `*.test.ts(x)` / `applications/backend/test` / `applications/python-analyzer/test` のみ)。本番経路に `NODE_ENV==='test'` 等の test-bypass を入れない。placeholder stub (`err501` / `notImplemented` / `raise NotImplementedError`) を本番に残さない。例外は `ci/allowlist.yml` に owner/expiry 付きで。
+- **仕様**: 実装前に `docs/specs/<feature>.md` に Must/受入/Non-goal を正規化する (設計の正は `docs/`、`/grill-me` で認識合わせ → spec-curator が正規化)。
+- **完了条件 (二段門)**: real public entrypoint から到達可能 + 観測可能挙動を実行 assert + build/lint/typecheck/test 通過 + 配線更新あり + 証跡 (`.agent-evidence/` の commands.txt / wiring-map.json / completion-report.md)。① 構造ゲート (`agent-evidence-gate.sh`) ② 意味ゲート (done-evaluator が fresh context で Must 判定)。テストが緑なだけでは完了としない。
+- **配線点**: backend は `Api.hs` の `WorkerApi` 型↔`Application.hs` の handler + cabal exposed-modules。python-analyzer は `interface/http_handler.py` の router→`app.py` の `include_router`。frontend は App Router のファイル配置。worker→analyzer は `ANALYZER_URL` (compose.yaml)。
+- **強制レイヤ**: `scripts/verify-*.sh` (no-prod-doubles / test-bypass / wiring / no-stub-placeholder / allowlist-expiry) を fitness hook (`scripts/agent-policy-hook.sh`) と CI (`.github/workflows/pr-gate.yml`) で実行。`/proven-done` 実行中は Stop hook が証跡提出を強制。
+- **レビュー rubric**: `rubric/core/{wiring,spec}.md` + 検出言語 pack (`rubric/packs/{haskell,nextjs,python}.md`)。
+- **開発フロー**: `/proven-done <task>` で spec-curator→topology-mapper→implementer→決定論ゲート→static-verifier→runtime-verifier→spec-grader→done-evaluator (二段門・2 周ループ→人間エスカレーション)。`/self-improve` で incidents→evals/rules の外側ループ。
 <!-- END agent-policy -->
 
