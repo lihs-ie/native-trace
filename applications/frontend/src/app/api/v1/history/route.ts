@@ -74,6 +74,8 @@ export async function GET(request: NextRequest): Promise<Response> {
           assessmentResults: ar.assessmentResults.map((r) => ({
             identifier: r.identifier,
             overallScore: r.overallScore,
+            findingsCount: r.findingsCount,
+            engineKind: r.engineKind,
             createdAt: r.createdAt,
           })),
         })),

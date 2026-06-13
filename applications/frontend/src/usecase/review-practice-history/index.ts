@@ -27,15 +27,26 @@ export type ReviewPracticeHistoryInput = z.infer<typeof reviewPracticeHistorySch
 
 // ---- Output ----
 
+export type PerAxisScoresOutput = Readonly<{
+  accuracy: number;
+  nativeLikeness: number;
+  connectedSpeech: number;
+  prosody: number;
+}>;
+
 export type AssessmentResultSummaryOutput = Readonly<{
   identifier: string;
   overallScore: number;
+  findingsCount: number;
+  engineKind: string;
+  perAxisScores: PerAxisScoresOutput;
   createdAt: string;
 }>;
 
 export type AnalysisRunHistoryOutput = Readonly<{
   identifier: string;
   mode: string;
+  status: string;
   createdAt: string;
   assessmentResults: ReadonlyArray<AssessmentResultSummaryOutput>;
 }>;
@@ -86,6 +97,7 @@ const buildRunHistory = (
   dependencies: ReviewPracticeHistoryDependencies,
   runIdentifier: import("../../domain/analysis-run").AnalysisRunIdentifier,
   runMode: string,
+  runStatus: string,
   runCreatedAt: Date,
 ): ResultAsync<AnalysisRunHistoryOutput, DomainError> =>
   dependencies.assessmentResultRepository
@@ -93,10 +105,19 @@ const buildRunHistory = (
     .map((resultPage) => ({
       identifier: runIdentifier as string,
       mode: runMode,
+      status: runStatus,
       createdAt: runCreatedAt.toISOString(),
       assessmentResults: resultPage.items.map((result) => ({
         identifier: result.identifier as string,
         overallScore: result.scores.overall as number,
+        findingsCount: result.findings.length,
+        engineKind: result.engineSnapshot.type,
+        perAxisScores: {
+          accuracy: result.scores.accuracy as number,
+          nativeLikeness: result.scores.nativeLikeness as number,
+          connectedSpeech: result.scores.connectedSpeech as number,
+          prosody: result.scores.prosody as number,
+        },
         createdAt: result.createdAt.toISOString(),
       })),
     }));
@@ -109,8 +130,9 @@ const buildRunsSequentially = (
 ): ResultAsync<AnalysisRunHistoryOutput[], DomainError> => {
   if (index >= runs.length) return okAsync(accumulated);
   const run = runs[index];
-  return buildRunHistory(dependencies, run.identifier, run.mode, run.createdAt).andThen(
-    (runHistory) => buildRunsSequentially(dependencies, runs, index + 1, [...accumulated, runHistory]),
+  return buildRunHistory(dependencies, run.identifier, run.mode, run.status, run.createdAt).andThen(
+    (runHistory) =>
+      buildRunsSequentially(dependencies, runs, index + 1, [...accumulated, runHistory]),
   );
 };
 
@@ -127,8 +149,8 @@ const buildAttemptsSequentially = (
     attempt.type === "failed"
       ? attempt.failedAt.toISOString()
       : attempt.type === "deleted"
-      ? attempt.deletedAt.toISOString()
-      : attempt.createdAt.toISOString();
+        ? attempt.deletedAt.toISOString()
+        : attempt.createdAt.toISOString();
 
   return dependencies.analysisRunRepository
     .search({

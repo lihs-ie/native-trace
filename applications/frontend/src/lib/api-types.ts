@@ -420,6 +420,8 @@ export const ENGINE_LABELS: Record<string, string> = {
 export type AssessmentResultSummaryDto = {
   identifier: string;
   overallScore: number;
+  findingsCount: number;
+  engineKind: string;
   createdAt: string;
 };
 

@@ -35,6 +35,18 @@ function engineDotVar(mode: string): string {
   return ENGINE_MODE_DOT_VAR[mode] ?? "--engine-openai";
 }
 
+// Per-result engine identity (so a comparison run renders OpenAI + Rust as two
+// distinct .eres rows instead of repeating the run's mode label).
+function engineKindLabel(engineKind: string): string {
+  if (engineKind === "openai") return "OpenAI";
+  if (engineKind === "oss_worker" || engineKind === "rust") return "Rust";
+  return engineKind;
+}
+
+function engineKindDotVar(engineKind: string): string {
+  return engineKind === "openai" ? "--engine-openai" : "--engine-rust";
+}
+
 function formatDateTime(isoString: string): string {
   const date = new Date(isoString);
   const y = date.getFullYear();
@@ -493,10 +505,10 @@ function HistoryContent() {
                                   <span
                                     className="eng-dot"
                                     style={{
-                                      background: `var(${engineDotVar(run.mode)})`,
+                                      background: `var(${engineKindDotVar(result.engineKind)})`,
                                     }}
                                   />
-                                  {engineLabel(run.mode)}{" "}
+                                  {engineKindLabel(result.engineKind)}{" "}
                                   <span className="sc">{result.overallScore}</span>
                                 </span>
                               ))}
@@ -514,7 +526,14 @@ function HistoryContent() {
                           </div>
                         </div>
                         <div className="att-right">
-                          <div className="att-findings">—</div>
+                          <div className="att-findings">
+                            {run.assessmentResults.length > 0
+                              ? `${run.assessmentResults.reduce(
+                                  (sum, r) => sum + r.findingsCount,
+                                  0,
+                                )} 指摘`
+                              : "—"}
+                          </div>
                           {resolvedMaterialIdentifier !== null ? (
                             <Link
                               href={`/materials/${resolvedMaterialIdentifier}/sections/${run.sectionIdentifier}/compare`}
