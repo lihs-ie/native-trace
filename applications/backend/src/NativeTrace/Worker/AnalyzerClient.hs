@@ -266,6 +266,9 @@ data AnalyzerResult = AnalyzerResult
     analyzedSpeechDurationSeconds :: Double,
     -- | F0 輪郭（C1-b）。analyzer が返さない場合は Nothing。
     analyzedF0Contour :: Maybe F0Contour,
+    -- | お手本 F0 輪郭（M-F0REF-b）。referenceText から TTS 合成・抽出した F0 輪郭。
+    -- analyzer が返さない場合（旧 analyzer / 抽出失敗）は Nothing。
+    analyzedReferenceF0Contour :: Maybe F0Contour,
     -- | 語強勢リスト（C1-c）。analyzer が返さない場合は空リスト。
     analyzedWordStress :: [WordStress],
     -- | リズム指標（C1-d）。analyzer が返さない場合は Nothing。
@@ -288,6 +291,7 @@ instance FromJSON AnalyzerResult where
     meanDbfs <- o .: "meanDbfs"
     speechDuration <- o .: "speechDurationSeconds"
     f0Contour <- o .:? "f0Contour"
+    referenceF0Contour <- o .:? "referenceF0Contour"
     wordStress <- o .:? "wordStress" .!= []
     rhythm <- o .:? "rhythm"
     weakFormRealizations <- o .:? "weakFormRealizations" .!= []
@@ -303,6 +307,7 @@ instance FromJSON AnalyzerResult where
           analyzedMeanDbfs = meanDbfs,
           analyzedSpeechDurationSeconds = speechDuration,
           analyzedF0Contour = f0Contour,
+          analyzedReferenceF0Contour = referenceF0Contour,
           analyzedWordStress = wordStress,
           analyzedRhythm = rhythm,
           analyzedWeakFormRealizations = weakFormRealizations,

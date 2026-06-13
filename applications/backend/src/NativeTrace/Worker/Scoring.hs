@@ -1167,6 +1167,8 @@ buildProsodyOutputFromData :: AnalyzerResult -> ProsodyOutput
 buildProsodyOutputFromData analyzerResult =
   let f0Times = maybe [] f0TimesMs (analyzedF0Contour analyzerResult)
       f0Values = maybe [] f0ValuesHz (analyzedF0Contour analyzerResult)
+      refF0Times = maybe [] f0TimesMs (analyzedReferenceF0Contour analyzerResult)
+      refF0Values = maybe [] f0ValuesHz (analyzedReferenceF0Contour analyzerResult)
       wordStressOutputs =
         map
           ( \ws ->
@@ -1184,6 +1186,8 @@ buildProsodyOutputFromData analyzerResult =
    in ProsodyOutput
         { prosodyF0TimesMs = f0Times,
           prosodyF0ValuesHz = f0Values,
+          prosodyReferenceF0TimesMs = refF0Times,
+          prosodyReferenceF0ValuesHz = refF0Values,
           prosodyWordStress = wordStressOutputs,
           prosodyRhythmNpvi = npvi,
           prosodyReferenceNpvi = refNpvi,

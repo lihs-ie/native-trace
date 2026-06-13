@@ -41,11 +41,11 @@ fixtureAnalyzerResult =
     { analyzedExpectedIpa = "hɛloʊ wɜrld",
       analyzedDetectedIpa = "hɛloʊ wɜld",
       analyzedPerPhonemeGop =
-        [ PhonemeGop {gopPhoneme = "h", gopValue = -5.0, gopStartMs = 0, gopEndMs = 100, gopNBest = []},
-          PhonemeGop {gopPhoneme = "ɛ", gopValue = -13.0, gopStartMs = 100, gopEndMs = 200, gopNBest = []},
-          PhonemeGop {gopPhoneme = "l", gopValue = -9.5, gopStartMs = 200, gopEndMs = 300, gopNBest = []},
-          PhonemeGop {gopPhoneme = "oʊ", gopValue = -6.0, gopStartMs = 300, gopEndMs = 500, gopNBest = []},
-          PhonemeGop {gopPhoneme = "r", gopValue = -14.0, gopStartMs = 600, gopEndMs = 700, gopNBest = []}
+        [ PhonemeGop {gopPhoneme = "h", gopValue = -5.0, gopStartMs = 0, gopEndMs = 100, gopNBest = [], gopWordPosition = Nothing},
+          PhonemeGop {gopPhoneme = "ɛ", gopValue = -13.0, gopStartMs = 100, gopEndMs = 200, gopNBest = [], gopWordPosition = Nothing},
+          PhonemeGop {gopPhoneme = "l", gopValue = -9.5, gopStartMs = 200, gopEndMs = 300, gopNBest = [], gopWordPosition = Nothing},
+          PhonemeGop {gopPhoneme = "oʊ", gopValue = -6.0, gopStartMs = 300, gopEndMs = 500, gopNBest = [], gopWordPosition = Nothing},
+          PhonemeGop {gopPhoneme = "r", gopValue = -14.0, gopStartMs = 600, gopEndMs = 700, gopNBest = [], gopWordPosition = Nothing}
         ],
       analyzedInterWordSilences =
         [ InterWordSilence {silenceStartMs = 500, silenceEndMs = 600, silenceDurationMs = 100}
@@ -55,6 +55,7 @@ fixtureAnalyzerResult =
       analyzedMeanDbfs = -15.0,
       analyzedSpeechDurationSeconds = 0.7,
       analyzedF0Contour = Nothing,
+      analyzedReferenceF0Contour = Nothing,
       analyzedWordStress = [],
       analyzedRhythm = Nothing,
       analyzedWeakFormRealizations = [],
@@ -72,7 +73,8 @@ fixtureHighFlAnalyzerResult =
               gopValue = -13.0,
               gopStartMs = 0,
               gopEndMs = 100,
-              gopNBest = [NBestEntry {nBestPhoneme = "ɾ", nBestConfidence = 0.8}]
+              gopNBest = [NBestEntry {nBestPhoneme = "ɾ", nBestConfidence = 0.8}],
+              gopWordPosition = Nothing
             }
         ]
     }
@@ -88,7 +90,8 @@ fixtureLowFlAnalyzerResult =
               gopValue = -13.0,
               gopStartMs = 0,
               gopEndMs = 100,
-              gopNBest = [NBestEntry {nBestPhoneme = "s", nBestConfidence = 0.7}]
+              gopNBest = [NBestEntry {nBestPhoneme = "s", nBestConfidence = 0.7}],
+              gopWordPosition = Nothing
             }
         ]
     }
@@ -156,8 +159,8 @@ spec = do
       let highGopResult =
             fixtureAnalyzerResult
               { analyzedPerPhonemeGop =
-                  [ PhonemeGop {gopPhoneme = "h", gopValue = -3.0, gopStartMs = 0, gopEndMs = 100, gopNBest = []},
-                    PhonemeGop {gopPhoneme = "ɛ", gopValue = -4.0, gopStartMs = 100, gopEndMs = 200, gopNBest = []}
+                  [ PhonemeGop {gopPhoneme = "h", gopValue = -3.0, gopStartMs = 0, gopEndMs = 100, gopNBest = [], gopWordPosition = Nothing},
+                    PhonemeGop {gopPhoneme = "ɛ", gopValue = -4.0, gopStartMs = 100, gopEndMs = 200, gopNBest = [], gopWordPosition = Nothing}
                   ],
                 analyzedInterWordSilences = []
               }
@@ -180,8 +183,8 @@ spec = do
       let goodResult =
             fixtureAnalyzerResult
               { analyzedPerPhonemeGop =
-                  [ PhonemeGop {gopPhoneme = "h", gopValue = -1.0, gopStartMs = 0, gopEndMs = 100, gopNBest = []},
-                    PhonemeGop {gopPhoneme = "ɛ", gopValue = -1.5, gopStartMs = 100, gopEndMs = 200, gopNBest = []}
+                  [ PhonemeGop {gopPhoneme = "h", gopValue = -1.0, gopStartMs = 0, gopEndMs = 100, gopNBest = [], gopWordPosition = Nothing},
+                    PhonemeGop {gopPhoneme = "ɛ", gopValue = -1.5, gopStartMs = 100, gopEndMs = 200, gopNBest = [], gopWordPosition = Nothing}
                   ]
               }
       let findings = generateFindingsFromGop bodyText goodResult
@@ -218,7 +221,8 @@ spec = do
                         gopValue = -13.0,
                         gopStartMs = 0,
                         gopEndMs = 100,
-                        gopNBest = [NBestEntry {nBestPhoneme = "ɾ", nBestConfidence = 0.9}]
+                        gopNBest = [NBestEntry {nBestPhoneme = "ɾ", nBestConfidence = 0.9}],
+                        gopWordPosition = Nothing
                       }
                   ],
                 analyzedInterWordSilences = []

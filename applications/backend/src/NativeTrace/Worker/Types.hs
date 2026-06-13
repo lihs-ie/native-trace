@@ -390,6 +390,10 @@ instance ToJSON WordStressOutput where
 data ProsodyOutput = ProsodyOutput
   { prosodyF0TimesMs :: [Int],
     prosodyF0ValuesHz :: [Double],
+    -- | お手本 F0 輪郭の時刻列（M-F0REF-b）。空なら reference 未生成（JSON は null）。
+    prosodyReferenceF0TimesMs :: [Int],
+    -- | お手本 F0 輪郭の基本周波数列（M-F0REF-b）。
+    prosodyReferenceF0ValuesHz :: [Double],
     prosodyWordStress :: [WordStressOutput],
     prosodyRhythmNpvi :: Double,
     prosodyReferenceNpvi :: Double,
@@ -405,6 +409,16 @@ instance ToJSON ProsodyOutput where
             [ "timesMs" .= prosodyF0TimesMs po,
               "valuesHz" .= prosodyF0ValuesHz po
             ],
+        "referenceF0Contour"
+          .= if null (prosodyReferenceF0TimesMs po)
+            then Nothing
+            else
+              Just
+                ( object
+                    [ "timesMs" .= prosodyReferenceF0TimesMs po,
+                      "valuesHz" .= prosodyReferenceF0ValuesHz po
+                    ]
+                ),
         "wordStress" .= prosodyWordStress po,
         "rhythmNpvi" .= prosodyRhythmNpvi po,
         "referenceNpvi" .= prosodyReferenceNpvi po,
