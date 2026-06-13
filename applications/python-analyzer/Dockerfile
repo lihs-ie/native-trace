@@ -62,22 +62,11 @@ COPY src/ /carve/src/
 ENV PYTHONPATH=/carve/src
 
 # Download the libritts-aligned TextGrid archive from HuggingFace.
+# The download logic lives in a standalone script because a multi-line
+# `RUN python -c "..."` is misparsed by the Dockerfile front-end.
 ARG HF_TOKEN=""
-RUN python -c "
-from huggingface_hub import hf_hub_download
-import os
-token = os.environ.get('HF_TOKEN') or None
-path = hf_hub_download(
-    'cdminix/libritts-aligned',
-    'data/train_clean_100.tar.gz',
-    repo_type='dataset',
-    token=token,
-    local_dir='/carve/alignment',
-)
-print('Alignment archive downloaded to:', path)
-import shutil
-shutil.copy(path, '/carve/alignment/train_clean_100.tar.gz')
-"
+COPY download_alignment.py /carve/download_alignment.py
+RUN python /carve/download_alignment.py
 
 # Copy the LibriTTS corpus archive if provided (optional: bind-mount or COPY).
 # If not present, only the Kokoro long-tail supplement will be generated.
