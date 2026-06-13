@@ -34,10 +34,32 @@ import type {
   DrillDto,
   TrainingScheduleDto,
   SpacingScheduleDto,
+  ShadowingLagResultDto,
 } from "@/lib/api-types";
 
 // ---- 録音状態 ----
 type RecordingState = "idle" | "recording" | "done";
+
+// ---- シャドーイング状態 ----
+type ShadowingPhase =
+  | { type: "idle" }
+  | { type: "tts_loading" }
+  | { type: "ready"; referenceAudioBytes: Uint8Array; referenceText: string }
+  | {
+      type: "recording";
+      referenceAudioBytes: Uint8Array;
+      referenceText: string;
+      referenceAudioNode: AudioBufferSourceNode;
+      audioContext: AudioContext;
+      startedAt: number;
+    }
+  | { type: "submitting" }
+  | {
+      type: "result";
+      lagResult: ShadowingLagResultDto;
+      playbackRate: number;
+    }
+  | { type: "error"; message: string };
 
 // ---- HVPT セッション状態 ----
 type HvptPhase =
@@ -163,6 +185,14 @@ export default function TrainingPage() {
   const [drillRecordingState, setDrillRecordingState] = useState<RecordingState>("idle");
   const drillMediaRecorderRef = useRef<MediaRecorder | null>(null);
   const drillChunksRef = useRef<Blob[]>([]);
+
+  // ---- シャドーイング状態 ----
+  const [shadowingPhase, setShadowingPhase] = useState<ShadowingPhase>({ type: "idle" });
+  const shadowingMediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const shadowingChunksRef = useRef<Blob[]>([]);
+  // シャドーイングお手本テキスト (HVPT のcontrast から生成した文例)
+  const SHADOWING_REFERENCE_TEXT = "The red ball is big and the blue ball is small.";
+  const SHADOWING_CONTRAST = "general";
 
   // ---- submitInFlight: 試行提出中の二重クリック防止 ----
   const [submitInFlight, setSubmitInFlight] = useState(false);
@@ -892,6 +922,167 @@ export default function TrainingPage() {
     setDrillRecordingState("idle");
   };
 
+  // ---- シャドーイング: TTS お手本取得 ----
+  const loadShadowingReference = async () => {
+    setShadowingPhase({ type: "tts_loading" });
+    try {
+      const response = await globalThis.fetch("/api/v1/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: SHADOWING_REFERENCE_TEXT, speed: 1.0 }),
+      });
+      if (!response.ok) {
+        setShadowingPhase({ type: "error", message: "TTS 取得に失敗しました" });
+        return;
+      }
+      const audioBuffer = await response.arrayBuffer();
+      setShadowingPhase({
+        type: "ready",
+        referenceAudioBytes: new Uint8Array(audioBuffer),
+        referenceText: SHADOWING_REFERENCE_TEXT,
+      });
+    } catch {
+      setShadowingPhase({ type: "error", message: "TTS 取得に失敗しました" });
+    }
+  };
+
+  // ---- シャドーイング: お手本再生 + 同時録音 ----
+  const startShadowingRecording = async (phase: Extract<ShadowingPhase, { type: "ready" }>) => {
+    const { referenceAudioBytes, referenceText } = phase;
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      shadowingChunksRef.current = [];
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) shadowingChunksRef.current.push(event.data);
+      };
+
+      // AudioContext でお手本を 1.0x 再生 (ADR-013: OQ-7 client-side playbackRate)
+      const audioContext = new AudioContext();
+      const decodedBuffer = await audioContext.decodeAudioData(
+        referenceAudioBytes.buffer.slice(0) as ArrayBuffer,
+      );
+      const sourceNode = audioContext.createBufferSource();
+      sourceNode.buffer = decodedBuffer;
+      sourceNode.playbackRate.value = 1.0;
+      sourceNode.connect(audioContext.destination);
+
+      const startedAt = Date.now();
+
+      setShadowingPhase({
+        type: "recording",
+        referenceAudioBytes,
+        referenceText,
+        referenceAudioNode: sourceNode,
+        audioContext,
+        startedAt,
+      });
+
+      recorder.start();
+      shadowingMediaRecorderRef.current = recorder;
+      sourceNode.start(0);
+
+      // お手本終了時に録音も自動停止
+      sourceNode.onended = () => {
+        recorder.stop();
+        stream.getTracks().forEach((track) => track.stop());
+      };
+    } catch {
+      setShadowingPhase({ type: "error", message: "マイクへのアクセスに失敗しました" });
+    }
+  };
+
+  // ---- シャドーイング: 録音停止 + 送信 ----
+  const stopAndSubmitShadowing = (phase: Extract<ShadowingPhase, { type: "recording" }>) => {
+    const { referenceAudioBytes, referenceText, audioContext, startedAt } = phase;
+
+    // お手本再生を停止
+    try {
+      phase.referenceAudioNode.stop();
+    } catch {
+      // 既に停止している場合は無視
+    }
+
+    const recorder = shadowingMediaRecorderRef.current;
+    if (!recorder) return;
+
+    setShadowingPhase({ type: "submitting" });
+
+    const durationMilliseconds = Date.now() - startedAt;
+
+    recorder.onstop = async () => {
+      try {
+        const learnerBlob = new Blob(shadowingChunksRef.current, {
+          type: shadowingChunksRef.current[0]?.type ?? "audio/webm",
+        });
+        const referenceBlob = new Blob([referenceAudioBytes.buffer.slice(0) as ArrayBuffer], {
+          type: "audio/wav",
+        });
+
+        const formData = new FormData();
+        formData.append("reference_audio", referenceBlob);
+        formData.append("learner_audio", learnerBlob);
+        formData.append("reference_text", referenceText);
+        formData.append("contrast", SHADOWING_CONTRAST);
+        formData.append(
+          "duration_minutes",
+          String(Math.max(1, Math.floor(durationMilliseconds / 60000))),
+        );
+        formData.append("duration_milliseconds", String(durationMilliseconds));
+
+        const response = await globalThis.fetch("/api/v1/training/shadowing-lag", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!response.ok) {
+          setShadowingPhase({ type: "error", message: "ラグ計測に失敗しました" });
+          return;
+        }
+
+        const json = (await response.json()) as { data: ShadowingLagResultDto };
+        const lagResult = json.data;
+
+        await audioContext.close();
+
+        setShadowingPhase({
+          type: "result",
+          lagResult,
+          // ADR-013: スロー再生は client-side AudioContext.playbackRate = 0.7
+          // recommendSlowPlayback は worker 判定済み (frontend で再判定しない)
+          playbackRate: lagResult.recommendSlowPlayback ? 0.7 : 1.0,
+        });
+      } catch {
+        setShadowingPhase({ type: "error", message: "ラグ計測に失敗しました" });
+      }
+    };
+
+    recorder.stop();
+  };
+
+  // ---- シャドーイング: スロー再生でお手本を再生 ----
+  const playShadowingAtSpeed = async (audioBytes: Uint8Array, playbackRate: number) => {
+    try {
+      const audioContext = new AudioContext();
+      const decodedBuffer = await audioContext.decodeAudioData(
+        audioBytes.buffer.slice(0) as ArrayBuffer,
+      );
+      const sourceNode = audioContext.createBufferSource();
+      sourceNode.buffer = decodedBuffer;
+      // M-SHL-6: スロー再生 0.7x は AudioContext.playbackRate で実現 (OQ-7)
+      sourceNode.playbackRate.value = playbackRate;
+      sourceNode.connect(audioContext.destination);
+      sourceNode.onended = () => {
+        void audioContext.close();
+      };
+      sourceNode.start(0);
+    } catch {
+      // 再生失敗は無視
+    }
+  };
+
   // ---- contrast 表示 ----
   const sessionContrast =
     hvptPhase.type === "session_active" || hvptPhase.type === "trial_feedback"
@@ -969,7 +1160,7 @@ export default function TrainingPage() {
       {/* tr-dock: 産出ドリルプレビュー */}
       {renderDrillDock()}
 
-      {/* 窓2: シャドーイング (sub-4 未実装 — honest placeholder) */}
+      {/* 窓2: シャドーイング (REQ-125 / M-SHL-4/5/6) */}
       <div className="section-block" style={{ padding: "var(--sp-8) var(--sp-6)" }}>
         <div
           style={{
@@ -984,7 +1175,7 @@ export default function TrainingPage() {
           シャドーイングモード — REQ-125
         </div>
         <div className="two-col">
-          {/* 左: お手本 */}
+          {/* 左: お手本 (.player / .rec-btn / .passage) */}
           <div>
             <div
               style={{
@@ -998,24 +1189,140 @@ export default function TrainingPage() {
             >
               お手本に重ねて発話 · 同時録音
             </div>
+
+            {/* .passage — お手本テキスト */}
             <div
+              className="passage"
               style={{
                 padding: "var(--sp-5)",
                 background: "var(--surface-1)",
                 border: "1px solid var(--border-faint)",
                 borderRadius: "var(--r-lg)",
-                color: "var(--text-faint)",
-                fontFamily: "var(--font-jp)",
+                color: "var(--text-primary)",
+                fontFamily: "var(--font-sans)",
                 fontSize: "var(--text-sm)",
+                lineHeight: 1.7,
+                marginBottom: "16px",
               }}
             >
-              シャドーイング機能は準備中です（REQ-125 / sub-4 未実装）。
-              <br />
-              お手本再生・ラグ計測機能はアップデートで追加予定です。
+              {SHADOWING_REFERENCE_TEXT}
             </div>
+
+            {/* コントロール行: .player + .rec-btn + .speed */}
+            <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+              {/* .player — お手本再生ボタン */}
+              {shadowingPhase.type === "idle" || shadowingPhase.type === "error" ? (
+                <button
+                  type="button"
+                  className="player btn btn--secondary btn--sm"
+                  onClick={() => void loadShadowingReference()}
+                >
+                  お手本を読み込む
+                </button>
+              ) : shadowingPhase.type === "tts_loading" ? (
+                <button type="button" className="player btn btn--secondary btn--sm" disabled>
+                  読み込み中...
+                </button>
+              ) : shadowingPhase.type === "ready" ? (
+                <button
+                  type="button"
+                  className="player btn btn--primary btn--sm"
+                  onClick={() => void startShadowingRecording(shadowingPhase)}
+                >
+                  ▶ 再生 + 録音開始
+                </button>
+              ) : shadowingPhase.type === "recording" ? (
+                <button
+                  type="button"
+                  className="player btn btn--secondary btn--sm"
+                  style={{ color: "var(--sev-critical-text)" }}
+                  onClick={() => stopAndSubmitShadowing(shadowingPhase)}
+                >
+                  ■ 録音停止 + 送信
+                </button>
+              ) : shadowingPhase.type === "submitting" ? (
+                <button type="button" className="player btn btn--secondary btn--sm" disabled>
+                  送信中...
+                </button>
+              ) : shadowingPhase.type === "result" ? (
+                <button
+                  type="button"
+                  className="player btn btn--ghost btn--sm"
+                  onClick={() => void loadShadowingReference()}
+                >
+                  もう一度
+                </button>
+              ) : null}
+
+              {/* .rec-btn — 録音インジケータ */}
+              <button
+                type="button"
+                className="rec-btn"
+                aria-label="録音状態"
+                style={{ width: "36px", height: "36px", pointerEvents: "none" }}
+                tabIndex={-1}
+              >
+                <span
+                  className="rec-dot"
+                  style={{
+                    width: "13px",
+                    height: "13px",
+                    background:
+                      shadowingPhase.type === "recording"
+                        ? "var(--sev-critical)"
+                        : "var(--text-faint)",
+                  }}
+                />
+              </button>
+
+              {/* .speed — スロー再生コントロール (M-SHL-6: ADR-013 OQ-7) */}
+              {shadowingPhase.type === "result" && (
+                <button
+                  type="button"
+                  className="speed btn btn--ghost btn--sm"
+                  onClick={() => {
+                    const result = shadowingPhase;
+                    const referenceBytes =
+                      shadowingChunksRef.current.length > 0
+                        ? null // 録音済みのお手本再生は現在非対応
+                        : null;
+                    // お手本音声は result state に参照を保持しないためTTSから再取得する
+                    // 簡易実装: speed ボタンで TTS を再取得してスロー再生
+                    void (async () => {
+                      const rate = result.playbackRate === 1.0 ? 0.7 : 1.0;
+                      const response = await globalThis.fetch("/api/v1/tts", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ text: SHADOWING_REFERENCE_TEXT, speed: rate }),
+                      });
+                      if (!response.ok) return;
+                      const buf = await response.arrayBuffer();
+                      await playShadowingAtSpeed(new Uint8Array(buf), rate);
+                      setShadowingPhase({ ...result, playbackRate: rate });
+                    })();
+                    void referenceBytes; // suppress unused warning
+                  }}
+                >
+                  {shadowingPhase.playbackRate === 1.0 ? "0.7x スロー再生" : "1.0x 通常再生"}
+                </button>
+              )}
+            </div>
+
+            {/* エラー表示 */}
+            {shadowingPhase.type === "error" && (
+              <p
+                style={{
+                  marginTop: "8px",
+                  color: "var(--sev-critical-text)",
+                  fontSize: "var(--text-xs)",
+                }}
+              >
+                {shadowingPhase.message}
+              </p>
+            )}
           </div>
 
-          {/* 右: ラグメーター placeholder */}
+          {/* 右: ラグメーター (.lag / .lag-needle / .callout / .scope-note) */}
           <div>
             <div
               style={{
@@ -1029,12 +1336,38 @@ export default function TrainingPage() {
             >
               ラグ（お手本とのずれ）
             </div>
+
+            {/* .lag — ラグメーター */}
             <div className="lag" style={{ maxWidth: "420px" }}>
-              <div className="lag-scale">
+              <div className="lag-scale" style={{ position: "relative" }}>
                 <span className="z z--ok" />
                 <span className="z z--ok" />
                 <span className="z z--warn" />
                 <span className="z z--ng" />
+                {/* .lag-needle — 実計測値位置 (M-SHL-4: real API レスポンス由来) */}
+                {shadowingPhase.type === "result" &&
+                  (() => {
+                    const maxLag = 1200;
+                    const needlePercent = Math.min(
+                      100,
+                      (shadowingPhase.lagResult.lagMilliseconds / maxLag) * 100,
+                    );
+                    return (
+                      <span
+                        className="lag-needle"
+                        data-testid="lag-needle"
+                        style={{
+                          position: "absolute",
+                          left: `${needlePercent}%`,
+                          top: 0,
+                          bottom: 0,
+                          width: "2px",
+                          background: "var(--accent)",
+                          transform: "translateX(-50%)",
+                        }}
+                      />
+                    );
+                  })()}
               </div>
               <div className="lag-lbls">
                 <span>0ms</span>
@@ -1042,13 +1375,56 @@ export default function TrainingPage() {
                 <span>800</span>
                 <span>1200+</span>
               </div>
+              {/* .lag — ラグ数値表示 */}
+              {shadowingPhase.type === "result" && (
+                <div
+                  className="lag"
+                  data-testid="lag-value"
+                  style={{
+                    marginTop: "8px",
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "var(--text-lg)",
+                    color: shadowingPhase.lagResult.recommendSlowPlayback
+                      ? "var(--sev-critical-text)"
+                      : "var(--positive-text)",
+                  }}
+                >
+                  {shadowingPhase.lagResult.lagMilliseconds} ms
+                </div>
+              )}
             </div>
-            <div className="callout" style={{ marginTop: "14px", maxWidth: "420px" }}>
-              <span className="ci">!</span>
-              <span>
-                ラグ計測は準備中です。analyzer にラグ計測機能が追加されると有効になります。
-              </span>
-            </div>
+
+            {/* .callout — スロー再生推奨 (M-SHL-6: recommendSlowPlayback は worker 判定済み) */}
+            {shadowingPhase.type === "result" && shadowingPhase.lagResult.recommendSlowPlayback && (
+              <div
+                className="callout"
+                data-testid="callout"
+                style={{ marginTop: "14px", maxWidth: "420px" }}
+              >
+                <span className="ci">!</span>
+                <span>
+                  ラグが{shadowingPhase.lagResult.thresholdMilliseconds}ms を超えています。 0.7x
+                  スロー再生から始めましょう。
+                </span>
+              </div>
+            )}
+
+            {/* .scope-note — 週次実施回数 (M-SHL-4: 実 DB 由来) */}
+            {shadowingPhase.type === "result" && (
+              <div
+                className="scope-note"
+                data-testid="scope-note"
+                style={{
+                  marginTop: "12px",
+                  fontSize: "var(--text-xs)",
+                  color: "var(--text-secondary)",
+                  fontFamily: "var(--font-jp)",
+                }}
+              >
+                今週のシャドーイング: {shadowingPhase.lagResult.weeklySessionCount} 回 （推奨: 週
+                3–4 回 × 10–15 分）
+              </div>
+            )}
           </div>
         </div>
       </div>

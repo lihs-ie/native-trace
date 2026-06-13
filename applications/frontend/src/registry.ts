@@ -66,6 +66,7 @@ import { createSubmitDrillAttempt } from "./usecase/submit-drill-attempt/index";
 import { createStartHvptSession } from "./usecase/start-hvpt-session/index";
 import { createSubmitHvptTrial } from "./usecase/submit-hvpt-trial/index";
 import { createCompleteHvptSession } from "./usecase/complete-hvpt-session/index";
+import { createComputeShadowingLag } from "./usecase/compute-shadowing-lag/index";
 
 import type {
   BrowsePracticeMaterialsInput,
@@ -162,6 +163,10 @@ import type {
   CompleteHvptSessionInput,
   CompleteHvptSessionOutput,
 } from "./usecase/complete-hvpt-session/index";
+import type {
+  ComputeShadowingLagInput,
+  ComputeShadowingLagOutput,
+} from "./usecase/compute-shadowing-lag/index";
 
 import type { ResultAsync } from "neverthrow";
 import type { DomainError } from "./domain/shared";
@@ -171,6 +176,7 @@ import type { HvptTrialRepository } from "./usecase/port/hvpt-trial-repository";
 import type { SpacingScheduleRepository } from "./usecase/port/spacing-schedule-repository";
 import type { DrillContentRepository } from "./usecase/port/drill-content-repository";
 import { createAnalyzerStimulusClient } from "./infrastructure/analyzer/stimulus-client";
+import { createOssWorkerShadowingLagAdaptor } from "./acl/pronunciation-assessment/oss-worker/create-oss-worker-shadowing-lag-adaptor";
 
 // ---- Container type ----
 
@@ -178,7 +184,10 @@ export type Container = Readonly<{
   config: AppConfig;
   audioStorage: AudioStorage;
   database: DrizzleDatabase;
-  /** repositories — sub-1 の training 集約 repo を後続 usecase から参照できるよう公開。 */
+  /**
+   * repositories — sub-1 の training 集約 repo を後続 usecase から参照できるよう公開。
+   * trainingSession は shadowing-lag route から週次回数取得のために参照する (M-SHL-4)。
+   */
   repositories: Readonly<{
     trainingSession: TrainingSessionRepository;
     hvptTrial: HvptTrialRepository;
@@ -261,6 +270,9 @@ export type Container = Readonly<{
     completeHvptSession: (
       input: CompleteHvptSessionInput,
     ) => ResultAsync<CompleteHvptSessionOutput, DomainError>;
+    computeShadowingLag: (
+      input: ComputeShadowingLagInput,
+    ) => ResultAsync<ComputeShadowingLagOutput, DomainError>;
   }>;
 }>;
 
@@ -299,6 +311,12 @@ const buildContainer = (): Container => {
 
   // ACL: analyzer stimulus client (HVPT 刺激取得 ADR-009)
   const analyzerStimulusClient = createAnalyzerStimulusClient(config.analyzerApiEndpoint);
+
+  // ACL: shadowing lag adaptor (ADR-013: worker /v1/pronunciation-assessments/shadowing)
+  const shadowingLagClient = createOssWorkerShadowingLagAdaptor({
+    workerApiEndpoint: config.workerApiEndpoint,
+    timeoutMilliseconds: config.ossWorkerTimeoutMilliseconds,
+  });
 
   // Infrastructure services
   const audioStorage = createLocalAudioStorage(config.audioStorageRoot);
@@ -580,6 +598,13 @@ const buildContainer = (): Container => {
       entropyProvider,
       clock,
       transactionManager,
+    }),
+
+    computeShadowingLag: createComputeShadowingLag({
+      shadowingLagClient,
+      trainingSessionRepository,
+      entropyProvider,
+      clock,
     }),
   };
 

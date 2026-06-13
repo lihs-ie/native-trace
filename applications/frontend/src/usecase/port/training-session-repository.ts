@@ -3,6 +3,7 @@ import { type DomainError } from "../../domain/shared";
 import {
   type TrainingSession,
   type TrainingSessionIdentifier,
+  type TrainingKind,
   type LearnerIdentifier,
 } from "../../domain/training";
 
@@ -35,4 +36,14 @@ export type TrainingSessionRepository = Readonly<{
    * persist — 訓練セッションを保存する（新規作成 / 状態更新の両方）。
    */
   persist: (session: TrainingSession) => ResultAsync<void, DomainError>;
+
+  /**
+   * countByLearnerAndKindSince — 指定日時以降の kind 別セッション完了件数を返す。
+   * training 画面の週次実施回数表示 (.scope-note) に使用する (M-SHL-4)。
+   */
+  countByLearnerAndKindSince: (
+    learner: LearnerIdentifier,
+    kind: TrainingKind,
+    since: Date,
+  ) => ResultAsync<number, DomainError>;
 }>;

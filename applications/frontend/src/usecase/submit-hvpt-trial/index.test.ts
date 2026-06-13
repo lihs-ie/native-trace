@@ -48,6 +48,7 @@ const buildTrainingSessionRepositoryFake = (
   find: vi.fn((_identifier) => okAsync(session)),
   findByLearnerAndContrastOrderedByStartedAt: vi.fn((_learner, _contrast) => okAsync([])),
   persist: vi.fn((_session) => okAsync(undefined)),
+  countByLearnerAndKindSince: vi.fn((_learner, _kind, _since) => okAsync(0)),
 });
 
 const buildHvptTrialRepositoryFake = (): HvptTrialRepository => ({
@@ -67,9 +68,7 @@ const buildClockFake = (): Clock => ({
   now: vi.fn(() => FIXED_NOW),
 });
 
-const buildBaseInput = (
-  override?: Partial<SubmitHvptTrialInput>,
-): SubmitHvptTrialInput => ({
+const buildBaseInput = (override?: Partial<SubmitHvptTrialInput>): SubmitHvptTrialInput => ({
   trainingSessionIdentifier: String(SESSION_IDENTIFIER),
   stimulusIdentifier: "stim-right-001",
   correctLabelType: "spelling",
@@ -89,9 +88,7 @@ describe("createSubmitHvptTrial", () => {
     it("正解応答（correctLabel と response が一致）で correct=true を返す", async () => {
       const hvptTrialRepository = buildHvptTrialRepositoryFake();
       const usecase = createSubmitHvptTrial({
-        trainingSessionRepository: buildTrainingSessionRepositoryFake(
-          buildInProgressHvptSession(),
-        ),
+        trainingSessionRepository: buildTrainingSessionRepositoryFake(buildInProgressHvptSession()),
         hvptTrialRepository,
         entropyProvider: buildEntropyProviderFake(),
         clock: buildClockFake(),
@@ -115,9 +112,7 @@ describe("createSubmitHvptTrial", () => {
     it("誤答（correctLabel と response が不一致）で correct=false を返す", async () => {
       const hvptTrialRepository = buildHvptTrialRepositoryFake();
       const usecase = createSubmitHvptTrial({
-        trainingSessionRepository: buildTrainingSessionRepositoryFake(
-          buildInProgressHvptSession(),
-        ),
+        trainingSessionRepository: buildTrainingSessionRepositoryFake(buildInProgressHvptSession()),
         hvptTrialRepository,
         entropyProvider: buildEntropyProviderFake(),
         clock: buildClockFake(),
@@ -139,9 +134,7 @@ describe("createSubmitHvptTrial", () => {
     it("ORPHAN-5: hvptTrialRepository.save が 1 回呼ばれる（配線確認）", async () => {
       const hvptTrialRepository = buildHvptTrialRepositoryFake();
       const usecase = createSubmitHvptTrial({
-        trainingSessionRepository: buildTrainingSessionRepositoryFake(
-          buildInProgressHvptSession(),
-        ),
+        trainingSessionRepository: buildTrainingSessionRepositoryFake(buildInProgressHvptSession()),
         hvptTrialRepository,
         entropyProvider: buildEntropyProviderFake(),
         clock: buildClockFake(),
@@ -159,9 +152,7 @@ describe("createSubmitHvptTrial", () => {
       // type が同じでも value が異なれば false
       const hvptTrialRepository = buildHvptTrialRepositoryFake();
       const usecase = createSubmitHvptTrial({
-        trainingSessionRepository: buildTrainingSessionRepositoryFake(
-          buildInProgressHvptSession(),
-        ),
+        trainingSessionRepository: buildTrainingSessionRepositoryFake(buildInProgressHvptSession()),
         hvptTrialRepository,
         entropyProvider: buildEntropyProviderFake(),
         clock: buildClockFake(),
@@ -185,9 +176,7 @@ describe("createSubmitHvptTrial", () => {
 
     it("correctStimulusWavBase64 が null の場合は null を返す", async () => {
       const usecase = createSubmitHvptTrial({
-        trainingSessionRepository: buildTrainingSessionRepositoryFake(
-          buildInProgressHvptSession(),
-        ),
+        trainingSessionRepository: buildTrainingSessionRepositoryFake(buildInProgressHvptSession()),
         hvptTrialRepository: buildHvptTrialRepositoryFake(),
         entropyProvider: buildEntropyProviderFake(),
         clock: buildClockFake(),
@@ -233,9 +222,7 @@ describe("createSubmitHvptTrial", () => {
 
     it("不正な responseLabelType は validationFailed を返す", async () => {
       const usecase = createSubmitHvptTrial({
-        trainingSessionRepository: buildTrainingSessionRepositoryFake(
-          buildInProgressHvptSession(),
-        ),
+        trainingSessionRepository: buildTrainingSessionRepositoryFake(buildInProgressHvptSession()),
         hvptTrialRepository: buildHvptTrialRepositoryFake(),
         entropyProvider: buildEntropyProviderFake(),
         clock: buildClockFake(),
@@ -255,9 +242,7 @@ describe("createSubmitHvptTrial", () => {
 
     it("不正な presentedAt（ISO 8601 でない）は validationFailed を返す", async () => {
       const usecase = createSubmitHvptTrial({
-        trainingSessionRepository: buildTrainingSessionRepositoryFake(
-          buildInProgressHvptSession(),
-        ),
+        trainingSessionRepository: buildTrainingSessionRepositoryFake(buildInProgressHvptSession()),
         hvptTrialRepository: buildHvptTrialRepositoryFake(),
         entropyProvider: buildEntropyProviderFake(),
         clock: buildClockFake(),

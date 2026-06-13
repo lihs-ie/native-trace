@@ -99,6 +99,7 @@ const buildTrainingSessionRepositoryFake = (): TrainingSessionRepository => ({
   ),
   findByLearnerAndContrastOrderedByStartedAt: vi.fn((_learner, _contrast) => okAsync([])),
   persist: vi.fn((_session) => okAsync(undefined)),
+  countByLearnerAndKindSince: vi.fn((_learner, _kind, _since) => okAsync(0)),
 });
 
 const buildDrillContentRepositoryFake = (content: DrillContent | null): DrillContentRepository => ({

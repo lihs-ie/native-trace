@@ -1,4 +1,4 @@
-import { eq, and, isNull, asc } from "drizzle-orm";
+import { eq, and, isNull, asc, gte, count } from "drizzle-orm";
 import { type DrizzleDatabase } from "../client";
 import { trainingSessions } from "../schema";
 import { type TrainingSessionRepository } from "../../../usecase/port/training-session-repository";
@@ -212,6 +212,30 @@ export const createDrizzleTrainingSessionRepository = (
           })
           .run();
         return okAsync(undefined);
+      } catch (e) {
+        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
+      }
+    });
+  },
+
+  countByLearnerAndKindSince: (learner: LearnerIdentifier, kind: TrainingKind, since: Date) => {
+    return okAsync(null).andThen(() => {
+      try {
+        const result = db
+          .select({ total: count() })
+          .from(trainingSessions)
+          .where(
+            and(
+              eq(trainingSessions.learner, String(learner)),
+              eq(trainingSessions.kind, kind),
+              eq(trainingSessions.status, "completed"),
+              gte(trainingSessions.startedAt, since.toISOString()),
+              isNull(trainingSessions.deletedAt),
+            ),
+          )
+          .get();
+
+        return okAsync(result?.total ?? 0);
       } catch (e) {
         return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
       }

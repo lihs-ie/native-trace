@@ -180,6 +180,7 @@ const buildTrainingSessionRepositoryFake = (
   find: vi.fn((_identifier) => okAsync(session)),
   findByLearnerAndContrastOrderedByStartedAt: vi.fn((_learner, _contrast) => okAsync([session])),
   persist: vi.fn((_session) => okAsync(undefined)),
+  countByLearnerAndKindSince: vi.fn((_learner, _kind, _since) => okAsync(0)),
 });
 
 const buildHvptTrialRepositoryFake = (): HvptTrialRepository => ({

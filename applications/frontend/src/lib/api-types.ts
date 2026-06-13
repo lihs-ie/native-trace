@@ -573,6 +573,32 @@ export type TrainingScheduleDto = {
   cumulativeTrainingMinutes: number;
 };
 
+// ---- Shadowing Lag DTOs (Training Context — REQ-125, M-SHL-4/5/6) ----
+
+export type ShadowingPerSegmentLagDto = {
+  phoneme: string;
+  lagMilliseconds: number;
+};
+
+/**
+ * ShadowingLagResultDto — シャドーイングラグ計測レスポンス DTO
+ * worker /v1/pronunciation-assessments/shadowing の計測値をそのまま伝播する。
+ * recommendSlowPlayback は worker 判定済み (ADR-013: frontend で再判定しない)。
+ * thresholdMilliseconds: 判定に使われた閾値 (config.SHADOWING_LAG_THRESHOLD_MS 由来)。
+ * weeklySessionCount: 過去7日間の shadowing 完了セッション数 (M-SHL-4 .scope-note)。
+ */
+export type ShadowingLagResultDto = {
+  trainingSessionIdentifier: string;
+  lagMilliseconds: number;
+  perSegmentLag: ShadowingPerSegmentLagDto[];
+  speechRateRatio: number | null;
+  pauseCountLearner: number | null;
+  pauseCountReference: number | null;
+  recommendSlowPlayback: boolean;
+  thresholdMilliseconds: number;
+  weeklySessionCount: number;
+};
+
 // ---- Diagnostic DTOs (Training Context) ----
 
 export type DiagnosticPromptDto = {
