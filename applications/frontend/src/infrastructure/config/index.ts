@@ -66,6 +66,20 @@ const configSchema = z.object({
   sessionCutoffMinutesMin: z.coerce.number().int().positive().default(20),
   /** gateRetryIntervalHours — gate 状態での短間隔再提示時間（6h）。ADR-011 由来。 */
   gateRetryIntervalHours: z.coerce.number().int().positive().default(6),
+
+  // REQ-123: 産出ドリル採点閾値 (DD-293 config 隔離)
+  /**
+   * drillGopSuccessThreshold — 産出ドリル GOP 成功閾値（負値スケール）。
+   * worker の GOP は floor=-20, ceiling=-2 のスケール。
+   * デフォルト: -8.0（中程度の発音で成功とみなす保守的閾値）。
+   */
+  drillGopSuccessThreshold: z.coerce.number().max(-1).default(-8),
+  /**
+   * drillMaxSeverityForSuccess — 産出ドリルの成功とみなす最大 severity。
+   * "suggestion" | "minor" の産出問題は成功、"major" | "critical" は失敗。
+   * デフォルト: "minor"。
+   */
+  drillMaxSeverityForSuccess: z.enum(["suggestion", "minor"]).default("minor"),
 });
 
 export type AppConfig = z.infer<typeof configSchema>;
@@ -125,6 +139,8 @@ export const createConfig = (): AppConfig => {
     sessionCutoffMinutesMax: process.env.SESSION_CUTOFF_MINUTES_MAX,
     sessionCutoffMinutesMin: process.env.SESSION_CUTOFF_MINUTES_MIN,
     gateRetryIntervalHours: process.env.GATE_RETRY_INTERVAL_HOURS,
+    drillGopSuccessThreshold: process.env.DRILL_GOP_SUCCESS_THRESHOLD,
+    drillMaxSeverityForSuccess: process.env.DRILL_MAX_SEVERITY_FOR_SUCCESS,
   });
 
   if (!result.success) {

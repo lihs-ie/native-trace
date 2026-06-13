@@ -25,6 +25,7 @@ import { createDrizzleProgressSnapshotRepository } from "./infrastructure/drizzl
 import { createDrizzleTrainingSessionRepository } from "./infrastructure/drizzle/repositories/training-session-repository";
 import { createDrizzleHvptTrialRepository } from "./infrastructure/drizzle/repositories/hvpt-trial-repository";
 import { createDrizzleSpacingScheduleRepository } from "./infrastructure/drizzle/repositories/spacing-schedule-repository";
+import { createDrillContentRepository } from "./infrastructure/training/drill-content";
 import { createLocalAudioStorage } from "./infrastructure/local-audio-storage";
 import { createSystemClock } from "./infrastructure/clock";
 import { createEntropyProvider } from "./infrastructure/entropy-provider";
@@ -58,6 +59,8 @@ import { createCompleteDiagnosticSession } from "./usecase/complete-diagnostic-s
 import { createViewDiagnosticResult } from "./usecase/view-diagnostic-result/index";
 import { createCaptureProgressSnapshot } from "./usecase/capture-progress-snapshot/index";
 import { createViewProgress } from "./usecase/view-progress/index";
+import { createStartDrill } from "./usecase/start-drill/index";
+import { createSubmitDrillAttempt } from "./usecase/submit-drill-attempt/index";
 
 import type {
   BrowsePracticeMaterialsInput,
@@ -137,6 +140,11 @@ import type {
   CaptureProgressSnapshotOutput,
 } from "./usecase/capture-progress-snapshot/index";
 import type { ViewProgressInput, ViewProgressOutput } from "./usecase/view-progress/index";
+import type { StartDrillInput, StartDrillOutput } from "./usecase/start-drill/index";
+import type {
+  SubmitDrillAttemptInput,
+  SubmitDrillAttemptOutput,
+} from "./usecase/submit-drill-attempt/index";
 
 import type { ResultAsync } from "neverthrow";
 import type { DomainError } from "./domain/shared";
@@ -144,6 +152,7 @@ import type { AudioStorage } from "./usecase/port/audio-storage";
 import type { TrainingSessionRepository } from "./usecase/port/training-session-repository";
 import type { HvptTrialRepository } from "./usecase/port/hvpt-trial-repository";
 import type { SpacingScheduleRepository } from "./usecase/port/spacing-schedule-repository";
+import type { DrillContentRepository } from "./usecase/port/drill-content-repository";
 
 // ---- Container type ----
 
@@ -156,6 +165,7 @@ export type Container = Readonly<{
     trainingSession: TrainingSessionRepository;
     hvptTrial: HvptTrialRepository;
     spacingSchedule: SpacingScheduleRepository;
+    drillContent: DrillContentRepository;
   }>;
   usecases: Readonly<{
     browsePracticeMaterials: (
@@ -220,6 +230,10 @@ export type Container = Readonly<{
       input: CaptureProgressSnapshotInput,
     ) => ResultAsync<CaptureProgressSnapshotOutput, DomainError>;
     viewProgress: (input: ViewProgressInput) => ResultAsync<ViewProgressOutput, DomainError>;
+    startDrill: (input: StartDrillInput) => ResultAsync<StartDrillOutput, DomainError>;
+    submitDrillAttempt: (
+      input: SubmitDrillAttemptInput,
+    ) => ResultAsync<SubmitDrillAttemptOutput, DomainError>;
   }>;
 }>;
 
@@ -252,6 +266,7 @@ const buildContainer = (): Container => {
   const trainingSessionRepository = createDrizzleTrainingSessionRepository(database);
   const hvptTrialRepository = createDrizzleHvptTrialRepository(database);
   const spacingScheduleRepository = createDrizzleSpacingScheduleRepository(database);
+  const drillContentRepository = createDrillContentRepository();
 
   // Infrastructure services
   const audioStorage = createLocalAudioStorage(config.audioStorageRoot);
@@ -489,12 +504,29 @@ const buildContainer = (): Container => {
     viewProgress: createViewProgress({
       progressSnapshotRepository,
     }),
+
+    startDrill: createStartDrill({
+      weaknessProfileRepository,
+      trainingSessionRepository,
+      drillContentRepository,
+      entropyProvider,
+      clock,
+    }),
+
+    submitDrillAttempt: createSubmitDrillAttempt({
+      trainingSessionRepository,
+      hvptTrialRepository,
+      assessmentResultRepository,
+      entropyProvider,
+      clock,
+    }),
   };
 
   const repositories: Container["repositories"] = {
     trainingSession: trainingSessionRepository,
     hvptTrial: hvptTrialRepository,
     spacingSchedule: spacingScheduleRepository,
+    drillContent: drillContentRepository,
   };
 
   return { config, audioStorage, database, repositories, usecases };

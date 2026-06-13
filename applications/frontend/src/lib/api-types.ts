@@ -423,6 +423,48 @@ export type HistoryGroupDto = {
   sections: HistorySectionVersionDto[];
 };
 
+// ---- Training Drill DTOs (Training Context — REQ-123) ----
+
+export type MinimalPairDto = {
+  targetWord: string;
+  contrastWord: string;
+  targetPhonemeIpa: string;
+  contrastPhonemeIpa: string;
+};
+
+/**
+ * DrillDto — 産出ドリルセッション開始レスポンス DTO
+ * 対象対立・ミニマルペア・対象音素・例文・指導ヒントを含む。
+ */
+export type DrillDto = {
+  trainingSessionIdentifier: string;
+  catalogId: string;
+  contrast: string;
+  targetPhonemes: string[];
+  minimalPairs: MinimalPairDto[];
+  exampleSentence: string;
+  exampleTargetPhonemeIpas: string[];
+  hintJa: string;
+};
+
+export type TargetPhonemeEvaluationDto = {
+  targetPhonemeIpa: string;
+  gop: number | null;
+  nBest: Array<{ phoneme: string; confidence: number }> | null;
+  severity: string | null;
+};
+
+/**
+ * DrillVerdictDto — ドリル録音提出→即時評価レスポンス DTO
+ * 産出成否・target GOP・NBest・判定根拠を含む。
+ */
+export type DrillVerdictDto = {
+  verdict: "success" | "failure";
+  hvptTrialIdentifier: string;
+  targetPhonemeEvaluations: TargetPhonemeEvaluationDto[];
+  verdictReasonJa: string;
+};
+
 // ---- Diagnostic DTOs (Training Context) ----
 
 export type DiagnosticPromptDto = {
