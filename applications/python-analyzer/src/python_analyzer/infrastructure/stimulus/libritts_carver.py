@@ -121,9 +121,20 @@ def run_core_carve_pipeline(
 
     # Stream LibriTTS WAVs for matched utterances.
     logger.info("Carving word segments from LibriTTS audio")
+    carved_utterances = 0
     with tarfile.open(corpus_archive_path, "r:gz") as corpus_archive:
-        for utterance_id, words_in_utterance in utterance_word_index.items():
-            if utterance_id not in alignment_map:
+        # Iterate the archive SEQUENTIALLY (forward-only). The previous version
+        # looked up each needed WAV by name in hit order, which forces a gzip
+        # stream to re-decompress from the start on every backward seek — O(n^2),
+        # producing zero output after 30+ minutes on the 7.7 GB corpus. Walking
+        # the archive once in stream order and extracting members as they appear
+        # keeps the whole carve to a single O(n) pass.
+        for member in corpus_archive:
+            if not member.isfile() or not member.name.endswith(".wav"):
+                continue
+            utterance_id = member.name.rsplit("/", 1)[-1][: -len(".wav")]
+            words_in_utterance = utterance_word_index.get(utterance_id)
+            if words_in_utterance is None or utterance_id not in alignment_map:
                 continue
 
             textgrid_content = alignment_map[utterance_id]
@@ -137,10 +148,15 @@ def run_core_carve_pipeline(
             non_silence_words = [w for w in word_intervals if not w.is_silence()]
             utterance_word_count = len(non_silence_words)
 
-            # Load WAV from LibriTTS archive.
-            wav_bytes = _extract_wav_from_archive(corpus_archive, utterance_id)
-            if wav_bytes is None:
+            # Read WAV bytes from the current archive member (forward read, no seek).
+            file_obj = corpus_archive.extractfile(member)
+            if file_obj is None:
                 continue
+            wav_bytes = file_obj.read()
+
+            carved_utterances += 1
+            if carved_utterances % 500 == 0:
+                logger.info("Carved from %d matched utterances", carved_utterances)
 
             # Try to carve each target word found in this utterance.
             for word, contrasts_for_word in words_in_utterance.items():
