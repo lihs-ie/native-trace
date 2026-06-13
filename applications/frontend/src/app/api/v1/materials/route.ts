@@ -51,6 +51,13 @@ export async function GET(request: NextRequest): Promise<Response> {
     source: m.sourceType ? { sourceType: m.sourceType } : null,
     createdAt: m.createdAt,
     updatedAt: m.updatedAt,
+    stats: {
+      sectionSeriesCount: m.stats.sectionSeriesCount,
+      recordingAttemptCount: m.stats.recordingAttemptCount,
+      bestOverallScore: m.stats.bestOverallScore,
+      overallScoreHistory: [...m.stats.overallScoreHistory],
+      lastPracticedAt: m.stats.lastPracticedAt,
+    },
   }));
 
   return paginatedResponse(data, output.page);

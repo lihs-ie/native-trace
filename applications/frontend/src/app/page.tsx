@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiGet, apiPost, isApiClientError } from "@/lib/api-client";
-import type { MaterialDto, DiagnosticSessionDto } from "@/lib/api-types";
+import type { MaterialDto, MaterialStatsDto, DiagnosticSessionDto } from "@/lib/api-types";
 import { AppTop } from "@/components/chrome/AppTop";
 import { HomeNav } from "@/components/chrome/HomeNav";
 
@@ -48,6 +48,119 @@ const buildByLine = (
     (part): part is string => typeof part === "string" && part.length > 0,
   );
   return parts.join(" · ");
+};
+
+/**
+ * スコア推移バー (spark) をレンダリングする。
+ * 点が 1 件以下のとき honest empty として非表示にする（固定ダミーバーは置かない）。
+ */
+const ScoreSpark = ({ history }: { history: ReadonlyArray<number> }) => {
+  if (history.length <= 1) {
+    return <div className="spark" aria-hidden="true" />;
+  }
+
+  const minScore = Math.min(...history);
+  const maxScore = Math.max(...history);
+  const range = maxScore - minScore;
+
+  return (
+    <div className="spark" title="試行ごとの最高スコア推移">
+      {history.map((score, index) => {
+        const heightPercent = range === 0 ? 50 : Math.round(((score - minScore) / range) * 70 + 20);
+        const isLast = index === history.length - 1;
+        const isUp = index > 0 && score >= history[index - 1];
+        const className = isLast ? "last" : isUp ? "up" : "";
+        return <i key={index} className={className} style={{ height: `${heightPercent}%` }} />;
+      })}
+    </div>
+  );
+};
+
+/**
+ * material の .stats セクションをレンダリングする。
+ * sections / 試行数 / 最高スコアを実データで表示する。
+ * データが無いスロットは honest empty（表示しないか 0 表示）。
+ */
+const MaterialStatsSection = ({ stats }: { stats: MaterialStatsDto }) => {
+  const hasAnySections = stats.sectionSeriesCount > 0;
+  const hasAnyAttempts = stats.recordingAttemptCount > 0;
+
+  if (!hasAnySections && !hasAnyAttempts) {
+    return (
+      <div className="stats">
+        <span style={{ color: "var(--text-faint)" }}>セクション未作成</span>
+        <span className="best" style={{ color: "var(--text-faint)" }}>
+          未録音
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="stats">
+      {hasAnySections && (
+        <span>
+          <b>{stats.sectionSeriesCount}</b>{" "}
+          {stats.sectionSeriesCount === 1 ? "section" : "sections"}
+        </span>
+      )}
+      {hasAnyAttempts && (
+        <span>
+          <b>{stats.recordingAttemptCount}</b> 試行
+        </span>
+      )}
+      {stats.bestOverallScore !== null && (
+        <span className="best">
+          最高 <b style={{ color: "var(--accent-text)" }}>{stats.bestOverallScore}</b>
+        </span>
+      )}
+    </div>
+  );
+};
+
+/**
+ * .lib-head .sub のテキストを組み立てる。
+ * sections 数 / 最終練習日時を実データで表示する。
+ */
+const buildLibrarySubLine = (materials: MaterialDto[]): string => {
+  const totalSections = materials.reduce((sum, m) => sum + m.stats.sectionSeriesCount, 0);
+
+  const lastPracticedDates = materials
+    .map((m) => m.stats.lastPracticedAt)
+    .filter((d): d is string => d !== null)
+    .map((d) => new Date(d));
+
+  const latestPracticed =
+    lastPracticedDates.length > 0
+      ? new Date(Math.max(...lastPracticedDates.map((d) => d.getTime())))
+      : null;
+
+  const parts: string[] = [];
+  parts.push(`${materials.length} materials`);
+  if (totalSections > 0) {
+    parts.push(`${totalSections} sections`);
+  }
+  if (latestPracticed) {
+    parts.push(`last practiced ${formatRelativeDate(latestPracticed.toISOString())}`);
+  }
+
+  return parts.join(" · ");
+};
+
+/**
+ * material の状態を判定する。
+ * - noSections: section_series がない（未着手）
+ * - noAttempts: section はあるが試行なし（未録音）
+ * - practicing: 試行あり、最高スコア < 90（練習中）
+ * - completed: 最高スコア >= 90（完了）
+ */
+type MaterialStatus = "noSections" | "noAttempts" | "practicing" | "completed";
+
+const getMaterialStatus = (stats: MaterialStatsDto): MaterialStatus => {
+  if (stats.sectionSeriesCount === 0) return "noSections";
+  if (stats.recordingAttemptCount === 0) return "noAttempts";
+  if (stats.bestOverallScore !== null && stats.bestOverallScore >= 90) return "completed";
+  return "practicing";
 };
 
 type MaterialListData = { materials?: MaterialDto[] } | MaterialDto[];
@@ -96,6 +209,17 @@ export default function LibraryPage() {
         setLoading(false);
       });
   }, []);
+
+  // フィルタカウントを実集計する
+  const filterCounts = {
+    all: materials.length,
+    practicing: materials.filter((m) => getMaterialStatus(m.stats) === "practicing").length,
+    untouched: materials.filter(
+      (m) =>
+        getMaterialStatus(m.stats) === "noSections" || getMaterialStatus(m.stats) === "noAttempts",
+    ).length,
+    completed: materials.filter((m) => getMaterialStatus(m.stats) === "completed").length,
+  };
 
   return (
     <div>
@@ -182,22 +306,22 @@ export default function LibraryPage() {
             <div className="lib-head">
               <div>
                 <h2>教材ライブラリ</h2>
-                <div className="sub">{materials.length} materials</div>
+                <div className="sub">{buildLibrarySubLine(materials)}</div>
               </div>
             </div>
 
             <div className="lib-filters">
               <span className="fpill is-active">
-                すべて <span className="fn">{materials.length}</span>
+                すべて <span className="fn">{filterCounts.all}</span>
               </span>
               <span className="fpill">
-                練習中 <span className="fn">0</span>
+                練習中 <span className="fn">{filterCounts.practicing}</span>
               </span>
               <span className="fpill">
-                未着手 <span className="fn">0</span>
+                未着手 <span className="fn">{filterCounts.untouched}</span>
               </span>
               <span className="fpill">
-                完了 <span className="fn">0</span>
+                完了 <span className="fn">{filterCounts.completed}</span>
               </span>
             </div>
 
@@ -233,17 +357,8 @@ export default function LibraryPage() {
                       <h3>{material.title}</h3>
                       {byLine && <div className="by">{byLine}</div>}
                     </div>
-                    <div className="spark" style={{ opacity: 0.4 }}>
-                      <i style={{ height: "18%" }}></i>
-                      <i style={{ height: "18%" }}></i>
-                      <i style={{ height: "18%" }}></i>
-                    </div>
-                    <div className="stats">
-                      <span style={{ color: "var(--text-faint)" }}>セクション未作成</span>
-                      <span className="best" style={{ color: "var(--text-faint)" }}>
-                        未録音
-                      </span>
-                    </div>
+                    <ScoreSpark history={material.stats.overallScoreHistory} />
+                    <MaterialStatsSection stats={material.stats} />
                   </Link>
                 );
               })}

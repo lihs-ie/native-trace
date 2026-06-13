@@ -11,6 +11,7 @@ import { createConfig, type AppConfig } from "./infrastructure/config/index";
 import { createDrizzleDatabase, type DrizzleDatabase } from "./infrastructure/drizzle/client";
 import { createDrizzleTransactionManager } from "./infrastructure/drizzle/transaction-manager";
 import { createDrizzleMaterialRepository } from "./infrastructure/drizzle/repositories/material-repository";
+import { createDrizzleLibraryStatsRepository } from "./infrastructure/drizzle/repositories/library-stats-repository";
 import { createDrizzleSectionSeriesRepository } from "./infrastructure/drizzle/repositories/section-series-repository";
 import { createDrizzleSectionRepository } from "./infrastructure/drizzle/repositories/section-repository";
 import { createDrizzleRecordingAttemptRepository } from "./infrastructure/drizzle/repositories/recording-attempt-repository";
@@ -277,6 +278,7 @@ const buildContainer = (): Container => {
 
   // Repositories
   const materialRepository = createDrizzleMaterialRepository(database);
+  const libraryStatsRepository = createDrizzleLibraryStatsRepository(database);
   const sectionSeriesRepository = createDrizzleSectionSeriesRepository(database);
   const sectionRepository = createDrizzleSectionRepository(database);
   const recordingAttemptRepository = createDrizzleRecordingAttemptRepository(database);
@@ -340,6 +342,7 @@ const buildContainer = (): Container => {
   const usecases: Container["usecases"] = {
     browsePracticeMaterials: createBrowsePracticeMaterials({
       materialRepository,
+      libraryStatsRepository,
     }),
 
     cancelAssessmentRun: createCancelAssessmentRun({

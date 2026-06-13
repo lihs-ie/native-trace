@@ -10,12 +10,27 @@ export type MaterialSourceDto = {
   speakerName?: string | null;
 };
 
+export type MaterialStatsDto = {
+  sectionSeriesCount: number;
+  recordingAttemptCount: number;
+  /** assessment_results.overall_score の最大値。試行なし = null (honest empty) */
+  bestOverallScore: number | null;
+  /**
+   * スコア推移 (overall_score を createdAt 昇順)。
+   * 0 件のとき [] (honest empty)。UI は 1 件以下のとき spark を非表示にする。
+   */
+  overallScoreHistory: number[];
+  /** 全セクションで最後に練習した ISO-8601 日時。試行なし = null (honest empty) */
+  lastPracticedAt: string | null;
+};
+
 export type MaterialDto = {
   identifier: string;
   title: string;
   source: MaterialSourceDto | null;
   createdAt: string;
   updatedAt: string;
+  stats: MaterialStatsDto;
 };
 
 export type SectionSeriesDto = {
