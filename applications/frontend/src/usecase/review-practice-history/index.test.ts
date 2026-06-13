@@ -55,6 +55,7 @@ const makeAnalysisRun = (): AnalysisRun => ({
   identifier: "01ANALYSISRUN" as AnalysisRunIdentifier,
   recordingAttempt: "01ATTEMPT" as RecordingAttemptIdentifier,
   mode: "cloud_only",
+  status: "succeeded",
   createdAt: new Date("2026-01-02T00:01:00Z"),
 });
 

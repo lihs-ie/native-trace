@@ -827,10 +827,12 @@ summary.fold-head { list-style: none; } summary.fold-head::-webkit-details-marke
 .gate-note .gn { font-family: var(--font-mono); color: var(--text-faint); }
 
 /* ============ 15. 進捗 (REQ-129) ============ */
-.spark { display: block; }
-.spark .sline { fill: none; stroke: var(--accent-text); stroke-width: 1.8; stroke-linecap: round; }
-.spark .sfill { fill: var(--accent-soft); stroke: none; }
-.spark .sdot { fill: var(--text-primary); }
+/* SVG sparkline (progress screen). Renamed from .spark to .spark-svg to avoid
+   collision with the bar-chart .spark (display:flex) defined in section 5. */
+.spark-svg { display: block; }
+.spark-svg .sline { fill: none; stroke: var(--accent-text); stroke-width: 1.8; stroke-linecap: round; }
+.spark-svg .sfill { fill: var(--accent-soft); stroke: none; }
+.spark-svg .sdot { fill: var(--text-primary); }
 .radar-poly--ref { fill: none; stroke: var(--chart-grid); stroke-width: 1; }
 .radar-poly--now { fill: var(--axis-intel-soft); stroke: var(--axis-intel); stroke-width: 2; stroke-linejoin: round; }
 .radar-poly--prev { fill: none; stroke: var(--text-faint); stroke-width: 1.5; stroke-dasharray: 4 4; stroke-linejoin: round; }

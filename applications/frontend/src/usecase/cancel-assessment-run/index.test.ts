@@ -17,6 +17,7 @@ const makeAnalysisRun = (): AnalysisRun => ({
   identifier: "01RUN" as AnalysisRunIdentifier,
   recordingAttempt: "01ATTEMPT" as RecordingAttemptIdentifier,
   mode: "comparison",
+  status: "running",
   createdAt: new Date("2026-01-01T00:00:00Z"),
 });
 
@@ -144,8 +145,7 @@ describe("cancelAssessmentRun", () => {
     const deps = makeDependencies({
       analysisJobRepository: {
         find: () => errAsync(notFound("analysisJob", "x")),
-        search: () =>
-          okAsync({ items: [makeQueuedJob("01JOB"), makeQueuedJob("02JOB")] }),
+        search: () => okAsync({ items: [makeQueuedJob("01JOB"), makeQueuedJob("02JOB")] }),
         persist: () => okAsync(undefined),
         acquireLease: () => okAsync(null),
       },

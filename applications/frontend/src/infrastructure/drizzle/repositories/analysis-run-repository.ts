@@ -27,16 +27,17 @@ const rowToAnalysisRun = (row: AnalysisRunRow): AnalysisRun => {
     identifier,
     recordingAttempt: row.recordingAttempt as RecordingAttemptIdentifier,
     mode: row.mode as AnalysisMode,
+    status: row.status as AnalysisRunStatus,
     createdAt: new Date(row.createdAt),
   };
 };
 
-const analysisRunToRow = (analysisRun: AnalysisRun, status: AnalysisRunStatus = "queued"): AnalysisRunRow => {
+const analysisRunToRow = (analysisRun: AnalysisRun): AnalysisRunRow => {
   return {
     identifier: String(analysisRun.identifier),
     recordingAttempt: String(analysisRun.recordingAttempt),
     mode: analysisRun.mode,
-    status,
+    status: analysisRun.status,
     startedAt: null,
     completedAt: null,
     canceledAt: null,
@@ -46,9 +47,7 @@ const analysisRunToRow = (analysisRun: AnalysisRun, status: AnalysisRunStatus = 
   };
 };
 
-export const createDrizzleAnalysisRunRepository = (
-  db: DrizzleDatabase,
-): AnalysisRunRepository => ({
+export const createDrizzleAnalysisRunRepository = (db: DrizzleDatabase): AnalysisRunRepository => ({
   find: (identifier: AnalysisRunIdentifier) => {
     return okAsync(null).andThen(() => {
       try {

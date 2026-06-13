@@ -13,6 +13,7 @@ const makeAnalysisRun = (): AnalysisRun => ({
   identifier: "01RUN" as AnalysisRunIdentifier,
   recordingAttempt: "01ATTEMPT" as RecordingAttemptIdentifier,
   mode: "cloud_only",
+  status: "failed",
   createdAt: new Date("2026-01-01T00:00:00Z"),
 });
 
