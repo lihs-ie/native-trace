@@ -599,6 +599,470 @@ export type ProgressSnapshotCaptured = Readonly<{
   occurredAt: Date;
 }>;
 
+// ============================================================
+// TrainingSession Aggregate (DD-202)
+// ============================================================
+
+// ---- Branded types (TrainingSession) ----
+
+export type TrainingSessionIdentifier = Brand<string, "TrainingSessionIdentifier">;
+
+export const createTrainingSessionIdentifier = (value: string): TrainingSessionIdentifier | null =>
+  value.trim().length > 0 ? (value as TrainingSessionIdentifier) : null;
+
+// ---- TrainingKind (DD-202) ----
+
+export type TrainingKind = "hvpt_identification" | "production_drill" | "shadowing";
+
+export const createTrainingKind = (value: string): TrainingKind | null => {
+  if (value === "hvpt_identification" || value === "production_drill" || value === "shadowing") {
+    return value;
+  }
+  return null;
+};
+
+// ---- TrainingDurationMinutes (DD-241) ----
+// 1 セッションは 1 分以上 30 分以下（ADR-011 sessionCutoffAt20To30Minutes）。
+// 上限値はドメイン literal ではなく SpacingSchedulerConfig 経由で受け取る（DD-293）。
+
+export type TrainingDurationMinutes = Brand<number, "TrainingDurationMinutes">;
+
+export const createTrainingDurationMinutes = (
+  value: number,
+  maxDurationMinutes: number,
+): Result<TrainingDurationMinutes, DomainError> => {
+  if (!Number.isInteger(value) || value < 1 || value > maxDurationMinutes) {
+    return err(
+      validationFailed(
+        "durationMinutes",
+        `訓練時間は1以上${maxDurationMinutes}以下の整数である必要があります (DD-241)`,
+      ),
+    );
+  }
+  return ok(value as TrainingDurationMinutes);
+};
+
+// ---- Accuracy0To1 (DD-242) ----
+
+export type Accuracy0To1 = Brand<number, "Accuracy0To1">;
+
+export const createAccuracy0To1 = (value: number): Result<Accuracy0To1, DomainError> => {
+  if (value < 0 || value > 1) {
+    return err(validationFailed("accuracy", "正答率は0以上1以下である必要があります (DD-242)"));
+  }
+  return ok(value as Accuracy0To1);
+};
+
+// ---- TrainingSession Choice Type (DD-202) ----
+
+export type InProgressTrainingSession = Readonly<{
+  type: "in_progress";
+  identifier: TrainingSessionIdentifier;
+  learner: LearnerIdentifier;
+  kind: TrainingKind;
+  contrast: PhonemeContrast;
+  startedAt: Date;
+}>;
+
+export type CompletedTrainingSession = Readonly<{
+  type: "completed";
+  identifier: TrainingSessionIdentifier;
+  learner: LearnerIdentifier;
+  kind: TrainingKind;
+  contrast: PhonemeContrast;
+  startedAt: Date;
+  endedAt: Date;
+  durationMinutes: TrainingDurationMinutes;
+  sessionAccuracy: Accuracy0To1 | null;
+}>;
+
+export type AbortedTrainingSession = Readonly<{
+  type: "aborted";
+  identifier: TrainingSessionIdentifier;
+  learner: LearnerIdentifier;
+  kind: TrainingKind;
+  contrast: PhonemeContrast;
+  startedAt: Date;
+  abortedAt: Date;
+}>;
+
+export type TrainingSession =
+  | InProgressTrainingSession
+  | CompletedTrainingSession
+  | AbortedTrainingSession;
+
+// ---- TrainingSession domain events (DD-284/285/286) ----
+
+export type TrainingSessionStarted = Readonly<{
+  type: "trainingSessionStarted";
+  trainingSession: InProgressTrainingSession;
+  kind: TrainingKind;
+  contrast: PhonemeContrast;
+  occurredAt: Date;
+}>;
+
+export type TrainingSessionCompleted = Readonly<{
+  type: "trainingSessionCompleted";
+  trainingSession: CompletedTrainingSession;
+  durationMinutes: TrainingDurationMinutes;
+  sessionAccuracy: Accuracy0To1 | null;
+  occurredAt: Date;
+}>;
+
+export type TrainingSessionAborted = Readonly<{
+  type: "trainingSessionAborted";
+  trainingSession: AbortedTrainingSession;
+  occurredAt: Date;
+}>;
+
+// ---- StartTrainingSessionOutput ----
+
+export type StartTrainingSessionOutput = Readonly<{
+  session: InProgressTrainingSession;
+  events: NonEmptyList<TrainingSessionStarted>;
+}>;
+
+// ---- CompleteTrainingSessionOutput (DD-264) ----
+
+export type CompleteTrainingSessionOutput = Readonly<{
+  session: CompletedTrainingSession;
+  events: NonEmptyList<TrainingSessionCompleted>;
+}>;
+
+// ---- AbortTrainingSessionOutput ----
+
+export type AbortTrainingSessionOutput = Readonly<{
+  session: AbortedTrainingSession;
+  events: NonEmptyList<TrainingSessionAborted>;
+}>;
+
+// ---- SpacingSchedulerConfig — config 由来の確定値 (DD-293 / ADR-011) ----
+// 24h / 60% / 20-30分は REQ-127 由来の固定値。ドメインに literal 埋め込み禁止。
+
+export type SpacingSchedulerConfig = Readonly<{
+  /** spacingIntervalHours: 次回提示までの間隔時間（デフォルト 24h）。REQ-127 由来。 */
+  spacingIntervalHours: number;
+  /** masteryGateThreshold: 60% 正答率ゲート（0以上1以下）。REQ-127 由来。 */
+  masteryGateThreshold: number;
+  /** sessionCutoffMinutesMax: 1セッション最大分数（デフォルト 30）。REQ-127 由来。 */
+  sessionCutoffMinutesMax: number;
+  /** sessionCutoffMinutesMin: 1セッション最小分数（デフォルト 20）。REQ-127 由来。 */
+  sessionCutoffMinutesMin: number;
+  /** gateRetryIntervalHours: gate 状態での短間隔再提示時間（デフォルト 6h）。ADR-011 由来。 */
+  gateRetryIntervalHours: number;
+}>;
+
+// ---- completeTrainingSession (DD-264) ----
+
+/**
+ * completeTrainingSession — InProgressTrainingSession を完了状態に遷移する (DD-264)。
+ * 不変条件 2: durationMinutes は 1 以上 sessionCutoffMinutesMax 以下。
+ * sessionAccuracy は HVPT セッションでは HvptTrial 正誤から算出（computeSessionAccuracy で導出）、
+ * シャドーイングでは null 可（REQ-125）。
+ */
+export const completeTrainingSession = (
+  session: InProgressTrainingSession,
+  durationMinutes: number,
+  sessionAccuracy: Accuracy0To1 | null,
+  schedulerConfig: SpacingSchedulerConfig,
+  now: Date,
+): Result<CompleteTrainingSessionOutput, DomainError> => {
+  const durationResult = createTrainingDurationMinutes(
+    durationMinutes,
+    schedulerConfig.sessionCutoffMinutesMax,
+  );
+  if (durationResult.isErr()) return err(durationResult.error);
+
+  const completed: CompletedTrainingSession = {
+    type: "completed",
+    identifier: session.identifier,
+    learner: session.learner,
+    kind: session.kind,
+    contrast: session.contrast,
+    startedAt: session.startedAt,
+    endedAt: now,
+    durationMinutes: durationResult.value,
+    sessionAccuracy,
+  };
+
+  return ok({
+    session: completed,
+    events: [
+      {
+        type: "trainingSessionCompleted",
+        trainingSession: completed,
+        durationMinutes: durationResult.value,
+        sessionAccuracy,
+        occurredAt: now,
+      },
+    ],
+  });
+};
+
+// ============================================================
+// HvptTrial Aggregate (DD-203)
+// ============================================================
+
+// ---- Branded types (HvptTrial) ----
+
+export type HvptTrialIdentifier = Brand<string, "HvptTrialIdentifier">;
+export type StimulusIdentifier = Brand<string, "StimulusIdentifier">;
+export type ReactionTime = Brand<number, "ReactionTime">;
+
+export const createHvptTrialIdentifier = (value: string): HvptTrialIdentifier | null =>
+  value.trim().length > 0 ? (value as HvptTrialIdentifier) : null;
+
+export const createStimulusIdentifier = (value: string): StimulusIdentifier | null =>
+  value.trim().length > 0 ? (value as StimulusIdentifier) : null;
+
+export const createReactionTime = (value: number): Result<ReactionTime, DomainError> => {
+  if (!Number.isInteger(value) || value <= 0) {
+    return err(
+      validationFailed(
+        "reactionTimeMilliseconds",
+        "反応時間は0より大きい整数である必要があります (DD-246)",
+      ),
+    );
+  }
+  return ok(value as ReactionTime);
+};
+
+// ---- ResponseLabel (DD-245) ----
+// 綴り / キーワード / IPA の Choice Type。画像ラベルは取らない (DD-295)。
+
+export type ResponseLabel =
+  | Readonly<{ type: "spelling"; value: string }>
+  | Readonly<{ type: "keyword"; value: string }>
+  | Readonly<{ type: "ipa"; value: string }>;
+
+export const createResponseLabel = (
+  type: string,
+  value: string,
+): Result<ResponseLabel, DomainError> => {
+  if (value.trim().length === 0) {
+    return err(validationFailed("responseLabel", "ResponseLabel の value は空にできません"));
+  }
+  if (type === "spelling" || type === "keyword" || type === "ipa") {
+    return ok({ type, value } as ResponseLabel);
+  }
+  return err(
+    validationFailed(
+      "responseLabel",
+      "ResponseLabel の type は spelling / keyword / ipa のいずれかである必要があります (DD-295)",
+    ),
+  );
+};
+
+// ---- HvptTrial Aggregate (DD-203) ----
+
+export type HvptTrial = Readonly<{
+  identifier: HvptTrialIdentifier;
+  trainingSession: TrainingSessionIdentifier;
+  stimulus: StimulusIdentifier;
+  contrast: PhonemeContrast;
+  correctLabel: ResponseLabel;
+  response: ResponseLabel;
+  correct: boolean;
+  reactionTimeMilliseconds: ReactionTime;
+  presentedAt: Date;
+}>;
+
+// ---- HvptTrial domain event (DD-287) ----
+
+export type HvptTrialRecorded = Readonly<{
+  type: "hvptTrialRecorded";
+  hvptTrial: HvptTrial;
+  trainingSession: TrainingSessionIdentifier;
+  correct: boolean;
+  occurredAt: Date;
+}>;
+
+// ---- RecordHvptTrialCommand / Output ----
+
+export type RecordHvptTrialCommand = Readonly<{
+  identifier: HvptTrialIdentifier;
+  trainingSession: TrainingSessionIdentifier;
+  stimulus: StimulusIdentifier;
+  contrast: PhonemeContrast;
+  correctLabel: ResponseLabel;
+  response: ResponseLabel;
+  reactionTimeMilliseconds: number;
+  presentedAt: Date;
+}>;
+
+export type RecordHvptTrialOutput = Readonly<{
+  trial: HvptTrial;
+  events: NonEmptyList<HvptTrialRecorded>;
+}>;
+
+/**
+ * recordHvptTrial (DD-265)
+ *
+ * 識別試行の正誤・反応時間を記録する。
+ * 不変条件 1: correct は correctLabel と response の一致から導出する（DD-203）。
+ * 不変条件 3: reactionTimeMilliseconds > 0。
+ */
+export const recordHvptTrial = (
+  command: RecordHvptTrialCommand,
+): Result<RecordHvptTrialOutput, DomainError> => {
+  const reactionTimeResult = createReactionTime(command.reactionTimeMilliseconds);
+  if (reactionTimeResult.isErr()) return err(reactionTimeResult.error);
+
+  // 不変条件 1: correct は correctLabel と response の一致から導出
+  const correct =
+    command.correctLabel.type === command.response.type &&
+    command.correctLabel.value === command.response.value;
+
+  const trial: HvptTrial = {
+    identifier: command.identifier,
+    trainingSession: command.trainingSession,
+    stimulus: command.stimulus,
+    contrast: command.contrast,
+    correctLabel: command.correctLabel,
+    response: command.response,
+    correct,
+    reactionTimeMilliseconds: reactionTimeResult.value,
+    presentedAt: command.presentedAt,
+  };
+
+  return ok({
+    trial,
+    events: [
+      {
+        type: "hvptTrialRecorded",
+        hvptTrial: trial,
+        trainingSession: command.trainingSession,
+        correct,
+        occurredAt: command.presentedAt,
+      },
+    ],
+  });
+};
+
+/**
+ * computeSessionAccuracy (DD-266)
+ *
+ * 試行正誤からセッション正答率を派生計算する（純関数、イベントなし）。
+ * 不変条件: trials は NonEmptyList（呼び出し側が保証）。
+ */
+export const computeSessionAccuracy = (trials: NonEmptyList<HvptTrial>): Accuracy0To1 => {
+  const correctCount = trials.filter((t) => t.correct).length;
+  const accuracy = correctCount / trials.length;
+  return accuracy as Accuracy0To1;
+};
+
+// ============================================================
+// SpacingSchedule Aggregate (DD-204)
+// ============================================================
+
+// ---- Branded types (SpacingSchedule) ----
+
+export type SpacingScheduleIdentifier = Brand<string, "SpacingScheduleIdentifier">;
+
+export const createSpacingScheduleIdentifier = (value: string): SpacingScheduleIdentifier | null =>
+  value.trim().length > 0 ? (value as SpacingScheduleIdentifier) : null;
+
+// ---- SpacingState (DD-248) ----
+
+export type SpacingState = "rest" | "due" | "gate" | "done";
+
+export const createSpacingState = (value: string): SpacingState | null => {
+  if (value === "rest" || value === "due" || value === "gate" || value === "done") {
+    return value;
+  }
+  return null;
+};
+
+// ---- SpacingSchedule Aggregate (DD-204) ----
+
+export type SpacingSchedule = Readonly<{
+  identifier: SpacingScheduleIdentifier;
+  learner: LearnerIdentifier;
+  /** focusSound: 対象 WeaknessProfile の識別子 (ADR-007 識別子のみ参照) */
+  focusSound: WeaknessProfileIdentifier;
+  contrast: PhonemeContrast;
+  state: SpacingState;
+  nextPresentationAt: Date;
+  recentAccuracy: Accuracy0To1 | null;
+  updatedAt: Date;
+}>;
+
+// ---- SpacingSchedule domain event (DD-288) ----
+
+export type SpacingScheduleAdvanced = Readonly<{
+  type: "spacingScheduleAdvanced";
+  spacingSchedule: SpacingSchedule;
+  state: SpacingState;
+  nextPresentationAt: Date;
+  occurredAt: Date;
+}>;
+
+/**
+ * applySpacingTransition (DD-267)
+ *
+ * 正答率と現在時刻から rest / due / gate / done 遷移を決定する（決定論、乱数なし）。
+ *
+ * 遷移規則（ADR-011、domain.md §14.8.5）:
+ * 1. now < nextPresentationAt → rest を維持
+ * 2. accuracy ≥ masteryGateThreshold → done 遷移。nextPresentationAt = now + intervalHours
+ *    その後 rest に戻る（done は遷移完了後 rest として保持）
+ * 3. accuracy < masteryGateThreshold → gate 遷移。nextPresentationAt = now + gateRetryIntervalHours
+ * 4. accuracy が null（セッション未実施）かつ now ≥ nextPresentationAt → due 遷移
+ *
+ * 全遷移後の SpacingSchedule は永続化責務のある呼び出し元が repository に書き戻す（DD-204不変条件4）。
+ */
+export const applySpacingTransition = (
+  schedule: SpacingSchedule,
+  accuracy: Accuracy0To1 | null,
+  config: SpacingSchedulerConfig,
+  now: Date,
+): SpacingSchedule => {
+  const intervalMilliseconds = config.spacingIntervalHours * 60 * 60 * 1000;
+  const gateRetryMilliseconds = config.gateRetryIntervalHours * 60 * 60 * 1000;
+
+  // セッション結果がある（accuracy != null）場合は遷移を評価
+  if (accuracy !== null) {
+    if (accuracy >= config.masteryGateThreshold) {
+      // done 遷移: 間隔を開き、rest に戻す
+      const nextPresentationAt = new Date(now.getTime() + intervalMilliseconds);
+      return {
+        ...schedule,
+        state: "rest",
+        nextPresentationAt,
+        recentAccuracy: accuracy,
+        updatedAt: now,
+      };
+    } else {
+      // gate 遷移: 短間隔で再提示（24時間クロックを進めない）
+      const nextPresentationAt = new Date(now.getTime() + gateRetryMilliseconds);
+      return {
+        ...schedule,
+        state: "gate",
+        nextPresentationAt,
+        recentAccuracy: accuracy,
+        updatedAt: now,
+      };
+    }
+  }
+
+  // accuracy が null（セッション未実施）の場合: 時刻による遷移
+  if (now >= schedule.nextPresentationAt) {
+    // due 遷移: 提示候補になる
+    return {
+      ...schedule,
+      state: "due",
+      updatedAt: now,
+    };
+  }
+
+  // rest 維持: 提示時刻未到達
+  return {
+    ...schedule,
+    state: "rest",
+    updatedAt: now,
+  };
+};
+
 // ---- captureProgressSnapshot ドメインサービス (DD-268) ----
 
 /**

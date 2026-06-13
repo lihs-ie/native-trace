@@ -22,6 +22,9 @@ import { createDrizzleFindingDismissalRepository } from "./infrastructure/drizzl
 import { createDrizzleDiagnosticSessionRepository } from "./infrastructure/drizzle/repositories/diagnostic-session-repository";
 import { createDrizzleWeaknessProfileRepository } from "./infrastructure/drizzle/repositories/weakness-profile-repository";
 import { createDrizzleProgressSnapshotRepository } from "./infrastructure/drizzle/repositories/progress-snapshot-repository";
+import { createDrizzleTrainingSessionRepository } from "./infrastructure/drizzle/repositories/training-session-repository";
+import { createDrizzleHvptTrialRepository } from "./infrastructure/drizzle/repositories/hvpt-trial-repository";
+import { createDrizzleSpacingScheduleRepository } from "./infrastructure/drizzle/repositories/spacing-schedule-repository";
 import { createLocalAudioStorage } from "./infrastructure/local-audio-storage";
 import { createSystemClock } from "./infrastructure/clock";
 import { createEntropyProvider } from "./infrastructure/entropy-provider";
@@ -138,6 +141,9 @@ import type { ViewProgressInput, ViewProgressOutput } from "./usecase/view-progr
 import type { ResultAsync } from "neverthrow";
 import type { DomainError } from "./domain/shared";
 import type { AudioStorage } from "./usecase/port/audio-storage";
+import type { TrainingSessionRepository } from "./usecase/port/training-session-repository";
+import type { HvptTrialRepository } from "./usecase/port/hvpt-trial-repository";
+import type { SpacingScheduleRepository } from "./usecase/port/spacing-schedule-repository";
 
 // ---- Container type ----
 
@@ -145,6 +151,12 @@ export type Container = Readonly<{
   config: AppConfig;
   audioStorage: AudioStorage;
   database: DrizzleDatabase;
+  /** repositories — sub-1 の training 集約 repo を後続 usecase から参照できるよう公開。 */
+  repositories: Readonly<{
+    trainingSession: TrainingSessionRepository;
+    hvptTrial: HvptTrialRepository;
+    spacingSchedule: SpacingScheduleRepository;
+  }>;
   usecases: Readonly<{
     browsePracticeMaterials: (
       input: BrowsePracticeMaterialsInput,
@@ -237,6 +249,9 @@ const buildContainer = (): Container => {
   const diagnosticSessionRepository = createDrizzleDiagnosticSessionRepository(database);
   const weaknessProfileRepository = createDrizzleWeaknessProfileRepository(database);
   const progressSnapshotRepository = createDrizzleProgressSnapshotRepository(database);
+  const trainingSessionRepository = createDrizzleTrainingSessionRepository(database);
+  const hvptTrialRepository = createDrizzleHvptTrialRepository(database);
+  const spacingScheduleRepository = createDrizzleSpacingScheduleRepository(database);
 
   // Infrastructure services
   const audioStorage = createLocalAudioStorage(config.audioStorageRoot);
@@ -476,7 +491,13 @@ const buildContainer = (): Container => {
     }),
   };
 
-  return { config, audioStorage, database, usecases };
+  const repositories: Container["repositories"] = {
+    trainingSession: trainingSessionRepository,
+    hvptTrial: hvptTrialRepository,
+    spacingSchedule: spacingScheduleRepository,
+  };
+
+  return { config, audioStorage, database, repositories, usecases };
 };
 
 // ---- Public API ----

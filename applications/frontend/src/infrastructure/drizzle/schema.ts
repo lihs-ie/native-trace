@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, index, integer, sqliteTable, text, unique } from "drizzle-orm/sqlite-core";
+import { check, index, integer, real, sqliteTable, text, unique } from "drizzle-orm/sqlite-core";
 
 // DB-001: materials
 export const materials = sqliteTable(
@@ -432,6 +432,131 @@ export const progressSnapshots = sqliteTable(
       table.section,
       table.deletedAt,
       table.capturedAt,
+    ),
+  ],
+);
+
+// DB-012: training_sessions (Training Context — database-design.md §5b, DD-202)
+// HVPT識別 / 産出ドリル / シャドーイングの1セッション。duration_minutes は累計訓練時間に積み上がる。
+export const trainingSessions = sqliteTable(
+  "training_sessions",
+  {
+    identifier: text("identifier").primaryKey(),
+    learner: text("learner").notNull(),
+    kind: text("kind").notNull(),
+    contrast: text("contrast").notNull(),
+    status: text("status").notNull(),
+    startedAt: text("started_at").notNull(),
+    endedAt: text("ended_at"),
+    abortedAt: text("aborted_at"),
+    durationMinutes: integer("duration_minutes"),
+    sessionAccuracy: real("session_accuracy"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+    deletedAt: text("deleted_at"),
+  },
+  (table) => [
+    check(
+      "ck_training_sessions_kind",
+      sql`${table.kind} IN ('hvpt_identification', 'production_drill', 'shadowing')`,
+    ),
+    check(
+      "ck_training_sessions_status",
+      sql`${table.status} IN ('in_progress', 'completed', 'aborted')`,
+    ),
+    check(
+      "ck_training_sessions_completed",
+      sql`${table.status} != 'completed' OR (${table.endedAt} IS NOT NULL AND ${table.durationMinutes} IS NOT NULL)`,
+    ),
+    check(
+      "ck_training_sessions_aborted",
+      sql`${table.status} != 'aborted' OR ${table.abortedAt} IS NOT NULL`,
+    ),
+    check(
+      "ck_training_sessions_duration_minutes",
+      sql`${table.durationMinutes} IS NULL OR (${table.durationMinutes} >= 1 AND ${table.durationMinutes} <= 30)`,
+    ),
+    check(
+      "ck_training_sessions_session_accuracy",
+      sql`${table.sessionAccuracy} IS NULL OR (${table.sessionAccuracy} >= 0 AND ${table.sessionAccuracy} <= 1)`,
+    ),
+    index("idx_training_sessions_learner_started").on(
+      table.learner,
+      table.deletedAt,
+      table.startedAt,
+    ),
+    index("idx_training_sessions_contrast_started").on(
+      table.learner,
+      table.contrast,
+      table.deletedAt,
+      table.startedAt,
+    ),
+  ],
+);
+
+// DB-013: hvpt_trials (Training Context — database-design.md §5b, DD-203)
+// HVPT識別課題1試行の不変記録。刺激は識別子参照（音声実体を保存しない）。updated_at なし（不変）。
+export const hvptTrials = sqliteTable(
+  "hvpt_trials",
+  {
+    identifier: text("identifier").primaryKey(),
+    trainingSession: text("training_session")
+      .notNull()
+      .references(() => trainingSessions.identifier),
+    stimulus: text("stimulus").notNull(),
+    contrast: text("contrast").notNull(),
+    correctLabelJson: text("correct_label_json").notNull(),
+    responseJson: text("response_json").notNull(),
+    correct: integer("correct").notNull(),
+    reactionTimeMilliseconds: integer("reaction_time_milliseconds").notNull(),
+    presentedAt: text("presented_at").notNull(),
+    createdAt: text("created_at").notNull(),
+    deletedAt: text("deleted_at"),
+  },
+  (table) => [
+    check("ck_hvpt_trials_correct", sql`${table.correct} IN (0, 1)`),
+    check("ck_hvpt_trials_reaction_time", sql`${table.reactionTimeMilliseconds} > 0`),
+    check("ck_hvpt_trials_correct_label_json", sql`json_valid(${table.correctLabelJson})`),
+    check("ck_hvpt_trials_response_json", sql`json_valid(${table.responseJson})`),
+    index("idx_hvpt_trials_training_session").on(
+      table.trainingSession,
+      table.deletedAt,
+      table.presentedAt,
+    ),
+  ],
+);
+
+// DB-014: spacing_schedules (Training Context — database-design.md §5b, DD-204, ADR-011)
+// 対立別の分散学習ステートマシン。state は rest / due / gate / done の4状態。
+// 24時間間隔・60%ゲート・20-30分打ち切りは REQ-127 由来固定値で列には持たせない（ADR-011）。
+export const spacingSchedules = sqliteTable(
+  "spacing_schedules",
+  {
+    identifier: text("identifier").primaryKey(),
+    learner: text("learner").notNull(),
+    focusSound: text("focus_sound")
+      .notNull()
+      .references(() => weaknessProfiles.identifier),
+    contrast: text("contrast").notNull(),
+    state: text("state").notNull(),
+    nextPresentationAt: text("next_presentation_at").notNull(),
+    recentAccuracy: real("recent_accuracy"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+    deletedAt: text("deleted_at"),
+  },
+  (table) => [
+    unique("uq_spacing_schedules_learner_contrast").on(table.learner, table.contrast),
+    check("ck_spacing_schedules_state", sql`${table.state} IN ('rest', 'due', 'gate', 'done')`),
+    check(
+      "ck_spacing_schedules_recent_accuracy",
+      sql`${table.recentAccuracy} IS NULL OR (${table.recentAccuracy} >= 0 AND ${table.recentAccuracy} <= 1)`,
+    ),
+    index("idx_spacing_schedules_due").on(table.state, table.deletedAt, table.nextPresentationAt),
+    index("idx_spacing_schedules_learner_contrast").on(
+      table.learner,
+      table.contrast,
+      table.deletedAt,
     ),
   ],
 );

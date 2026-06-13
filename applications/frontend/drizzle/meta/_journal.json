@@ -36,6 +36,13 @@
       "when": 1781333986452,
       "tag": "0004_salty_mantis",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1781338369251,
+      "tag": "0005_melted_vargas",
+      "breakpoints": true
     }
   ]
 }

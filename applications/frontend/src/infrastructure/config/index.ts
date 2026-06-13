@@ -54,6 +54,18 @@ const configSchema = z.object({
    * Haskell worker の gopCeiling = -2.0 に対応 (DD-293 config 隔離)。
    */
   diagnosticGopRangeCeiling: z.coerce.number().max(-0.01).default(-2),
+
+  // ADR-011: SpacingScheduler 確定値 (REQ-127 由来固定値。ドメインに literal 埋め込み禁止)
+  /** spacingIntervalHours — 次回提示までの間隔（24h）。REQ-127 由来。 */
+  spacingIntervalHours: z.coerce.number().int().positive().default(24),
+  /** masteryGateThreshold — 60% 正答率ゲート（0以上1以下）。REQ-127 由来。 */
+  masteryGateThreshold: z.coerce.number().min(0).max(1).default(0.6),
+  /** sessionCutoffMinutesMax — 1セッション最大分数（30分）。REQ-127 由来。 */
+  sessionCutoffMinutesMax: z.coerce.number().int().positive().default(30),
+  /** sessionCutoffMinutesMin — 1セッション最小分数（20分）。REQ-127 由来。 */
+  sessionCutoffMinutesMin: z.coerce.number().int().positive().default(20),
+  /** gateRetryIntervalHours — gate 状態での短間隔再提示時間（6h）。ADR-011 由来。 */
+  gateRetryIntervalHours: z.coerce.number().int().positive().default(6),
 });
 
 export type AppConfig = z.infer<typeof configSchema>;
@@ -108,6 +120,11 @@ export const createConfig = (): AppConfig => {
     diagnosticFocusAlpha: process.env.DIAGNOSTIC_FOCUS_ALPHA,
     diagnosticGopRangeFloor: process.env.DIAGNOSTIC_GOP_RANGE_FLOOR,
     diagnosticGopRangeCeiling: process.env.DIAGNOSTIC_GOP_RANGE_CEILING,
+    spacingIntervalHours: process.env.SPACING_INTERVAL_HOURS,
+    masteryGateThreshold: process.env.MASTERY_GATE_THRESHOLD,
+    sessionCutoffMinutesMax: process.env.SESSION_CUTOFF_MINUTES_MAX,
+    sessionCutoffMinutesMin: process.env.SESSION_CUTOFF_MINUTES_MIN,
+    gateRetryIntervalHours: process.env.GATE_RETRY_INTERVAL_HOURS,
   });
 
   if (!result.success) {
