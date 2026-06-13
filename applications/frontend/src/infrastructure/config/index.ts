@@ -44,6 +44,16 @@ const configSchema = z.object({
   diagnosticFocusWeightW3: z.coerce.number().min(0).max(10).default(0.2),
   /** diagnosticFocusAlpha — EWMA 平滑化係数（0〜1）。デフォルト 0.3 */
   diagnosticFocusAlpha: z.coerce.number().min(0).max(1).default(0.3),
+  /**
+   * diagnosticGopRangeFloor — GOP 正規化下限（この値以下が mastery 0 に対応）。
+   * Haskell worker の gopFloor = -20.0 に対応 (DD-293 config 隔離)。
+   */
+  diagnosticGopRangeFloor: z.coerce.number().max(-1).default(-20),
+  /**
+   * diagnosticGopRangeCeiling — GOP 正規化上限（この値以上が mastery 1 に対応）。
+   * Haskell worker の gopCeiling = -2.0 に対応 (DD-293 config 隔離)。
+   */
+  diagnosticGopRangeCeiling: z.coerce.number().max(-0.01).default(-2),
 });
 
 export type AppConfig = z.infer<typeof configSchema>;
@@ -96,6 +106,8 @@ export const createConfig = (): AppConfig => {
     diagnosticFocusWeightW2: process.env.DIAGNOSTIC_FOCUS_WEIGHT_W2,
     diagnosticFocusWeightW3: process.env.DIAGNOSTIC_FOCUS_WEIGHT_W3,
     diagnosticFocusAlpha: process.env.DIAGNOSTIC_FOCUS_ALPHA,
+    diagnosticGopRangeFloor: process.env.DIAGNOSTIC_GOP_RANGE_FLOOR,
+    diagnosticGopRangeCeiling: process.env.DIAGNOSTIC_GOP_RANGE_CEILING,
   });
 
   if (!result.success) {

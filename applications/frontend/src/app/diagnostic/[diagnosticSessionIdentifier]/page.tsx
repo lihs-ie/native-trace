@@ -19,7 +19,7 @@
  */
 
 import Link from "next/link";
-import { use, useCallback, useEffect, useRef, useState } from "react";
+import { use, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { apiGet, apiPost, apiPostForm, isApiClientError } from "@/lib/api-client";
 import { nowMs } from "@/lib/now";
@@ -85,35 +85,71 @@ type PageProps = {
 };
 
 /**
- * sessionStorage からセッション情報を読み取る純関数（SSR安全: typeof window guard付き）。
- * useState lazy initializer で使うため、副作用なし・同期的に返す。
+ * sessionStorage からセッション情報を読み取る（client-only）。
+ * useSyncExternalStore の getSnapshot として使うため、**生文字列が変わらない限り
+ * 同一参照を返す**（毎回 JSON.parse で新オブジェクトを返すと snapshot 変化と誤検知され
+ * 無限再描画になる）。storage key 単位でキャッシュする。
+ * - 値あり: DiagnosticSessionDto（正常）
+ * - null: client 確認済みで未存在（エラー）
  */
+const sessionSnapshotCache = new Map<
+  string,
+  { raw: string | null; value: DiagnosticSessionDto | null }
+>();
+
 function readSessionFromStorage(diagnosticSessionIdentifier: string): DiagnosticSessionDto | null {
-  if (typeof window === "undefined") return null;
-  const stored = sessionStorage.getItem(`diagnostic-session-${diagnosticSessionIdentifier}`);
-  if (!stored) return null;
-  try {
-    return JSON.parse(stored) as DiagnosticSessionDto;
-  } catch {
-    return null;
+  const key = `diagnostic-session-${diagnosticSessionIdentifier}`;
+  const stored = sessionStorage.getItem(key);
+  const cached = sessionSnapshotCache.get(key);
+  if (cached !== undefined && cached.raw === stored) {
+    return cached.value;
   }
+  let value: DiagnosticSessionDto | null = null;
+  if (stored) {
+    try {
+      value = JSON.parse(stored) as DiagnosticSessionDto;
+    } catch {
+      value = null;
+    }
+  }
+  sessionSnapshotCache.set(key, { raw: stored, value });
+  return value;
 }
+
+/** useSyncExternalStore 用 no-op subscribe（sessionStorage は同一タブ内で変更通知を発火しない） */
+const subscribeToSessionStorage =
+  (_callback: () => void): (() => void) =>
+  () =>
+    undefined;
+
+/**
+ * SSR 時は undefined を返す（"未確定" sentinel）。
+ * client hydration 後に getSnapshot が実行され null | DiagnosticSessionDto が確定する。
+ * server=undefined / client=null|dto で初回描画が一致し hydration mismatch を防ぐ。
+ */
+const getServerSnapshot = (): undefined => undefined;
 
 export default function DiagnosticSessionPage({ params }: PageProps) {
   const { diagnosticSessionIdentifier } = use(params);
   const router = useRouter();
 
-  // sessionStorage からの読み取りは useState lazy initializer で行う（effect 内 setState 回避）
-  const [diagnosticSession] = useState<DiagnosticSessionDto | null>(() =>
-    readSessionFromStorage(diagnosticSessionIdentifier),
+  // useSyncExternalStore:
+  //   server rendering → undefined（未確定）→ loading 表示
+  //   client hydration 後 → sessionStorage の値 or null（確定）
+  const sessionSnapshot = useSyncExternalStore<DiagnosticSessionDto | null | undefined>(
+    subscribeToSessionStorage,
+    () => readSessionFromStorage(diagnosticSessionIdentifier),
+    getServerSnapshot,
   );
-  const [loadError] = useState<string | null>(
-    // sessionStorage になければ即エラー（library 経由でのみアクセス可能）
-    () =>
-      readSessionFromStorage(diagnosticSessionIdentifier) === null
-        ? "診断セッション情報が見つかりません。ライブラリから診断を開始してください。"
-        : null,
-  );
+
+  // undefined = SSR/hydration 前（loading中）
+  // null = client 確認済みで未存在（エラー）
+  // DiagnosticSessionDto = 正常
+  const diagnosticSession = sessionSnapshot !== undefined ? sessionSnapshot : null;
+  const loadError =
+    sessionSnapshot === null
+      ? "診断セッション情報が見つかりません。ライブラリから診断を開始してください。"
+      : null;
   const [recordError, setRecordError] = useState<string | null>(null);
   const [currentPromptIndex, setCurrentPromptIndex] = useState(0);
   const [promptResults, setPromptResults] = useState<PromptResult[]>([]);

@@ -58,6 +58,10 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
       w2: container.config.diagnosticFocusWeightW2,
       w3: container.config.diagnosticFocusWeightW3,
     },
+    gopNormalizationRange: {
+      floor: container.config.diagnosticGopRangeFloor,
+      ceiling: container.config.diagnosticGopRangeCeiling,
+    },
   });
 
   if (result.isErr()) {
