@@ -25,6 +25,7 @@ import {
 import {
   type DiagnosticSessionIdentifier,
   type WeaknessProfileIdentifier,
+  type WeaknessProfile,
   type LearnerIdentifier,
   type FocusSound,
   type PriorityWeights,
@@ -37,7 +38,10 @@ import {
   completeDiagnosticSession,
   initializeWeaknessProfile,
 } from "../../domain/training";
-import { type AssessmentResultIdentifier } from "../../domain/assessment-result";
+import {
+  type AssessmentResult,
+  type AssessmentResultIdentifier,
+} from "../../domain/assessment-result";
 import { getAllCatalogEntries } from "../../domain/error-catalog";
 import { type DiagnosticSessionRepository } from "../port/diagnostic-session-repository";
 import { type WeaknessProfileRepository } from "../port/weakness-profile-repository";
@@ -78,6 +82,18 @@ export type CompleteDiagnosticSessionOutput = Readonly<{
   diagnosticSessionIdentifier: string;
   weaknessProfileIdentifier: string;
   focusSoundCount: number;
+  /**
+   * 完了処理で生成された WeaknessProfile オブジェクト。
+   * 呼び出し側 (completion route) が CaptureProgressSnapshot usecase に渡すために返す。
+   * M-PG-2: diagnostic 完了時に baseline ProgressSnapshot を生成する。
+   */
+  weaknessProfile: WeaknessProfile;
+  /**
+   * 完了処理で使用した AssessmentResult 群。
+   * 呼び出し側 (completion route) が CaptureProgressSnapshot usecase に渡すために返す。
+   * capture usecase は AssessmentResult.scores から CEFR を導出する。
+   */
+  assessmentResults: ReadonlyArray<AssessmentResult>;
 }>;
 
 // ---- Dependencies ----
@@ -463,6 +479,8 @@ export const createCompleteDiagnosticSession =
               diagnosticSessionIdentifier: String(completedSession.identifier),
               weaknessProfileIdentifier: String(weaknessProfile.identifier),
               focusSoundCount: weaknessProfile.focusSounds.length,
+              weaknessProfile,
+              assessmentResults,
             }));
         });
     });

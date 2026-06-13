@@ -555,6 +555,330 @@ export function cleanupDiagnosticSeed(ids: DiagnosticSeedIdentifiers): void {
   db.close();
 }
 
+// ---- Progress snapshot seed types ----
+
+/**
+ * sentinel learner ULID — infrastructure/config の診断固定学習者識別子と一致させる。
+ * E2E では実際の API が使う config と同じ値を参照する。
+ */
+const SENTINEL_LEARNER = "01JWZLEARNER0000000000001";
+
+export type ProgressSeedIdentifiers = {
+  learner: string;
+  snapshots: Array<{
+    snapshot: string;
+    section: string;
+    sectionSeries: string;
+    material: string;
+    recordingAttempt: string;
+    analysisRun: string;
+    analysisJob: string;
+    assessmentResult: string;
+  }>;
+};
+
+function buildProgressSnapshotFocusScoresJson() {
+  return JSON.stringify([
+    { contrast: "/l/·/r/", score: 42 },
+    { contrast: "/æ/·/ʌ/", score: 55 },
+    { contrast: "epenthesis-sC", score: 63 },
+  ]);
+}
+
+function buildProgressSnapshotFocusScoresJsonV2() {
+  return JSON.stringify([
+    { contrast: "/l/·/r/", score: 48 },
+    { contrast: "/æ/·/ʌ/", score: 60 },
+    { contrast: "epenthesis-sC", score: 67 },
+  ]);
+}
+
+function buildProgressAssessmentResultJson(findingIdentifier: string) {
+  return JSON.stringify({
+    scores: {
+      overall: 64,
+      accuracy: 60,
+      nativeLikeness: 55,
+      pronunciation: 62,
+      connectedSpeech: 70,
+      prosody: 58,
+      intelligibility: 62,
+      cefrOverall: { score: 58, band: "B1" },
+      cefrSegmental: { score: 54, band: "A2+" },
+      cefrProsodic: { score: 46, band: "A2" },
+    },
+    summary: { overallCommentJa: "E2E progress seed snapshot", overallCommentEn: null },
+    findings: [
+      {
+        identifier: findingIdentifier,
+        phenomenon: "substitution",
+        gop: -9.0,
+        category: "pronunciation",
+        severity: "major",
+        textRange: { startOffset: 4, endOffset: 9 },
+        audioRange: null,
+        expected: { text: "right", ipa: "raɪt" },
+        detected: { text: "right", ipa: "laɪt" },
+        messageJa: "/r/ → /l/ 置換",
+        messageEn: null,
+        scoreImpact: -4,
+        confidence: 0.9,
+        detectedTopCandidate: "l",
+        nBest: [],
+        matchesL1Pattern: true,
+        functionalLoad: "max",
+        catalogId: "SUB-l-r",
+        wordPair: null,
+        expectedPronunciation: null,
+        insertedVowel: null,
+        feedbackLayers: null,
+        dismissed: false,
+        wordPositionLabel: "initial",
+      },
+    ],
+    segments: [],
+    metadata: {
+      engineName: "NativeTrace OSS Worker v1",
+      engineVersion: "1.0.0",
+      modelName: "wav2vec2-large-xlsr-53",
+      promptVersion: null,
+      schemaVersion: "2.0.0",
+    },
+    tokenizerVersion: "e2e-progress-seed-v1",
+    perPhonemeGop: [],
+    focusSounds: [],
+    prosody: null,
+    engineSummaryMessageJa: "E2E progress seed",
+  });
+}
+
+function buildProgressAssessmentResultJsonV2(findingIdentifier: string) {
+  return JSON.stringify({
+    scores: {
+      overall: 70,
+      accuracy: 66,
+      nativeLikeness: 62,
+      pronunciation: 68,
+      connectedSpeech: 74,
+      prosody: 63,
+      intelligibility: 68,
+      cefrOverall: { score: 64, band: "B1" },
+      cefrSegmental: { score: 58, band: "B1" },
+      cefrProsodic: { score: 50, band: "A2+" },
+    },
+    summary: { overallCommentJa: "E2E progress seed snapshot v2", overallCommentEn: null },
+    findings: [
+      {
+        identifier: findingIdentifier,
+        phenomenon: "substitution",
+        gop: -7.5,
+        category: "pronunciation",
+        severity: "major",
+        textRange: { startOffset: 4, endOffset: 9 },
+        audioRange: null,
+        expected: { text: "right", ipa: "raɪt" },
+        detected: { text: "right", ipa: "laɪt" },
+        messageJa: "/r/ → /l/ 置換（改善中）",
+        messageEn: null,
+        scoreImpact: -3,
+        confidence: 0.88,
+        detectedTopCandidate: "l",
+        nBest: [],
+        matchesL1Pattern: true,
+        functionalLoad: "max",
+        catalogId: "SUB-l-r",
+        wordPair: null,
+        expectedPronunciation: null,
+        insertedVowel: null,
+        feedbackLayers: null,
+        dismissed: false,
+        wordPositionLabel: "initial",
+      },
+    ],
+    segments: [],
+    metadata: {
+      engineName: "NativeTrace OSS Worker v1",
+      engineVersion: "1.0.0",
+      modelName: "wav2vec2-large-xlsr-53",
+      promptVersion: null,
+      schemaVersion: "2.0.0",
+    },
+    tokenizerVersion: "e2e-progress-seed-v2",
+    perPhonemeGop: [],
+    focusSounds: [],
+    prosody: null,
+    engineSummaryMessageJa: "E2E progress seed v2",
+  });
+}
+
+/**
+ * seedProgressSnapshots — progress_snapshots を指定件数 DB に投入する。
+ *
+ * count=0: スナップショットなし (honest empty 検証用)
+ * count=1: baseline 1 件 (prev なし)
+ * count=2+: 複数 (prev あり / 比較再生有効)
+ *
+ * FK-safe 順序: material → section_series → sections → recording_attempts
+ *   → analysis_runs → analysis_jobs → assessment_results → progress_snapshots
+ *
+ * sentinel learner (SENTINEL_LEARNER) を learner 列に使う。
+ */
+export function seedProgressSnapshots(count: number): ProgressSeedIdentifiers {
+  if (count < 0 || count > 2) throw new Error("count must be 0, 1, or 2");
+
+  const db = new Database(DB_PATH);
+  const baseNow = new Date("2025-01-15T10:00:00.000Z");
+  const snapshots: ProgressSeedIdentifiers["snapshots"] = [];
+
+  for (let i = 0; i < count; i++) {
+    const capturedAt = new Date(baseNow.getTime() + i * 7 * 24 * 60 * 60 * 1000).toISOString();
+    const now = capturedAt;
+
+    const materialId = makeId("PGMAT");
+    const sectionSeriesId = makeId("PGSS");
+    const sectionId = makeId("PGSEC");
+    const recordingAttemptId = makeId("PGRA");
+    const analysisRunId = makeId("PGAR");
+    const analysisJobId = makeId("PGAJ");
+    const assessmentResultId = makeId("PGARES");
+    const findingId = makeId("PGFND");
+    const snapshotId = makeId("PGSNAP");
+
+    // material
+    db.prepare(
+      `INSERT INTO materials (identifier, title, source_json, created_at, updated_at) VALUES (?, ?, NULL, ?, ?)`,
+    ).run(materialId, `E2E Progress Material ${i + 1}`, now, now);
+
+    // section_series
+    db.prepare(
+      `INSERT INTO section_series (identifier, material, title, display_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(sectionSeriesId, materialId, `E2E Progress Series ${i + 1}`, 0, now, now);
+
+    // section
+    const bodyText = "The right light was placed on the street corner.";
+    const bodyTextHash = Buffer.from(bodyText + i)
+      .toString("base64")
+      .slice(0, 32);
+    db.prepare(
+      `INSERT INTO sections (identifier, section_series, version_number, body_text, body_text_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(sectionId, sectionSeriesId, 1, bodyText, bodyTextHash, now);
+
+    // recording_attempt
+    db.prepare(
+      `INSERT INTO recording_attempts (identifier, section, status, input_kind, original_file_name, duration_milliseconds, created_at, updated_at) VALUES (?, ?, 'ready', 'uploaded_file', 'progress-e2e.wav', 4500, ?, ?)`,
+    ).run(recordingAttemptId, sectionId, now, now);
+
+    // analysis_run
+    db.prepare(
+      `INSERT INTO analysis_runs (identifier, recording_attempt, mode, status, started_at, completed_at, created_at, updated_at) VALUES (?, ?, 'oss_worker_only', 'succeeded', ?, ?, ?, ?)`,
+    ).run(analysisRunId, recordingAttemptId, now, now, now, now);
+
+    // analysis_job
+    db.prepare(
+      `INSERT INTO analysis_jobs (identifier, analysis_run, engine, engine_config_json, status, attempt_count, max_attempts, next_run_at, queued_at, started_at, completed_at, created_at, updated_at) VALUES (?, ?, 'oss_worker', '{}', 'succeeded', 1, 3, ?, ?, ?, ?, ?, ?)`,
+    ).run(analysisJobId, analysisRunId, now, now, now, now, now, now);
+
+    // assessment_result
+    const assessmentJson =
+      i === 0
+        ? buildProgressAssessmentResultJson(findingId)
+        : buildProgressAssessmentResultJsonV2(findingId);
+    const engineSnapshotJson = JSON.stringify({
+      type: "oss_worker",
+      identifier: "oss_worker_e2e_progress",
+      displayName: "NativeTrace OSS Worker (E2E Progress)",
+      modelName: "wav2vec2-large-xlsr-53",
+    });
+    const rawResponseJson = JSON.stringify({ data: { source: "e2e-progress-seed" } });
+    db.prepare(
+      `INSERT INTO assessment_results (identifier, analysis_job, overall_score, accuracy_score, native_likeness_score, pronunciation_score, connected_speech_score, prosody_score, assessment_result_json, raw_response_json, engine_snapshot_json, tokenizer_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      assessmentResultId,
+      analysisJobId,
+      i === 0 ? 64 : 70,
+      i === 0 ? 60 : 66,
+      i === 0 ? 55 : 62,
+      i === 0 ? 62 : 68,
+      i === 0 ? 70 : 74,
+      i === 0 ? 58 : 63,
+      assessmentJson,
+      rawResponseJson,
+      engineSnapshotJson,
+      `e2e-progress-seed-v${i + 1}`,
+      now,
+    );
+
+    // progress_snapshot
+    const focusJson =
+      i === 0 ? buildProgressSnapshotFocusScoresJson() : buildProgressSnapshotFocusScoresJsonV2();
+    db.prepare(
+      `INSERT INTO progress_snapshots (identifier, learner, section, source_assessment, task_kind, cefr_overall_score, cefr_segmental_score, cefr_prosodic_score, focus_scores_json, cumulative_training_minutes, captured_at, created_at, deleted_at) VALUES (?, ?, ?, ?, 'rereading', ?, ?, ?, ?, 0, ?, ?, NULL)`,
+    ).run(
+      snapshotId,
+      SENTINEL_LEARNER,
+      sectionId,
+      assessmentResultId,
+      i === 0 ? 58 : 64,
+      i === 0 ? 54 : 58,
+      i === 0 ? 46 : 50,
+      focusJson,
+      capturedAt,
+      now,
+    );
+
+    snapshots.push({
+      snapshot: snapshotId,
+      section: sectionId,
+      sectionSeries: sectionSeriesId,
+      material: materialId,
+      recordingAttempt: recordingAttemptId,
+      analysisRun: analysisRunId,
+      analysisJob: analysisJobId,
+      assessmentResult: assessmentResultId,
+    });
+  }
+
+  db.close();
+  return { learner: SENTINEL_LEARNER, snapshots };
+}
+
+/**
+ * cleanupProgressSeed — progress_snapshots seed の後始末（FK-safe 順序で DELETE）。
+ */
+export function cleanupProgressSeed(ids: ProgressSeedIdentifiers): void {
+  const db = new Database(DB_PATH);
+
+  for (const snap of ids.snapshots) {
+    db.prepare(`DELETE FROM progress_snapshots WHERE identifier = ?`).run(snap.snapshot);
+    db.prepare(`DELETE FROM finding_dismissals WHERE assessment_result = ?`).run(
+      snap.assessmentResult,
+    );
+    db.prepare(`DELETE FROM assessment_results WHERE identifier = ?`).run(snap.assessmentResult);
+    db.prepare(`DELETE FROM analysis_jobs WHERE identifier = ?`).run(snap.analysisJob);
+    db.prepare(`DELETE FROM analysis_runs WHERE identifier = ?`).run(snap.analysisRun);
+    db.prepare(`DELETE FROM recording_attempts WHERE identifier = ?`).run(snap.recordingAttempt);
+    db.prepare(`DELETE FROM sections WHERE identifier = ?`).run(snap.section);
+    db.prepare(`DELETE FROM section_series WHERE identifier = ?`).run(snap.sectionSeries);
+    db.prepare(`DELETE FROM materials WHERE identifier = ?`).run(snap.material);
+  }
+
+  db.close();
+}
+
+/**
+ * cleanupAllProgressSnapshotsForSentinel — sentinel learner の全 progress_snapshot を削除する。
+ *
+ * E2E テスト間の干渉を防ぐため、各テストシナリオの beforeAll で呼び出す。
+ * sentinel learner を共有しているため、他のテストが挿入したデータが残ると
+ * API レスポンスに混入し honest empty の assert が失敗する。
+ */
+export function cleanupAllProgressSnapshotsForSentinel(): void {
+  const db = new Database(DB_PATH);
+  // sentinel learner の全スナップショットを soft delete ではなく物理削除
+  db.prepare(`DELETE FROM progress_snapshots WHERE learner = ?`).run(SENTINEL_LEARNER);
+  db.close();
+}
+
 // ---- Cleanup function ----
 export function cleanupSeed(ids: SeedIdentifiers): void {
   const db = new Database(DB_PATH);

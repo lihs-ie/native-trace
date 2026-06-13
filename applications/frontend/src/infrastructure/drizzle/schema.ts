@@ -380,6 +380,62 @@ export const weaknessProfiles = sqliteTable(
   ],
 );
 
+// DB-015: progress_snapshots (Training Context — database-design.md §5b, ADR-008)
+// 統制課題に限定した進捗スナップショット。作成後不変 (updated_at を持たない)。
+// section / source_assessment は PPC テーブルを識別子 FK 参照 (ADR-007)。
+export const progressSnapshots = sqliteTable(
+  "progress_snapshots",
+  {
+    identifier: text("identifier").primaryKey(),
+    learner: text("learner").notNull(),
+    // section は PPC の Section または DiagnosticSession 識別子を格納する。
+    // diagnostic baseline では DiagnosticSession 識別子を使用するため FK 制約は持たない (ADR-007 識別子のみ結合)。
+    section: text("section").notNull(),
+    sourceAssessment: text("source_assessment")
+      .notNull()
+      .references(() => assessmentResults.identifier),
+    taskKind: text("task_kind").notNull(),
+    cefrOverallScore: integer("cefr_overall_score").notNull(),
+    cefrSegmentalScore: integer("cefr_segmental_score").notNull(),
+    cefrProsodicScore: integer("cefr_prosodic_score").notNull(),
+    focusScoresJson: text("focus_scores_json").notNull(),
+    cumulativeTrainingMinutes: integer("cumulative_training_minutes").notNull(),
+    capturedAt: text("captured_at").notNull(),
+    createdAt: text("created_at").notNull(),
+    deletedAt: text("deleted_at"),
+  },
+  (table) => [
+    check("ck_progress_snapshots_task_kind", sql`${table.taskKind} IN ('rereading', 'drill')`),
+    check(
+      "ck_progress_snapshots_cefr_overall_score",
+      sql`${table.cefrOverallScore} BETWEEN 0 AND 100`,
+    ),
+    check(
+      "ck_progress_snapshots_cefr_segmental_score",
+      sql`${table.cefrSegmentalScore} BETWEEN 0 AND 100`,
+    ),
+    check(
+      "ck_progress_snapshots_cefr_prosodic_score",
+      sql`${table.cefrProsodicScore} BETWEEN 0 AND 100`,
+    ),
+    check("ck_progress_snapshots_focus_scores_json", sql`json_valid(${table.focusScoresJson})`),
+    check(
+      "ck_progress_snapshots_cumulative_training_minutes",
+      sql`${table.cumulativeTrainingMinutes} >= 0`,
+    ),
+    index("idx_progress_snapshots_learner_captured").on(
+      table.learner,
+      table.deletedAt,
+      table.capturedAt,
+    ),
+    index("idx_progress_snapshots_section_captured").on(
+      table.section,
+      table.deletedAt,
+      table.capturedAt,
+    ),
+  ],
+);
+
 // DB-009: finding_dismissals
 export const findingDismissals = sqliteTable(
   "finding_dismissals",

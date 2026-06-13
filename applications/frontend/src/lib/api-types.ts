@@ -352,6 +352,32 @@ export const CATEGORY_LABELS: Record<string, string> = {
   nativeLikeness: "Native-likeness",
 };
 
+// ---- Progress DTOs (Training Context — M-PG-3) ----
+
+export type ProgressSnapshotDto = {
+  identifier: string;
+  section: string;
+  sourceAssessment: string;
+  taskKind: "rereading" | "drill";
+  cefrSubscales: DiagnosticCefrSubscalesDto;
+  focusScores: Array<{ contrast: string; score: number }>;
+  cumulativeTrainingMinutes: number;
+  capturedAt: string;
+};
+
+/**
+ * ProgressDto — 進捗 API レスポンス DTO (M-PG-3)
+ *
+ * snapshots: 時系列全件 (capturedAt 昇順)
+ * now: 最新スナップショット (null = 0 件 / honest empty)
+ * prev: 1 個前のスナップショット (null = 1 件以下 / OQ-6 honest empty)
+ */
+export type ProgressDto = {
+  snapshots: ProgressSnapshotDto[];
+  now: ProgressSnapshotDto | null;
+  prev: ProgressSnapshotDto | null;
+};
+
 export const ENGINE_LABELS: Record<string, string> = {
   cloud: "OpenAI",
   oss_worker: "OSS Worker",

@@ -21,6 +21,7 @@ import { createDrizzleAssessmentResultRepository } from "./infrastructure/drizzl
 import { createDrizzleFindingDismissalRepository } from "./infrastructure/drizzle/repositories/finding-dismissal-repository";
 import { createDrizzleDiagnosticSessionRepository } from "./infrastructure/drizzle/repositories/diagnostic-session-repository";
 import { createDrizzleWeaknessProfileRepository } from "./infrastructure/drizzle/repositories/weakness-profile-repository";
+import { createDrizzleProgressSnapshotRepository } from "./infrastructure/drizzle/repositories/progress-snapshot-repository";
 import { createLocalAudioStorage } from "./infrastructure/local-audio-storage";
 import { createSystemClock } from "./infrastructure/clock";
 import { createEntropyProvider } from "./infrastructure/entropy-provider";
@@ -52,6 +53,8 @@ import { createRestoreFinding } from "./usecase/restore-finding/index";
 import { createStartDiagnosticSession } from "./usecase/start-diagnostic-session/index";
 import { createCompleteDiagnosticSession } from "./usecase/complete-diagnostic-session/index";
 import { createViewDiagnosticResult } from "./usecase/view-diagnostic-result/index";
+import { createCaptureProgressSnapshot } from "./usecase/capture-progress-snapshot/index";
+import { createViewProgress } from "./usecase/view-progress/index";
 
 import type {
   BrowsePracticeMaterialsInput,
@@ -126,6 +129,11 @@ import type {
   ViewDiagnosticResultInput,
   DiagnosticResultOutput,
 } from "./usecase/view-diagnostic-result/index";
+import type {
+  CaptureProgressSnapshotInput,
+  CaptureProgressSnapshotOutput,
+} from "./usecase/capture-progress-snapshot/index";
+import type { ViewProgressInput, ViewProgressOutput } from "./usecase/view-progress/index";
 
 import type { ResultAsync } from "neverthrow";
 import type { DomainError } from "./domain/shared";
@@ -196,6 +204,10 @@ export type Container = Readonly<{
     viewDiagnosticResult: (
       input: ViewDiagnosticResultInput,
     ) => ResultAsync<DiagnosticResultOutput, DomainError>;
+    captureProgressSnapshot: (
+      input: CaptureProgressSnapshotInput,
+    ) => ResultAsync<CaptureProgressSnapshotOutput, DomainError>;
+    viewProgress: (input: ViewProgressInput) => ResultAsync<ViewProgressOutput, DomainError>;
   }>;
 }>;
 
@@ -224,6 +236,7 @@ const buildContainer = (): Container => {
   const findingDismissalRepository = createDrizzleFindingDismissalRepository(database);
   const diagnosticSessionRepository = createDrizzleDiagnosticSessionRepository(database);
   const weaknessProfileRepository = createDrizzleWeaknessProfileRepository(database);
+  const progressSnapshotRepository = createDrizzleProgressSnapshotRepository(database);
 
   // Infrastructure services
   const audioStorage = createLocalAudioStorage(config.audioStorageRoot);
@@ -450,6 +463,16 @@ const buildContainer = (): Container => {
       diagnosticSessionRepository,
       weaknessProfileRepository,
       assessmentResultRepository,
+    }),
+
+    captureProgressSnapshot: createCaptureProgressSnapshot({
+      progressSnapshotRepository,
+      entropyProvider,
+      clock,
+    }),
+
+    viewProgress: createViewProgress({
+      progressSnapshotRepository,
     }),
   };
 
