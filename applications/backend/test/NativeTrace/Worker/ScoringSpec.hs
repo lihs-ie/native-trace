@@ -9,6 +9,7 @@ import NativeTrace.Worker.AnalyzerClient (
   PhonemeGop (..),
   SchwaRealization (..),
   SyllableInfo (..),
+  WeakFormRealization (..),
  )
 import NativeTrace.Worker.Scoring (
   ScoringInput (..),
@@ -22,9 +23,16 @@ import NativeTrace.Worker.Types (
   AssessmentFinding (..),
   AssessmentScores (..),
   CefrScore (..),
+  FindingSeverity (..),
   TextRange (..),
  )
 import Test.Hspec
+
+-- | FindingSeverity はテスト層で Eq インスタンスがないため、
+-- パターンマッチで suggestion 判定するヘルパー。
+isSuggestion :: FindingSeverity -> Bool
+isSuggestion FindingSeveritySuggestion = True
+isSuggestion _ = False
 
 -- | テスト用の AnalyzerResult フィクスチャ（test-only、本番に入らない）。
 fixtureAnalyzerResult :: AnalyzerResult
@@ -227,10 +235,413 @@ spec = do
                         gopValue = -13.0,
                         gopStartMs = 0,
                         gopEndMs = 100,
-                        gopNBest = [NBestEntry {nBestPhoneme = "ɾ", nBestConfidence = 0.9}]
+                        gopNBest = [NBestEntry {nBestPhoneme = "ɾ", nBestConfidence = 0.9}],
+                        gopWordPosition = Nothing
                       }
                   ],
                 analyzedInterWordSilences = []
               }
       let findings = generateFindingsFromGop bodyText nBestResult
       any findingMatchesL1Pattern findings `shouldBe` True
+
+  -- M-102R-c / M-102R-d: connected speech 4 現象の producer 発火・severity・scoreImpact
+  describe "connected speech findings (M-102R-c, M-102R-d)" $ do
+    -- ---- linking ----
+    describe "linking producer" $ do
+      it "fires when silenceDurationMs < 50 (linking signal satisfied)" $ do
+        let linkingResult =
+              fixtureAnalyzerResult
+                { analyzedInterWordSilences =
+                    [ InterWordSilence
+                        { silenceStartMs = 200,
+                          silenceEndMs = 220,
+                          -- 20ms < linkingGapThresholdMs(50) → linking 発火
+                          silenceDurationMs = 20
+                        }
+                    ],
+                  analyzedPerPhonemeGop = [],
+                  analyzedSchwaRealizations = []
+                }
+        let findings = generateFindingsFromGop bodyText linkingResult
+        any (\f -> findingPhenomenon f == "linking") findings `shouldBe` True
+
+      it "does not fire when silenceDurationMs >= 50 (linking signal not satisfied)" $ do
+        let noLinkingResult =
+              fixtureAnalyzerResult
+                { analyzedInterWordSilences =
+                    [ InterWordSilence
+                        { silenceStartMs = 200,
+                          silenceEndMs = 350,
+                          -- 150ms >= linkingGapThresholdMs(50) → 発火しない
+                          silenceDurationMs = 150
+                        }
+                    ],
+                  analyzedPerPhonemeGop = [],
+                  analyzedSchwaRealizations = []
+                }
+        let findings = generateFindingsFromGop bodyText noLinkingResult
+        any (\f -> findingPhenomenon f == "linking") findings `shouldBe` False
+
+      it "linking finding has severity == suggestion and scoreImpact == 0.0 (ADR-004, M-102R-d)" $ do
+        let linkingResult =
+              fixtureAnalyzerResult
+                { analyzedInterWordSilences =
+                    [ InterWordSilence
+                        { silenceStartMs = 200,
+                          silenceEndMs = 220,
+                          silenceDurationMs = 20
+                        }
+                    ],
+                  analyzedPerPhonemeGop = [],
+                  analyzedSchwaRealizations = []
+                }
+        let linkingFindings =
+              filter (\f -> findingPhenomenon f == "linking") $
+                generateFindingsFromGop bodyText linkingResult
+        all (isSuggestion . findingSeverity) linkingFindings `shouldBe` True
+        all (\f -> findingScoreImpact f == 0.0) linkingFindings `shouldBe` True
+
+    -- ---- flap ----
+    describe "flap producer" $ do
+      it "fires when expected phoneme is /t/ and duration < 60ms (short duration signal)" $ do
+        let flapResult =
+              fixtureAnalyzerResult
+                { analyzedPerPhonemeGop =
+                    [ PhonemeGop
+                        { gopPhoneme = "t",
+                          gopValue = -5.0,
+                          -- 50ms duration < flapDurationThresholdMs(60) → flap 発火
+                          gopStartMs = 100,
+                          gopEndMs = 150,
+                          gopNBest = [],
+                          gopWordPosition = Nothing
+                        }
+                    ],
+                  analyzedInterWordSilences = []
+                }
+        let findings = generateFindingsFromGop bodyText flapResult
+        any (\f -> findingPhenomenon f == "flap") findings `shouldBe` True
+
+      it "fires when expected phoneme is /d/ and NBest contains ɾ (rhotic NBest signal)" $ do
+        let flapResult =
+              fixtureAnalyzerResult
+                { analyzedPerPhonemeGop =
+                    [ PhonemeGop
+                        { gopPhoneme = "d",
+                          gopValue = -5.0,
+                          -- 100ms duration >= threshold, but NBest has ɾ → flap 発火
+                          gopStartMs = 100,
+                          gopEndMs = 200,
+                          gopNBest = [NBestEntry {nBestPhoneme = "ɾ", nBestConfidence = 0.7}],
+                          gopWordPosition = Nothing
+                        }
+                    ],
+                  analyzedInterWordSilences = []
+                }
+        let findings = generateFindingsFromGop bodyText flapResult
+        any (\f -> findingPhenomenon f == "flap") findings `shouldBe` True
+
+      it "does not fire when phoneme is not /t/ or /d/ (non-flap-target phoneme)" $ do
+        let noFlapResult =
+              fixtureAnalyzerResult
+                { analyzedPerPhonemeGop =
+                    [ PhonemeGop
+                        { gopPhoneme = "s",
+                          gopValue = -5.0,
+                          gopStartMs = 100,
+                          gopEndMs = 140,
+                          gopNBest = [NBestEntry {nBestPhoneme = "ɾ", nBestConfidence = 0.7}],
+                          gopWordPosition = Nothing
+                        }
+                    ],
+                  analyzedInterWordSilences = []
+                }
+        let findings = generateFindingsFromGop bodyText noFlapResult
+        any (\f -> findingPhenomenon f == "flap") findings `shouldBe` False
+
+      it "flap finding has severity == suggestion and scoreImpact == 0.0 (ADR-004, M-102R-d)" $ do
+        let flapResult =
+              fixtureAnalyzerResult
+                { analyzedPerPhonemeGop =
+                    [ PhonemeGop
+                        { gopPhoneme = "t",
+                          gopValue = -5.0,
+                          gopStartMs = 100,
+                          gopEndMs = 150,
+                          gopNBest = [],
+                          gopWordPosition = Nothing
+                        }
+                    ],
+                  analyzedInterWordSilences = []
+                }
+        let flapFindings =
+              filter (\f -> findingPhenomenon f == "flap") $
+                generateFindingsFromGop bodyText flapResult
+        all (isSuggestion . findingSeverity) flapFindings `shouldBe` True
+        all (\f -> findingScoreImpact f == 0.0) flapFindings `shouldBe` True
+
+    -- ---- assimilation ----
+    describe "assimilation producer" $ do
+      it "fires when /n/ is followed by /m/ context and NBest top is 'm' (assimilation signal)" $ do
+        -- /n/ + next=/m/ + NBest has "m" → assimilation 発火
+        let assimilationResult =
+              fixtureAnalyzerResult
+                { analyzedPerPhonemeGop =
+                    [ PhonemeGop
+                        { gopPhoneme = "n",
+                          gopValue = -5.0,
+                          gopStartMs = 100,
+                          gopEndMs = 200,
+                          gopNBest = [NBestEntry {nBestPhoneme = "m", nBestConfidence = 0.8}],
+                          gopWordPosition = Nothing
+                        },
+                      PhonemeGop
+                        { gopPhoneme = "m",
+                          gopValue = -4.0,
+                          gopStartMs = 200,
+                          gopEndMs = 300,
+                          gopNBest = [],
+                          gopWordPosition = Nothing
+                        }
+                    ],
+                  analyzedInterWordSilences = []
+                }
+        let findings = generateFindingsFromGop bodyText assimilationResult
+        any (\f -> findingPhenomenon f == "assimilation") findings `shouldBe` True
+
+      it "fires when /n/ is followed by /k/ context and NBest has ŋ (velar assimilation)" $ do
+        let assimilationResult =
+              fixtureAnalyzerResult
+                { analyzedPerPhonemeGop =
+                    [ PhonemeGop
+                        { gopPhoneme = "n",
+                          gopValue = -5.0,
+                          gopStartMs = 100,
+                          gopEndMs = 200,
+                          gopNBest = [NBestEntry {nBestPhoneme = "ŋ", nBestConfidence = 0.75}],
+                          gopWordPosition = Nothing
+                        },
+                      PhonemeGop
+                        { gopPhoneme = "k",
+                          gopValue = -4.0,
+                          gopStartMs = 200,
+                          gopEndMs = 300,
+                          gopNBest = [],
+                          gopWordPosition = Nothing
+                        }
+                    ],
+                  analyzedInterWordSilences = []
+                }
+        let findings = generateFindingsFromGop bodyText assimilationResult
+        any (\f -> findingPhenomenon f == "assimilation") findings `shouldBe` True
+
+      it "does not fire when assimilation context is absent (no following matching phoneme)" $ do
+        -- /n/ but next is /s/ (not in assimilation context) → 発火しない
+        let noAssimilationResult =
+              fixtureAnalyzerResult
+                { analyzedPerPhonemeGop =
+                    [ PhonemeGop
+                        { gopPhoneme = "n",
+                          gopValue = -5.0,
+                          gopStartMs = 100,
+                          gopEndMs = 200,
+                          gopNBest = [NBestEntry {nBestPhoneme = "m", nBestConfidence = 0.8}],
+                          gopWordPosition = Nothing
+                        },
+                      PhonemeGop
+                        { gopPhoneme = "s",
+                          gopValue = -4.0,
+                          gopStartMs = 200,
+                          gopEndMs = 300,
+                          gopNBest = [],
+                          gopWordPosition = Nothing
+                        }
+                    ],
+                  analyzedInterWordSilences = []
+                }
+        let findings = generateFindingsFromGop bodyText noAssimilationResult
+        any (\f -> findingPhenomenon f == "assimilation") findings `shouldBe` False
+
+      it "assimilation finding has severity == suggestion and scoreImpact == 0.0 (ADR-004, M-102R-d)" $ do
+        let assimilationResult =
+              fixtureAnalyzerResult
+                { analyzedPerPhonemeGop =
+                    [ PhonemeGop
+                        { gopPhoneme = "n",
+                          gopValue = -5.0,
+                          gopStartMs = 100,
+                          gopEndMs = 200,
+                          gopNBest = [NBestEntry {nBestPhoneme = "m", nBestConfidence = 0.8}],
+                          gopWordPosition = Nothing
+                        },
+                      PhonemeGop
+                        { gopPhoneme = "m",
+                          gopValue = -4.0,
+                          gopStartMs = 200,
+                          gopEndMs = 300,
+                          gopNBest = [],
+                          gopWordPosition = Nothing
+                        }
+                    ],
+                  analyzedInterWordSilences = []
+                }
+        let assimilationFindings =
+              filter (\f -> findingPhenomenon f == "assimilation") $
+                generateFindingsFromGop bodyText assimilationResult
+        all (isSuggestion . findingSeverity) assimilationFindings `shouldBe` True
+        all (\f -> findingScoreImpact f == 0.0) assimilationFindings `shouldBe` True
+
+    -- ---- reduction ----
+    describe "reduction producer" $ do
+      it "fires when full vowel is short (<80ms) and covered by SchwaRealization (reduction signal)" $ do
+        -- /æ/ は fullVowelPhonemes に含まれる。duration=50ms < 80ms。SchwaRealization が time をカバー。
+        let reductionResult =
+              fixtureAnalyzerResult
+                { analyzedPerPhonemeGop =
+                    [ PhonemeGop
+                        { gopPhoneme = "æ",
+                          gopValue = -5.0,
+                          -- 50ms duration < reductionDurationThresholdMs(80)
+                          gopStartMs = 100,
+                          gopEndMs = 150,
+                          gopNBest = [],
+                          gopWordPosition = Nothing
+                        }
+                    ],
+                  analyzedSchwaRealizations =
+                    [ SchwaRealization
+                        { schwaPhoneme = "ə",
+                          -- カバー: 90 <= 100 かつ 160 >= 150
+                          schwaStartMs = 90,
+                          schwaEndMs = 160,
+                          schwaRealized = True
+                        }
+                    ],
+                  analyzedInterWordSilences = [],
+                  analyzedWeakFormRealizations = []
+                }
+        let findings = generateFindingsFromGop bodyText reductionResult
+        any (\f -> findingPhenomenon f == "reduction") findings `shouldBe` True
+
+      it "does not fire when phoneme is not a full vowel (non-reduction target)" $ do
+        -- /n/ は fullVowelPhonemes に含まれない → 発火しない
+        let noReductionResult =
+              fixtureAnalyzerResult
+                { analyzedPerPhonemeGop =
+                    [ PhonemeGop
+                        { gopPhoneme = "n",
+                          gopValue = -5.0,
+                          gopStartMs = 100,
+                          gopEndMs = 140,
+                          gopNBest = [],
+                          gopWordPosition = Nothing
+                        }
+                    ],
+                  analyzedSchwaRealizations =
+                    [ SchwaRealization
+                        { schwaPhoneme = "ə",
+                          schwaStartMs = 90,
+                          schwaEndMs = 160,
+                          schwaRealized = True
+                        }
+                    ],
+                  analyzedInterWordSilences = [],
+                  analyzedWeakFormRealizations = []
+                }
+        let findings = generateFindingsFromGop bodyText noReductionResult
+        any (\f -> findingPhenomenon f == "reduction") findings `shouldBe` False
+
+      it "does not fire when duration is >= 80ms even if SchwaRealization is present" $ do
+        let noReductionResult =
+              fixtureAnalyzerResult
+                { analyzedPerPhonemeGop =
+                    [ PhonemeGop
+                        { gopPhoneme = "æ",
+                          gopValue = -5.0,
+                          -- 100ms >= 80ms → 発火しない
+                          gopStartMs = 100,
+                          gopEndMs = 200,
+                          gopNBest = [],
+                          gopWordPosition = Nothing
+                        }
+                    ],
+                  analyzedSchwaRealizations =
+                    [ SchwaRealization
+                        { schwaPhoneme = "ə",
+                          schwaStartMs = 90,
+                          schwaEndMs = 210,
+                          schwaRealized = True
+                        }
+                    ],
+                  analyzedInterWordSilences = [],
+                  analyzedWeakFormRealizations = []
+                }
+        let findings = generateFindingsFromGop bodyText noReductionResult
+        any (\f -> findingPhenomenon f == "reduction") findings `shouldBe` False
+
+      it "does not fire when phoneme is in weakForm time range (weakForm exclusion)" $ do
+        let noReductionResult =
+              fixtureAnalyzerResult
+                { analyzedPerPhonemeGop =
+                    [ PhonemeGop
+                        { gopPhoneme = "æ",
+                          gopValue = -5.0,
+                          gopStartMs = 100,
+                          gopEndMs = 140,
+                          gopNBest = [],
+                          gopWordPosition = Nothing
+                        }
+                    ],
+                  analyzedSchwaRealizations =
+                    [ SchwaRealization
+                        { schwaPhoneme = "ə",
+                          schwaStartMs = 90,
+                          schwaEndMs = 160,
+                          schwaRealized = True
+                        }
+                    ],
+                  analyzedInterWordSilences = [],
+                  -- weakForm range [80, 200) が gopStartMs=100 をカバー → 除外
+                  analyzedWeakFormRealizations =
+                    [ WeakFormRealization
+                        { weakFormWord = "a",
+                          weakFormWordIndex = 0,
+                          weakFormStartMs = 80,
+                          weakFormEndMs = 200,
+                          weakFormExpectedWeak = True,
+                          weakFormRealizedWeak = False
+                        }
+                    ]
+                }
+        let findings = generateFindingsFromGop bodyText noReductionResult
+        any (\f -> findingPhenomenon f == "reduction") findings `shouldBe` False
+
+      it "reduction finding has severity == suggestion and scoreImpact == 0.0 (ADR-004, M-102R-d)" $ do
+        let reductionResult =
+              fixtureAnalyzerResult
+                { analyzedPerPhonemeGop =
+                    [ PhonemeGop
+                        { gopPhoneme = "æ",
+                          gopValue = -5.0,
+                          gopStartMs = 100,
+                          gopEndMs = 150,
+                          gopNBest = [],
+                          gopWordPosition = Nothing
+                        }
+                    ],
+                  analyzedSchwaRealizations =
+                    [ SchwaRealization
+                        { schwaPhoneme = "ə",
+                          schwaStartMs = 90,
+                          schwaEndMs = 160,
+                          schwaRealized = True
+                        }
+                    ],
+                  analyzedInterWordSilences = [],
+                  analyzedWeakFormRealizations = []
+                }
+        let reductionFindings =
+              filter (\f -> findingPhenomenon f == "reduction") $
+                generateFindingsFromGop bodyText reductionResult
+        all (isSuggestion . findingSeverity) reductionFindings `shouldBe` True
+        all (\f -> findingScoreImpact f == 0.0) reductionFindings `shouldBe` True

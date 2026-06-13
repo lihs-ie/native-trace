@@ -427,7 +427,19 @@ generateFindingsFromGop sectionBodyText analyzerResult =
       stressFindings = buildLexicalStressFindings sectionBodyText (analyzedWordStress analyzerResult) tokenCount tokens
       -- weakForm findings（M-102/M-114）
       weakFormFindings = buildWeakFormFindings sectionBodyText (analyzedWeakFormRealizations analyzerResult) tokenCount tokens
-   in gopFindings <> epenthesisFindings <> stressFindings <> weakFormFindings
+      -- connected speech 4 現象 findings（M-102R）
+      linkingFindings = buildLinkingFindings (analyzedInterWordSilences analyzerResult) allPhonemeGops tokens tokenCount
+      flapFindings = buildFlapFindings allPhonemeGops tokens tokenCount
+      assimilationFindings = buildAssimilationFindings allPhonemeGops tokens tokenCount
+      reductionFindings = buildReductionFindings (analyzedSchwaRealizations analyzerResult) (analyzedWeakFormRealizations analyzerResult) allPhonemeGops tokens tokenCount
+   in gopFindings
+        <> epenthesisFindings
+        <> stressFindings
+        <> weakFormFindings
+        <> linkingFindings
+        <> flapFindings
+        <> assimilationFindings
+        <> reductionFindings
 
 buildGopFinding ::
   Int ->
@@ -513,7 +525,8 @@ buildGopFinding tokenCount tokens expectedIpa detectedIpa phonemeGop =
                     findingWordPair = Nothing,
                     findingExpectedPronunciation = Nothing,
                     findingInsertedVowel = Nothing,
-                    findingInsertionPositionMs = Nothing
+                    findingInsertionPositionMs = Nothing,
+                    findingWordPositionLabel = gopWordPosition phonemeGop
                   }
               ]
 
@@ -569,7 +582,8 @@ buildEpenthesisFindings _sectionBodyText syllables tokenCount tokens =
                   findingWordPair = Nothing,
                   findingExpectedPronunciation = Nothing,
                   findingInsertedVowel = insertedVowelIpa,
-                  findingInsertionPositionMs = insertionMs
+                  findingInsertionPositionMs = insertionMs,
+                  findingWordPositionLabel = Nothing
                 }
             ]
 
@@ -627,7 +641,8 @@ buildLexicalStressFindings _sectionBodyText wordStresses tokenCount tokens =
                   findingWordPair = Nothing,
                   findingExpectedPronunciation = Nothing,
                   findingInsertedVowel = Nothing,
-                  findingInsertionPositionMs = Nothing
+                  findingInsertionPositionMs = Nothing,
+                  findingWordPositionLabel = Nothing
                 }
 
 -- | weakForm finding を弱形実現データから生成する（M-102/M-109）。
@@ -685,8 +700,256 @@ buildWeakFormFindings _sectionBodyText weakForms tokenCount tokens =
                   findingWordPair = Nothing,
                   findingExpectedPronunciation = Nothing,
                   findingInsertedVowel = Nothing,
-                  findingInsertionPositionMs = Nothing
+                  findingInsertionPositionMs = Nothing,
+                  findingWordPositionLabel = Nothing
                 }
+
+-- ---- connected speech 4 現象 producers（M-102R-a） ----
+
+-- | linking gap 閾値（ミリ秒）。calibratable threshold
+linkingGapThresholdMs :: Int
+linkingGapThresholdMs = 50
+
+-- | flap 持続時間閾値（ミリ秒）。calibratable threshold
+flapDurationThresholdMs :: Int
+flapDurationThresholdMs = 60
+
+-- | reduction 持続時間閾値（ミリ秒）。calibratable threshold
+reductionDurationThresholdMs :: Int
+reductionDurationThresholdMs = 80
+
+-- | 空の connected speech finding テンプレート。
+connectedSpeechFindingBase :: TextRange -> AssessmentFinding
+connectedSpeechFindingBase textRange =
+  AssessmentFinding
+    { findingCategory = FindingCategoryConnectedSpeech,
+      findingSeverity = FindingSeveritySuggestion,
+      findingTextRange = textRange,
+      findingAudioRange = Nothing,
+      findingExpected = PronunciationEvidence {evidenceText = Nothing, evidenceIpa = Nothing},
+      findingDetected = PronunciationEvidence {evidenceText = Nothing, evidenceIpa = Nothing},
+      findingMessageJa = Nothing,
+      findingMessageEn = Nothing,
+      findingScoreImpact = 0.0,
+      findingConfidence = 0.65,
+      findingPhenomenon = "",
+      findingGop = Nothing,
+      findingDetectedTopCandidate = Nothing,
+      findingNBest = Nothing,
+      findingMatchesL1Pattern = False,
+      findingFunctionalLoad = Nothing,
+      findingCatalogId = Nothing,
+      findingWordPair = Nothing,
+      findingExpectedPronunciation = Nothing,
+      findingInsertedVowel = Nothing,
+      findingInsertionPositionMs = Nothing,
+      findingWordPositionLabel = Nothing
+    }
+
+-- | linking: 単語末子音終端と次語頭母音開始の gap < 50ms かつ境界で音声が連続している現象。
+-- silenceDurationMs < linkingGapThresholdMs の単語間無音区間を linking 候補と判定する。
+buildLinkingFindings ::
+  [InterWordSilence] ->
+  [PhonemeGop] ->
+  [TokenSegment] ->
+  Int ->
+  [AssessmentFinding]
+buildLinkingFindings silences _phonemeGops tokens tokenCount =
+  mapMaybe buildOne silences
+ where
+  buildOne silence
+    | silenceDurationMs silence >= linkingGapThresholdMs = Nothing
+    | otherwise =
+        let textRange = findTextRangeForTime tokens tokenCount (silenceStartMs silence)
+            base = connectedSpeechFindingBase textRange
+         in Just
+              base
+                { findingPhenomenon = "linking",
+                  findingAudioRange =
+                    Just
+                      AudioRange
+                        { startMs = silenceStartMs silence,
+                          endMs = silenceEndMs silence
+                        }
+                }
+
+-- | フラップ化対象の期待音素セット（/t/ /d/）。
+flapTargetPhonemes :: [Text]
+flapTargetPhonemes = ["t", "d"]
+
+-- | NBest 候補に含まれるフラップ音。
+flapPhonemes :: [Text]
+flapPhonemes = ["ɾ", "r"]
+
+-- | flap: 期待音素 /t/ /d/ が母音間で 60ms 未満に実現、または NBest に ɾ が出る現象。
+buildFlapFindings ::
+  [PhonemeGop] ->
+  [TokenSegment] ->
+  Int ->
+  [AssessmentFinding]
+buildFlapFindings phonemeGops tokens tokenCount =
+  mapMaybe buildOne phonemeGops
+ where
+  buildOne phonemeGop
+    | gopPhoneme phonemeGop `notElem` flapTargetPhonemes = Nothing
+    | isFlapSignal phonemeGop =
+        let textRange = findTextRangeForTime tokens tokenCount (gopStartMs phonemeGop)
+            base = connectedSpeechFindingBase textRange
+         in Just
+              base
+                { findingPhenomenon = "flap",
+                  findingAudioRange =
+                    Just
+                      AudioRange
+                        { startMs = gopStartMs phonemeGop,
+                          endMs = gopEndMs phonemeGop
+                        },
+                  findingNBest =
+                    let entries = gopNBest phonemeGop
+                     in if null entries
+                          then Nothing
+                          else
+                            Just $
+                              map
+                                (\e -> NBestOutputEntry {nBestOutputPhoneme = nBestPhoneme e, nBestOutputConfidence = nBestConfidence e})
+                                (take 3 entries)
+                }
+    | otherwise = Nothing
+
+  isFlapSignal pg =
+    let durationMs = gopEndMs pg - gopStartMs pg
+        hasShortDuration = durationMs < flapDurationThresholdMs
+        hasRhoticNBest = any (\e -> nBestPhoneme e `elem` flapPhonemes) (gopNBest pg)
+     in hasShortDuration || hasRhoticNBest
+
+-- | 同化対象の期待音素→後続調音点音素の文脈マップ。
+-- キー: (期待音素, 後続音素クラス) → 同化後 NBest 期待音素。
+assimilationContexts :: [(Text, [Text], [Text])]
+assimilationContexts =
+  [ -- /n/ の前に /p,b,m/ が続く→ /m/ に同化
+    ("n", ["p", "b", "m"], ["m"]),
+    -- /n/ の前に /k,g/ が続く→ /ŋ/ に同化
+    ("n", ["k", "g"], ["ŋ"]),
+    -- /d/ の前に /j/ が続く→ /dʒ/ に同化
+    ("d", ["j"], ["dʒ", "ʤ"])
+  ]
+
+-- | assimilation: 後続調音点への同化が NBest 上位候補に現れる現象。
+buildAssimilationFindings ::
+  [PhonemeGop] ->
+  [TokenSegment] ->
+  Int ->
+  [AssessmentFinding]
+buildAssimilationFindings phonemeGops tokens tokenCount =
+  mapMaybe buildOne (zip [0 ..] phonemeGops)
+ where
+  buildOne (index, phonemeGop) =
+    let nextPhoneme = case drop (index + 1) phonemeGops of
+          (next : _) -> Just (gopPhoneme next)
+          [] -> Nothing
+        assimilationResult = checkAssimilation (gopPhoneme phonemeGop) nextPhoneme (gopNBest phonemeGop)
+     in case assimilationResult of
+          Nothing -> Nothing
+          Just _ ->
+            let textRange = findTextRangeForTime tokens tokenCount (gopStartMs phonemeGop)
+                base = connectedSpeechFindingBase textRange
+             in Just
+                  base
+                    { findingPhenomenon = "assimilation",
+                      findingAudioRange =
+                        Just
+                          AudioRange
+                            { startMs = gopStartMs phonemeGop,
+                              endMs = gopEndMs phonemeGop
+                            },
+                      findingNBest =
+                        let entries = gopNBest phonemeGop
+                         in if null entries
+                              then Nothing
+                              else
+                                Just $
+                                  map
+                                    (\e -> NBestOutputEntry {nBestOutputPhoneme = nBestPhoneme e, nBestOutputConfidence = nBestConfidence e})
+                                    (take 3 entries)
+                    }
+
+  checkAssimilation expectedPhoneme maybeNextPhoneme nBestEntries =
+    case maybeNextPhoneme of
+      Nothing -> Nothing
+      Just nextPhoneme ->
+        let matchingContext =
+              Data.List.find
+                ( \(expected, followingSet, _) ->
+                    expected == expectedPhoneme
+                      && nextPhoneme `elem` followingSet
+                )
+                assimilationContexts
+         in case matchingContext of
+              Nothing -> Nothing
+              Just (_, _, assimilatedPhonemes) ->
+                Data.List.find
+                  (\e -> nBestPhoneme e `elem` assimilatedPhonemes)
+                  nBestEntries
+
+-- | 機能語・無強勢母音の弱化シグナル判定に使う母音セット（シュワー・中央化）。
+schwaPhonemes :: [Text]
+schwaPhonemes = ["ə", "ɪ", "ʊ"]
+
+-- | 機能語の期待フル母音セット。これらが実際にシュワー等に短縮された場合を reduction とする。
+fullVowelPhonemes :: [Text]
+fullVowelPhonemes = ["æ", "ɛ", "ɪ", "ʌ", "ɒ", "ɔ", "ʊ", "uː", "iː", "eɪ", "aɪ", "ɔɪ", "aʊ", "oʊ"]
+
+-- | reduction: 機能語/無強勢の期待フル母音がシュワー化 + 80ms 未満に実現する現象。
+-- weakForm（辞書弱形語の強形/弱形実現）と区別: reduction は音響的母音弱化（単語依存しない）。
+buildReductionFindings ::
+  [SchwaRealization] ->
+  [WeakFormRealization] ->
+  [PhonemeGop] ->
+  [TokenSegment] ->
+  Int ->
+  [AssessmentFinding]
+buildReductionFindings schwaRealizations weakFormRealizations phonemeGops tokens tokenCount =
+  mapMaybe buildOne phonemeGops
+ where
+  -- 弱形辞書語の時間帯に含まれる音素は weakForm に任せて重複しない
+  weakFormRanges = [(weakFormStartMs wf, weakFormEndMs wf) | wf <- weakFormRealizations]
+
+  isInWeakFormRange startMs =
+    any (\(startRange, endRange) -> startMs >= startRange && startMs < endRange) weakFormRanges
+
+  buildOne phonemeGop
+    | gopPhoneme phonemeGop `notElem` fullVowelPhonemes = Nothing
+    | isInWeakFormRange (gopStartMs phonemeGop) = Nothing
+    | isReductionSignal phonemeGop = buildReductionFinding phonemeGop
+    | otherwise = Nothing
+
+  isReductionSignal pg =
+    let durationMs = gopEndMs pg - gopStartMs pg
+        hasShortDuration = durationMs < reductionDurationThresholdMs
+        -- SchwaRealization でシュワー実現とマークされた音素と時間帯が重なるか確認
+        hasSchwaSignal =
+          any
+            ( \sr ->
+                schwaRealized sr
+                  && schwaStartMs sr <= gopStartMs pg
+                  && schwaEndMs sr >= gopEndMs pg
+            )
+            schwaRealizations
+     in hasShortDuration && hasSchwaSignal
+
+  buildReductionFinding pg =
+    let textRange = findTextRangeForTime tokens tokenCount (gopStartMs pg)
+        base = connectedSpeechFindingBase textRange
+     in Just
+          base
+            { findingPhenomenon = "reduction",
+              findingAudioRange =
+                Just
+                  AudioRange
+                    { startMs = gopStartMs pg,
+                      endMs = gopEndMs pg
+                    }
+            }
 
 -- ---- 音素分類ユーティリティ ----
 

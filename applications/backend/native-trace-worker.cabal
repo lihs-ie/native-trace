@@ -14,7 +14,7 @@ common warnings
     ghc-options:
         -Wall -Wcompat -Widentities -Wincomplete-record-updates
         -Wincomplete-uni-patterns -Wmissing-export-lists
-        -Wredundant-constraints
+        -Wredundant-constraints -Werror=missing-fields
 
     default-language: GHC2024
     default-extensions: OverloadedStrings

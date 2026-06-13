@@ -33,6 +33,7 @@ import { type Clock } from "../port/clock";
 import { type Logger } from "../port/logger";
 import { type TransactionManager } from "../port/transaction-manager";
 import { TOKENIZER_VERSION } from "../shared/tokenizer";
+import { createRuleBasedImprovementMessageGenerator } from "../../acl/improvement-message/rule-based/create-rule-based-improvement-message-generator";
 
 const makeLeasedJob = (): LeasedAnalysisJob => ({
   type: "leased",
@@ -461,6 +462,7 @@ describe("runAssessmentJob", () => {
           insertedVowel: null,
           feedbackLayers: null,
           dismissed: false,
+          wordPositionLabel: null,
         },
       ],
     };
@@ -532,6 +534,84 @@ describe("runAssessmentJob", () => {
     expect(output.result).toBeNull();
   });
 
+  // M-104R-c 受入: wordPositionLabel が実値で流れ resolvePositionLabel を経て
+  // feedbackLayers.whatJa に語頭/語中/語末が反映されることを実 generator で assert する。
+  it.each([
+    { wordPositionLabel: "initial" as const, expectedPosition: "語頭" },
+    { wordPositionLabel: "medial" as const, expectedPosition: "語中" },
+    { wordPositionLabel: "final" as const, expectedPosition: "語末" },
+  ])(
+    "feedbackLayers.whatJa contains $expectedPosition when wordPositionLabel is $wordPositionLabel (real generator, substitution phenomenon)",
+    async ({ wordPositionLabel, expectedPosition }) => {
+      ulidCounter = 0;
+
+      const draftWithPositionedFinding: AssessmentResultDraft = {
+        ...makeDraft(),
+        engine: {
+          type: "oss_worker" as const,
+          identifier: "oss-worker-1" as never,
+          displayName: "OSS Worker" as never,
+          workerVersion: "1.0.0",
+          modelName: "v1",
+          rulesetVersion: "v1",
+          enabled: true,
+          configuration: {},
+        },
+        findings: [
+          {
+            phenomenon: "substitution",
+            gop: -8.5,
+            category: "accuracy" as const,
+            severity: "major" as const,
+            textRange: { startChar: 0, endChar: 5 },
+            audioRange: null,
+            expected: { text: "hello", ipa: "h ɛ l oʊ" },
+            detected: { text: "helo", ipa: "h ɛ l oː" },
+            messageJa: null,
+            messageEn: null,
+            scoreImpact: -5,
+            confidence: 0.9,
+            detectedTopCandidate: null,
+            nBest: null,
+            matchesL1Pattern: false,
+            functionalLoad: null,
+            catalogId: null,
+            wordPair: null,
+            expectedPronunciation: null,
+            insertedVowel: null,
+            feedbackLayers: null,
+            dismissed: false,
+            wordPositionLabel,
+          },
+        ],
+      };
+
+      const realGenerator = createRuleBasedImprovementMessageGenerator();
+
+      const deps = makeDependencies({
+        engineRegistry: {
+          find: () => ok({ assess: () => okAsync(draftWithPositionedFinding) }),
+        },
+        improvementMessageGenerator: realGenerator,
+      });
+      const execute = createRunAssessmentJob(deps);
+
+      const result = await execute({ leaseOwner: "runner-1", leaseDurationSeconds: 60 });
+
+      expect(result.isOk()).toBe(true);
+      const output = result._unsafeUnwrap();
+      expect(output.job?.state).toBe("succeeded");
+
+      const resultCreatedEvent = output.events.find((e) => e.type === "assessmentResultCreated");
+      expect(resultCreatedEvent).toBeDefined();
+      if (resultCreatedEvent?.type === "assessmentResultCreated") {
+        const domainFinding = resultCreatedEvent.assessmentResult.findings[0];
+        expect(domainFinding).toBeDefined();
+        expect(domainFinding?.feedbackLayers?.whatJa).toContain(expectedPosition);
+      }
+    },
+  );
+
   it("keeps existing messageJa when finding.messageJa is non-null, does not call generator", async () => {
     ulidCounter = 0;
 
@@ -564,6 +644,7 @@ describe("runAssessmentJob", () => {
           insertedVowel: null,
           feedbackLayers: null,
           dismissed: false,
+          wordPositionLabel: null,
         },
       ],
     };

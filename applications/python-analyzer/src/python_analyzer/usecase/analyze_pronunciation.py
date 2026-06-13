@@ -6,9 +6,10 @@ domain のみに依存。fastapi/torch/phonemizer を import しない。
 import io
 import re
 import wave
+from dataclasses import replace
 
 from python_analyzer.domain.audio import AudioInput
-from python_analyzer.domain.measurement import RawMeasurementResult
+from python_analyzer.domain.measurement import PhonemeGopMeasurement, RawMeasurementResult
 from python_analyzer.domain.phoneme import AlignmentBoundary
 from python_analyzer.usecase.ports import AlignerPort, G2PPort, ProsodyPort, SpeechRatePort
 
@@ -125,10 +126,17 @@ class AnalyzePronunciationUseCase:
                 alignment_boundaries=boundaries,
             )
 
+        # M-102R-b: 音素ごとの単語内位置（wordPosition）を付与する
+        words_for_position = _tokenize_words(reference_text)
+        word_boundaries_for_position = _estimate_word_boundaries(words_for_position, boundaries)
+        per_phoneme_gop_with_position = _assign_word_positions(
+            per_phoneme_gop, word_boundaries_for_position
+        )
+
         return RawMeasurementResult(
             expected_ipa=expected_ipa,
             detected_ipa=detected_ipa,
-            per_phoneme_gop=per_phoneme_gop,
+            per_phoneme_gop=per_phoneme_gop_with_position,
             inter_word_silences=inter_word_silences,
             schwa_realizations=schwa_realizations,
             speech_rate_phoneme_per_second=speech_rate,
@@ -259,6 +267,57 @@ def _extract_vowel_durations_per_word(
                     vowel_durations.append(duration)
         result.append(vowel_durations)
     return result
+
+
+def _assign_word_positions(
+    per_phoneme_gop: tuple[PhonemeGopMeasurement, ...],
+    word_boundaries: list[tuple[int, int]],
+) -> tuple[PhonemeGopMeasurement, ...]:
+    """各音素 GOP に単語内位置（"initial" | "medial" | "final"）を付与して返す。
+
+    単語境界（start_ms, end_ms）を使って各音素がどの単語に属するかを判定し、
+    単語内インデックスから位置ラベルを決定する。
+
+    - 単語内最初の音素 → "initial"
+    - 単語内最後の音素 → "final"
+    - それ以外         → "medial"
+    - 1 音素しかない語  → "final"（仕様: 1音素語は "final" 優先）
+
+    音素が単語区間のいずれにも属さない場合は word_position = None を維持する。
+    """
+    if not per_phoneme_gop or not word_boundaries:
+        return per_phoneme_gop
+
+    # 単語ごとに属する音素インデックスリストを収集する
+    word_phoneme_indices: list[list[int]] = [[] for _ in word_boundaries]
+    for phoneme_index, gop_measurement in enumerate(per_phoneme_gop):
+        phoneme_mid_ms = (
+            gop_measurement.start_milliseconds + gop_measurement.end_milliseconds
+        ) // 2
+        for word_index, (word_start, word_end) in enumerate(word_boundaries):
+            if word_start <= phoneme_mid_ms <= word_end:
+                word_phoneme_indices[word_index].append(phoneme_index)
+                break
+
+    # 各音素に位置ラベルを付与する
+    result = list(per_phoneme_gop)
+    for phoneme_indices in word_phoneme_indices:
+        if not phoneme_indices:
+            continue
+        word_size = len(phoneme_indices)
+        for position_in_word, phoneme_index in enumerate(phoneme_indices):
+            if word_size == 1:
+                # 1 音素語は "final" 優先（仕様 C-A2W 実装判断）
+                word_position = "final"
+            elif position_in_word == 0:
+                word_position = "initial"
+            elif position_in_word == word_size - 1:
+                word_position = "final"
+            else:
+                word_position = "medial"
+            result[phoneme_index] = replace(result[phoneme_index], word_position=word_position)
+
+    return tuple(result)
 
 
 def _extract_pcm_bytes(audio: AudioInput) -> bytes:

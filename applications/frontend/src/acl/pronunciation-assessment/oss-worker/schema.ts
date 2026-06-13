@@ -96,6 +96,12 @@ const findingSchema = z.object({
     .nullable()
     .optional()
     .transform((v) => v ?? null),
+  /** M-104R-b: 語内位置ラベル（worker JSON key）*/
+  wordPositionLabel: z
+    .enum(["initial", "medial", "final"])
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
 });
 
 const segmentSchema = z.object({

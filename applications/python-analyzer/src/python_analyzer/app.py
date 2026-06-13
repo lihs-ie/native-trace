@@ -175,7 +175,7 @@ def create_app() -> FastAPI:
         return AnalysisResponse(
             expectedIpa=result.expected_ipa.to_string(),
             detectedIpa=result.detected_ipa.to_string(),
-            # C1-a nBest を含む perPhonemeGop
+            # C1-a nBest + M-102R-b wordPosition を含む perPhonemeGop
             perPhonemeGop=[
                 PhonemeGopResponse(
                     phoneme=gop_m.phoneme.value,
@@ -189,6 +189,7 @@ def create_app() -> FastAPI:
                         )
                         for candidate in gop_m.n_best
                     ],
+                    wordPosition=gop_m.word_position,
                 )
                 for gop_m in result.per_phoneme_gop
             ],

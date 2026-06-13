@@ -296,7 +296,9 @@ data AssessmentFinding = AssessmentFinding
     -- | Epenthesis 挿入母音 IPA（C3-a, M-115）。
     findingInsertedVowel :: Maybe Text,
     -- | Epenthesis 挿入位置 ms（C3-a, M-115）。
-    findingInsertionPositionMs :: Maybe Int
+    findingInsertionPositionMs :: Maybe Int,
+    -- | 音素の単語内位置ラベル（M-104R）。値は "initial" | "medial" | "final" | null。
+    findingWordPositionLabel :: Maybe Text
   }
 
 instance ToJSON AssessmentFinding where
@@ -322,7 +324,8 @@ instance ToJSON AssessmentFinding where
         "wordPair" .= findingWordPair finding,
         "expectedPronunciation" .= findingExpectedPronunciation finding,
         "insertedVowel" .= findingInsertedVowel finding,
-        "insertionPositionMs" .= findingInsertionPositionMs finding
+        "insertionPositionMs" .= findingInsertionPositionMs finding,
+        "wordPositionLabel" .= findingWordPositionLabel finding
       ]
 
 -- | 全音素 GOP ヒートマップエントリ（C3-c, M-107c）。

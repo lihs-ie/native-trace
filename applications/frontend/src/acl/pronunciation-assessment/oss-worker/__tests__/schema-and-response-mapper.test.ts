@@ -186,6 +186,45 @@ describe("oss-worker response-mapper", () => {
     }
   });
 
+  // M-104R-b: wordPositionLabel が draft に転写されること
+  it("(M-104R-b) maps wordPositionLabel=initial from worker finding into draft", () => {
+    const engine = makeEngine();
+    const fixtureWithPosition = {
+      ...workerFixture,
+      findings: [{ ...workerFixture.findings[0], wordPositionLabel: "initial" }],
+    };
+    const result = mapOssWorkerResponse({
+      status: 200,
+      rawBody: fixtureWithPosition,
+      capturedAt: new Date("2026-01-01T00:00:00Z"),
+      engine,
+      assessmentSchemaVersion: "1",
+      tokenizerVersion: "v1",
+    });
+
+    expect(result.isOk()).toBe(true);
+    if (result.isOk()) {
+      expect(result.value.findings[0]?.wordPositionLabel).toBe("initial");
+    }
+  });
+
+  it("(M-104R-b) maps wordPositionLabel=null when absent from worker finding", () => {
+    const engine = makeEngine();
+    const result = mapOssWorkerResponse({
+      status: 200,
+      rawBody: workerFixture,
+      capturedAt: new Date("2026-01-01T00:00:00Z"),
+      engine,
+      assessmentSchemaVersion: "1",
+      tokenizerVersion: "v1",
+    });
+
+    expect(result.isOk()).toBe(true);
+    if (result.isOk()) {
+      expect(result.value.findings[0]?.wordPositionLabel).toBeNull();
+    }
+  });
+
   // normal パステスト: status フィールドがない場合は "normal" にデフォルトされること
   it("defaults draft.status to normal when status field is absent", () => {
     const engine = makeEngine();

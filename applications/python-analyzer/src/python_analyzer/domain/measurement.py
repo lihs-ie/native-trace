@@ -30,6 +30,8 @@ class PhonemeGopMeasurement:
     start_milliseconds: int
     end_milliseconds: int
     n_best: tuple[NBestCandidate, ...] = field(default_factory=tuple)
+    # 単語内位置: "initial" | "medial" | "final"（M-102R-b, C-A2W 契約）
+    word_position: str | None = None
 
 
 @dataclass(frozen=True)

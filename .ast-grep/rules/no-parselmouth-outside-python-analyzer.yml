@@ -1,0 +1,15 @@
+# Fitness function: parselmouth (GPL-3.0) must not be imported outside python-analyzer
+# ADR-006: parselmouth is confined to the python-analyzer process (HTTP boundary isolation).
+# Importing it in the frontend or any other Python module would breach the GPL-3.0 boundary judgment.
+id: no-parselmouth-outside-python-analyzer
+language: python
+severity: error
+message: "parselmouth (GPL-3.0) は applications/python-analyzer/ 内部にのみ import 可（ADR-006）。このファイルでの import はライセンス境界違反。"
+ignores:
+  - applications/python-analyzer/**
+rule:
+  any:
+    - pattern: import parselmouth
+    - pattern: from parselmouth import $$$
+    - pattern: import praat_parselmouth
+    - pattern: from praat_parselmouth import $$$

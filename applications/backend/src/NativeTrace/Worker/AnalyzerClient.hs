@@ -61,7 +61,10 @@ data PhonemeGop = PhonemeGop
     gopStartMs :: Int,
     gopEndMs :: Int,
     -- | NBest 候補リスト（C1-a）。analyzer が返さない場合は空リスト。
-    gopNBest :: [NBestEntry]
+    gopNBest :: [NBestEntry],
+    -- | 音素の単語内位置（M-104R / C-A2W）。値は "initial" | "medial" | "final"。
+    -- analyzer が返さない場合は Nothing。
+    gopWordPosition :: Maybe Text
   }
   deriving (Show, Eq)
 
@@ -72,13 +75,15 @@ instance FromJSON PhonemeGop where
     startMs <- o .: "startMs"
     endMs <- o .: "endMs"
     nBest <- o .:? "nBest" .!= []
+    wordPosition <- o .:? "wordPosition" .!= Nothing
     pure
       PhonemeGop
         { gopPhoneme = phoneme,
           gopValue = gopVal,
           gopStartMs = startMs,
           gopEndMs = endMs,
-          gopNBest = nBest
+          gopNBest = nBest,
+          gopWordPosition = wordPosition
         }
 
 -- | 単語間無音区間。

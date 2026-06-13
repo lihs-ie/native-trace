@@ -154,6 +154,7 @@ const mapSuccessResponse = (
       insertedVowel: finding.insertedVowel,
       feedbackLayers: null,
       dismissed: false,
+      wordPositionLabel: finding.wordPositionLabel,
     })),
     segments: response.segments.map((segment) => ({
       textRange: {

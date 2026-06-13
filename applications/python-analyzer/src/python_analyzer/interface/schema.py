@@ -37,6 +37,12 @@ class PhonemeGopResponse(BaseModel):
         default_factory=list,
         description="CTC logits 上位候補。確率降順、len>=3（C1-a）。",
     )
+    # M-102R-b / C-A2W: 単語内位置。JSON key は wordPosition（camelCase 既定）。
+    # 値: "initial" | "medial" | "final"。取得前は null。
+    wordPosition: str | None = Field(
+        default=None,
+        description='単語内位置。"initial" | "medial" | "final"。C-A2W 契約。',
+    )
 
 
 class InterWordSilenceResponse(BaseModel):

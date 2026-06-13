@@ -582,7 +582,8 @@ export const createRunAssessmentJob =
                                                 phenomenon: phenomenon ?? "substitution",
                                                 expected: findingDraft.expected,
                                                 detected: findingDraft.detected,
-                                                wordPositionLabel: null,
+                                                wordPositionLabel:
+                                                  findingDraft.wordPositionLabel ?? null,
                                                 catalogId: findingDraft.catalogId ?? null,
                                                 wordPair: findingDraft.wordPair ?? null,
                                                 expectedPronunciation:
@@ -598,7 +599,8 @@ export const createRunAssessmentJob =
                                               phenomenon: phenomenon ?? "substitution",
                                               expected: findingDraft.expected,
                                               detected: findingDraft.detected,
-                                              wordPositionLabel: null,
+                                              wordPositionLabel:
+                                                findingDraft.wordPositionLabel ?? null,
                                               catalogId: findingDraft.catalogId ?? null,
                                               wordPair: findingDraft.wordPair ?? null,
                                               expectedPronunciation:
@@ -642,6 +644,7 @@ export const createRunAssessmentJob =
                                           insertedVowel: findingDraft.insertedVowel ?? null,
                                           feedbackLayers,
                                           dismissed: findingDraft.dismissed,
+                                          wordPositionLabel: findingDraft.wordPositionLabel ?? null,
                                         });
                                       }
 

@@ -179,6 +179,8 @@ export type AssessmentFindingDraft = Readonly<{
   feedbackLayers: FeedbackLayersDraft | null;
   /** C4-b: 却下フラグ (この Wave では false 固定、次 Wave で永続化) */
   dismissed: boolean;
+  /** M-104R-b: 語内位置ラベル ("initial"|"medial"|"final"|null) */
+  wordPositionLabel: string | null;
 }>;
 
 export type AssessmentSegmentDraft = Readonly<{

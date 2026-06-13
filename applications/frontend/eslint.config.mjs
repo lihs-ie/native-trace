@@ -47,6 +47,16 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  // テストファイルはオニオン層間制約を免除する。
+  // テストは src/test/, *.test.ts(x) に限定されており、本番コードではない。
+  // 統合テストが acl 実装を直接 inject するケース (e.g. createRuleBasedImprovementMessageGenerator)
+  // を許容する必要があるため、アーキテクチャ import 制約から除外する。
+  {
+    files: ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test/**/*.ts"],
+    rules: {
+      "architecture-import/no-restricted-paths": "off",
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     ".next/**",

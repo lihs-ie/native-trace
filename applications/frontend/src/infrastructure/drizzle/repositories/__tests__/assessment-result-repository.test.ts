@@ -175,6 +175,7 @@ describe("DrizzleAssessmentResultRepository", () => {
           insertedVowel: null,
           feedbackLayers: { whatJa: "観測", whyJa: "原因", howJa: "修正" },
           dismissed: false,
+          wordPositionLabel: "initial" as const,
         },
       ],
       segments: [{ textRange, audioRange: null, transcript: "hello", confidence: 0.9 }],
@@ -228,6 +229,8 @@ describe("DrizzleAssessmentResultRepository", () => {
     expect(found._unsafeUnwrap().findings[0].feedbackLayers?.whatJa).toBe("観測");
     expect(found._unsafeUnwrap().perPhonemeGop?.length).toBe(1);
     expect(found._unsafeUnwrap().engineSummaryMessageJa).toContain("最優先");
+    // M-104R-b: wordPositionLabel が round-trip すること
+    expect(found._unsafeUnwrap().findings[0].wordPositionLabel).toBe("initial");
   });
 
   it("存在しない採点結果は notFound を返す", async () => {

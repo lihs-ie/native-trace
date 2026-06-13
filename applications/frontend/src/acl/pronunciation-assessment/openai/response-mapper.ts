@@ -145,6 +145,8 @@ const mapValidatedResponse = (
       insertedVowel: null,
       feedbackLayers: null,
       dismissed: false,
+      // OpenAI は語内位置ラベルを返さない
+      wordPositionLabel: null,
     })),
     segments: response.segments.map((segment) => ({
       textRange: {
