@@ -61,6 +61,9 @@ import { createCaptureProgressSnapshot } from "./usecase/capture-progress-snapsh
 import { createViewProgress } from "./usecase/view-progress/index";
 import { createStartDrill } from "./usecase/start-drill/index";
 import { createSubmitDrillAttempt } from "./usecase/submit-drill-attempt/index";
+import { createStartHvptSession } from "./usecase/start-hvpt-session/index";
+import { createSubmitHvptTrial } from "./usecase/submit-hvpt-trial/index";
+import { createCompleteHvptSession } from "./usecase/complete-hvpt-session/index";
 
 import type {
   BrowsePracticeMaterialsInput,
@@ -145,6 +148,18 @@ import type {
   SubmitDrillAttemptInput,
   SubmitDrillAttemptOutput,
 } from "./usecase/submit-drill-attempt/index";
+import type {
+  StartHvptSessionInput,
+  StartHvptSessionOutput,
+} from "./usecase/start-hvpt-session/index";
+import type {
+  SubmitHvptTrialInput,
+  SubmitHvptTrialOutput,
+} from "./usecase/submit-hvpt-trial/index";
+import type {
+  CompleteHvptSessionInput,
+  CompleteHvptSessionOutput,
+} from "./usecase/complete-hvpt-session/index";
 
 import type { ResultAsync } from "neverthrow";
 import type { DomainError } from "./domain/shared";
@@ -153,6 +168,7 @@ import type { TrainingSessionRepository } from "./usecase/port/training-session-
 import type { HvptTrialRepository } from "./usecase/port/hvpt-trial-repository";
 import type { SpacingScheduleRepository } from "./usecase/port/spacing-schedule-repository";
 import type { DrillContentRepository } from "./usecase/port/drill-content-repository";
+import { createAnalyzerStimulusClient } from "./infrastructure/analyzer/stimulus-client";
 
 // ---- Container type ----
 
@@ -234,6 +250,15 @@ export type Container = Readonly<{
     submitDrillAttempt: (
       input: SubmitDrillAttemptInput,
     ) => ResultAsync<SubmitDrillAttemptOutput, DomainError>;
+    startHvptSession: (
+      input: StartHvptSessionInput,
+    ) => ResultAsync<StartHvptSessionOutput, DomainError>;
+    submitHvptTrial: (
+      input: SubmitHvptTrialInput,
+    ) => ResultAsync<SubmitHvptTrialOutput, DomainError>;
+    completeHvptSession: (
+      input: CompleteHvptSessionInput,
+    ) => ResultAsync<CompleteHvptSessionOutput, DomainError>;
   }>;
 }>;
 
@@ -267,6 +292,9 @@ const buildContainer = (): Container => {
   const hvptTrialRepository = createDrizzleHvptTrialRepository(database);
   const spacingScheduleRepository = createDrizzleSpacingScheduleRepository(database);
   const drillContentRepository = createDrillContentRepository();
+
+  // ACL: analyzer stimulus client (HVPT 刺激取得 ADR-009)
+  const analyzerStimulusClient = createAnalyzerStimulusClient(config.analyzerApiEndpoint);
 
   // Infrastructure services
   const audioStorage = createLocalAudioStorage(config.audioStorageRoot);
@@ -517,6 +545,32 @@ const buildContainer = (): Container => {
       trainingSessionRepository,
       hvptTrialRepository,
       assessmentResultRepository,
+      entropyProvider,
+      clock,
+    }),
+
+    startHvptSession: createStartHvptSession({
+      weaknessProfileRepository,
+      trainingSessionRepository,
+      spacingScheduleRepository,
+      analyzerStimulusClient,
+      entropyProvider,
+      clock,
+    }),
+
+    submitHvptTrial: createSubmitHvptTrial({
+      trainingSessionRepository,
+      hvptTrialRepository,
+      entropyProvider,
+      clock,
+    }),
+
+    completeHvptSession: createCompleteHvptSession({
+      trainingSessionRepository,
+      hvptTrialRepository,
+      spacingScheduleRepository,
+      weaknessProfileRepository,
+      progressSnapshotRepository,
       entropyProvider,
       clock,
     }),

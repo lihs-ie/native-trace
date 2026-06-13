@@ -17,6 +17,7 @@ import {
   type SpacingSchedulerConfig,
   type InProgressTrainingSession,
   type Accuracy0To1,
+  type ReactionTime,
 } from "../training";
 import { createNonEmptyList } from "../shared";
 
@@ -38,7 +39,9 @@ import { createNonEmptyList } from "../shared";
 
 // ---- Fixtures ----
 
-const makeSchedulerConfig = (overrides?: Partial<SpacingSchedulerConfig>): SpacingSchedulerConfig => ({
+const makeSchedulerConfig = (
+  overrides?: Partial<SpacingSchedulerConfig>,
+): SpacingSchedulerConfig => ({
   spacingIntervalHours: 24,
   masteryGateThreshold: 0.6,
   sessionCutoffMinutesMax: 30,
@@ -287,7 +290,7 @@ describe("computeSessionAccuracy (DD-266)", () => {
       correctLabel: label,
       response: label, // 正解
       correct: true,
-      reactionTimeMilliseconds: 500 as ReturnType<typeof createHvptTrialIdentifier>,
+      reactionTimeMilliseconds: 500 as ReactionTime,
       presentedAt: new Date("2026-01-01T00:00:00Z"),
     };
   };
@@ -303,7 +306,7 @@ describe("computeSessionAccuracy (DD-266)", () => {
       correctLabel,
       response: wrongResponse,
       correct: false,
-      reactionTimeMilliseconds: 800 as ReturnType<typeof createHvptTrialIdentifier>,
+      reactionTimeMilliseconds: 800 as ReactionTime,
       presentedAt: new Date("2026-01-01T00:00:00Z"),
     };
   };
@@ -320,10 +323,7 @@ describe("computeSessionAccuracy (DD-266)", () => {
   });
 
   it("全試行不正解で正答率 0.0 を返す", () => {
-    const trials = createNonEmptyList([
-      makeWrongTrial("T-001"),
-      makeWrongTrial("T-002"),
-    ])!;
+    const trials = createNonEmptyList([makeWrongTrial("T-001"), makeWrongTrial("T-002")])!;
 
     const accuracy = computeSessionAccuracy(trials);
     expect(Number(accuracy)).toBe(0.0);

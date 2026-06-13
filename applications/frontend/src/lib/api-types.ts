@@ -465,6 +465,63 @@ export type DrillVerdictDto = {
   verdictReasonJa: string;
 };
 
+// ---- HVPT 識別課題 DTOs (Training Context — REQ-122) ----
+
+export type StimulusMetadataDto = {
+  stimulusIdentifier: string;
+  contrast: string;
+  word: string;
+  speakerIdentifier: string;
+  speakerSex: string;
+  context: string;
+  sourceCorpus: string;
+  licenseIdentifier: string;
+};
+
+export type HvptChoiceDto = {
+  type: "spelling" | "keyword" | "ipa";
+  value: string;
+};
+
+export type HvptStimulusDto = {
+  stimulusIdentifier: string;
+  wavBase64: string;
+  metadata: StimulusMetadataDto;
+  choices: HvptChoiceDto[];
+};
+
+/**
+ * HvptSessionDto — HVPT セッション開始レスポンス DTO
+ * 刺激セット（音声 + 選択肢）と TrainingSession 識別子を含む。
+ */
+export type HvptSessionDto = {
+  trainingSessionIdentifier: string;
+  contrast: string;
+  stimuli: HvptStimulusDto[];
+};
+
+/**
+ * HvptTrialResultDto — HVPT 試行提出レスポンス DTO
+ * 正誤フィードバック・正解音再生用刺激参照を含む。
+ */
+export type HvptTrialResultDto = {
+  hvptTrialIdentifier: string;
+  correct: boolean;
+  correctLabel: HvptChoiceDto;
+  correctStimulusWavBase64: string | null;
+};
+
+/**
+ * HvptCompletionDto — HVPT セッション完了レスポンス DTO
+ * accuracy・ゲート結果・累計訓練時間を含む。
+ */
+export type HvptCompletionDto = {
+  trainingSessionIdentifier: string;
+  sessionAccuracy: number;
+  spacingState: "rest" | "gate";
+  cumulativeTrainingMinutes: number;
+};
+
 // ---- Diagnostic DTOs (Training Context) ----
 
 export type DiagnosticPromptDto = {
