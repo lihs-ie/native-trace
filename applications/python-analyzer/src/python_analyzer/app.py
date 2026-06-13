@@ -128,6 +128,7 @@ def create_app() -> FastAPI:
                 audio=audio_input,
                 reference_text=meta.referenceText,
                 target_accent=meta.targetAccent,
+                include_reference_f0=meta.includeReferenceF0,
             )
         except Exception as execution_error:
             logger.error("発音解析エラー: %s", execution_error, exc_info=True)
@@ -162,6 +163,14 @@ def create_app() -> FastAPI:
             f0_contour_response = F0ContourResponse(
                 timesMs=list(result.f0_contour.times_milliseconds),
                 valuesHz=list(result.f0_contour.values_hz),
+            )
+
+        # M-F0REF-a: reference F0 輪郭を schema に変換する（既存 F0ContourResponse 型を再利用）
+        reference_f0_contour_response: F0ContourResponse | None = None
+        if result.reference_f0_contour is not None:
+            reference_f0_contour_response = F0ContourResponse(
+                timesMs=list(result.reference_f0_contour.times_milliseconds),
+                valuesHz=list(result.reference_f0_contour.values_hz),
             )
 
         # C1-d リズムを schema に変換する
@@ -215,6 +224,8 @@ def create_app() -> FastAPI:
             speechDurationSeconds=result.speech_duration_seconds,
             # C1-b F0
             f0Contour=f0_contour_response,
+            # M-F0REF-a: お手本 F0 輪郭（Kokoro TTS + parselmouth）
+            referenceF0Contour=reference_f0_contour_response,
             # C1-c 語強勢
             wordStress=[
                 WordStressResponse(

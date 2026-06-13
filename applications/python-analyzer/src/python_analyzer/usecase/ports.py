@@ -85,6 +85,17 @@ class ProsodyPort(Protocol):
         """F0 輪郭を計測する（C1-b）。"""
         ...
 
+    def extract_reference_f0_contour(self, reference_text: str) -> F0Contour | None:
+        """M-F0REF-a: referenceText を Kokoro TTS で合成し F0 輪郭を抽出して返す。
+
+        Args:
+            reference_text: セクション本文（例: "Hello, world."）。
+
+        Returns:
+            F0Contour。抽出不可・合成失敗時は None。
+        """
+        ...
+
     def measure_word_stress(
         self,
         words: list[str],

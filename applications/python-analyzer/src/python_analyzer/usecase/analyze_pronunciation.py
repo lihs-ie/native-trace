@@ -44,6 +44,7 @@ class AnalyzePronunciationUseCase:
         audio: AudioInput,
         reference_text: str,
         target_accent: str,
+        include_reference_f0: bool = True,
     ) -> RawMeasurementResult:
         """発音解析を実行し生計測結果を返す。
 
@@ -51,6 +52,8 @@ class AnalyzePronunciationUseCase:
             audio: 解析対象の音声入力。
             reference_text: 参照テキスト（"Hello, world." 等）。
             target_accent: アクセント指定（例: "generalAmerican"）。
+            include_reference_f0: True のとき reference_text を Kokoro TTS で合成して
+                reference F0 を抽出する。False のときスキップして None を返す（default True）。
 
         Returns:
             RawMeasurementResult。per_phoneme_gop が空の場合は呼び出し元で 500 を返す。
@@ -74,6 +77,7 @@ class AnalyzePronunciationUseCase:
 
         # C1 韻律計測（prosody_port が注入されている場合のみ実行する）
         f0_contour = None
+        reference_f0_contour = None
         word_stresses = ()
         rhythm = None
         weak_form_realizations = ()
@@ -126,6 +130,11 @@ class AnalyzePronunciationUseCase:
                 alignment_boundaries=boundaries,
             )
 
+            # M-F0REF-a: referenceText を Kokoro TTS で合成して F0 を抽出する
+            # include_reference_f0=False のときスキップして None を維持する
+            if include_reference_f0:
+                reference_f0_contour = self._prosody.extract_reference_f0_contour(reference_text)
+
         # M-102R-b: 音素ごとの単語内位置（wordPosition）を付与する
         words_for_position = _tokenize_words(reference_text)
         word_boundaries_for_position = _estimate_word_boundaries(words_for_position, boundaries)
@@ -148,6 +157,7 @@ class AnalyzePronunciationUseCase:
             rhythm=rhythm,
             weak_form_realizations=weak_form_realizations,
             syllables=syllables,
+            reference_f0_contour=reference_f0_contour,
         )
 
 

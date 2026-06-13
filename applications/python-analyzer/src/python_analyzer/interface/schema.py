@@ -14,6 +14,12 @@ class AnalysisMetadata(BaseModel):
     targetAccent: str = Field(default="generalAmerican", description="アクセント指定")
     mimeType: str = Field(description="音声 MIME タイプ（例: audio/wav）")
     durationMilliseconds: int = Field(description="音声の長さ（ミリ秒）")
+    # M-F0REF-a (optional): False のとき reference F0 計算をスキップして None を返す。
+    # default True で後方互換。section cache が不要な再計算を避けるために使用する。
+    includeReferenceF0: bool = Field(
+        default=True,
+        description="True のとき referenceText を Kokoro TTS 合成して reference F0 を抽出する",
+    )
 
 
 # --- C1-a NBest ---
@@ -180,6 +186,12 @@ class AnalysisResponse(BaseModel):
     # C1-b F0 輪郭（parselmouth）
     f0Contour: F0ContourResponse | None = Field(
         default=None, description="F0 輪郭（parselmouth）"
+    )
+    # M-F0REF-a: お手本（referenceText）の Kokoro TTS 音声から抽出した F0 輪郭。
+    # 既存 F0ContourResponse 型を再利用（同一 JSON 形状: timesMs / valuesHz）。
+    # 抽出不可時は null（後方互換・reference 不在時に学習者経路を壊さない）。
+    referenceF0Contour: F0ContourResponse | None = Field(
+        default=None, description="お手本 F0 輪郭（Kokoro TTS + parselmouth）"
     )
     # C1-c 語強勢
     wordStress: list[WordStressResponse] = Field(

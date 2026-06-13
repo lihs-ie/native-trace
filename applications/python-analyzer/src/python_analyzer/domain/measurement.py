@@ -138,3 +138,6 @@ class RawMeasurementResult:
     rhythm: RhythmMeasurement | None = None
     weak_form_realizations: tuple[WeakFormRealization, ...] = field(default_factory=tuple)
     syllables: tuple[SyllableMeasurement, ...] = field(default_factory=tuple)
+    # M-F0REF-a: referenceText の Kokoro TTS 音声から抽出した F0 輪郭。
+    # 抽出不可時は None（学習者 f0_contour 経路を壊さない）。
+    reference_f0_contour: F0Contour | None = None

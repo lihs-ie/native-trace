@@ -14,6 +14,7 @@ from python_analyzer.domain.measurement import (
     WordStressMeasurement,
 )
 from python_analyzer.domain.phoneme import AlignmentBoundary
+from python_analyzer.infrastructure.kokoro_tts import synthesize_speech
 from python_analyzer.infrastructure.parselmouth_prosody import (
     extract_f0_contour,
     extract_word_stress,
@@ -83,3 +84,37 @@ class ProsodyAnalyzer:
             expected_ipa_per_word=expected_ipa_per_word,
             alignment_boundaries=alignment_boundaries,
         )
+
+    def extract_reference_f0_contour(self, reference_text: str) -> F0Contour | None:
+        """M-F0REF-a: referenceText を Kokoro TTS で合成し F0 輪郭を抽出して返す。
+
+        既存 synthesize_speech（Kokoro）と extract_f0_contour（parselmouth）を再利用する。
+        合成・抽出のいずれかが失敗した場合は None を返す（学習者経路を壊さない）。
+        """
+        try:
+            wav_bytes = synthesize_speech(reference_text)
+        except Exception as synthesis_error:
+            logger.warning(
+                "reference TTS 合成に失敗したため reference F0 を None にする: %s",
+                synthesis_error,
+            )
+            return None
+
+        try:
+            # Kokoro は 24kHz WAV を返す。extract_f0_contour は WAV ヘッダーを soundfile で読む
+            # ため sample_rate 引数は実質的には WAV ヘッダーより上書きされるが、
+            # 念のため Kokoro のデフォルト 24000 を渡す。
+            contour = extract_f0_contour(audio_bytes=wav_bytes, sample_rate=24000)
+        except Exception as extraction_error:
+            logger.warning(
+                "reference F0 抽出に失敗したため None にする: %s",
+                extraction_error,
+            )
+            return None
+
+        # voiced フレームがひとつもない（無音・完全無声）場合は None を返す
+        if not contour.times_milliseconds:
+            logger.warning("reference F0 輪郭が空: reference を None にする")
+            return None
+
+        return contour
