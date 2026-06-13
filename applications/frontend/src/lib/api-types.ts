@@ -56,15 +56,30 @@ export type SectionVersionSummaryDto = {
   createdAt: string;
 };
 
+export type SectionSeriesStatsDto = {
+  wordCount: number | null;
+  recordingAttemptCount: number;
+  bestOverallScore: number | null;
+  overallScoreHistory: number[];
+};
+
 export type SectionSeriesWithLatestDto = {
   sectionSeries: SectionSeriesDto;
   latestSection: SectionDto | null;
   versions: SectionVersionSummaryDto[];
+  stats: SectionSeriesStatsDto;
+};
+
+export type MaterialLevelStatsDto = {
+  totalWordCount: number;
+  totalRecordingAttemptCount: number;
+  bestOverallScore: number | null;
 };
 
 export type PracticePlanDto = {
   material: MaterialDto;
   sectionSeries: SectionSeriesWithLatestDto[];
+  materialLevelStats: MaterialLevelStatsDto;
 };
 
 export type RecordingAttemptDto = {

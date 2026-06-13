@@ -189,7 +189,20 @@ export default function MaterialDetailPage({ params }: PageProps) {
                         </div>
                         {latest && <p className="ss-text">{latest.bodyText}</p>}
                         <div className="ss-stats">
-                          {latest ? null : (
+                          {item.stats.wordCount !== null && (
+                            <span>
+                              <b>{item.stats.wordCount}</b> words
+                            </span>
+                          )}
+                          <span>
+                            <b>{item.stats.recordingAttemptCount}</b> 試行
+                          </span>
+                          {item.stats.bestOverallScore !== null && (
+                            <span>
+                              最高 <b>{item.stats.bestOverallScore}</b>
+                            </span>
+                          )}
+                          {item.stats.recordingAttemptCount === 0 && (
                             <span style={{ color: "var(--text-faint)" }}>未録音</span>
                           )}
                         </div>
@@ -284,10 +297,17 @@ export default function MaterialDetailPage({ params }: PageProps) {
                       >
                         <span className="srl">§{item.sectionSeries.displayOrder}</span>
                         <span className="sbar">
-                          <i style={{ width: "0%" }} />
+                          <i style={{ width: `${item.stats.bestOverallScore ?? 0}%` }} />
                         </span>
-                        <span className="srn mono" style={{ color: "var(--text-faint)" }}>
-                          —
+                        <span
+                          className="srn mono"
+                          style={
+                            item.stats.bestOverallScore === null
+                              ? { color: "var(--text-faint)" }
+                              : undefined
+                          }
+                        >
+                          {item.stats.bestOverallScore !== null ? item.stats.bestOverallScore : "—"}
                         </span>
                       </div>
                     ))}
