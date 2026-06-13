@@ -44,41 +44,17 @@ RUN pip install --no-cache-dir --upgrade pip \
        "ruff>=0.7.0" \
        "pyright>=1.1.390"
 
-# --- Carve-out stage: download alignment + run carve pipeline -----
-# ADR-009: curated stimulus assets are baked into the image at build time.
-# The raw LibriTTS corpus (7.7 GB) is NOT bundled; only the carved subset.
-# The alignment archive (~100 MB) is downloaded from HuggingFace at build time.
-# CORPUS_ARCHIVE_PATH must be provided as a build ARG pointing to a bind-mounted
-# or pre-copied train-clean-100.tar.gz on the build host.
-# Acceptable to skip if corpus is unavailable: long-tail Kokoro supplement will
-# still be generated (see carve_runner.py).
-FROM builder AS carver
-
-WORKDIR /carve
-
-# Copy application source for the carve runner.
-COPY src/ /carve/src/
-
-ENV PYTHONPATH=/carve/src
-
-# Download the libritts-aligned TextGrid archive from HuggingFace.
-# The download logic lives in a standalone script because a multi-line
-# `RUN python -c "..."` is misparsed by the Dockerfile front-end.
-ARG HF_TOKEN=""
-COPY download_alignment.py /carve/download_alignment.py
-RUN python /carve/download_alignment.py
-
-# Copy the LibriTTS corpus archive if provided (optional: bind-mount or COPY).
-# If not present, only the Kokoro long-tail supplement will be generated.
-ARG CORPUS_ARCHIVE_PATH=""
-COPY data/corpus-scratch/train-clean-100.tar.gz /carve/corpus/train-clean-100.tar.gz
-
-# Run the carve pipeline to generate curated stimulus assets + manifest.
-# Output: /carve/assets/stimuli/{libritts,kokoro}/<contrast>/*.wav + attribution-manifest.json
-RUN python -m python_analyzer.infrastructure.stimulus.carve_runner \
-      --corpus   /carve/corpus/train-clean-100.tar.gz \
-      --alignment /carve/alignment/train_clean_100.tar.gz \
-      --output   /carve/assets/stimuli
+# --- Curated HVPT stimuli (ADR-009) -------------------------------
+# The carve-out (LibriTTS minimal-pair extraction + Kokoro long-tail supplement)
+# runs OUT-OF-BAND on the dev host via `carve_runner.py`, NOT inside the Docker
+# build: piping the 7.7 GB raw corpus through the build context made every build
+# take >1 h. The carve produces a small curated subset (a few tens of MB) that is
+# checked into `stimuli-assets/` and COPYed into the runtime image below. To
+# regenerate the subset:
+#   .venv/bin/python -m python_analyzer.infrastructure.stimulus.carve_runner \
+#     --corpus <train-clean-100.tar.gz> --alignment <libritts-aligned/train_clean_100.tar.gz> \
+#     --output stimuli-assets
+# The raw 7.7 GB corpus is never bundled (gitignored under data/corpus-scratch).
 
 # --- Runtime stage ------------------------------------------------
 FROM python:3.11-slim
@@ -103,9 +79,10 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 COPY src/ /app/src/
 COPY test/ /app/test/
 
-# Carve stage で生成した curated stimulus assets をコピーする（ADR-009 / W-4）。
-# 7.7 GB の raw corpus は同梱しない。carve 済アセット（数百 MB）のみ。
-COPY --from=carver /carve/assets/stimuli/ /app/src/python_analyzer/assets/stimuli/
+# 事前 carve した curated stimulus assets をコピーする（ADR-009 / W-4）。
+# 7.7 GB の raw corpus は同梱しない。carve 済アセット（数十 MB）のみ。
+# stimuli-assets/ は carve_runner を dev host で実行して生成する（上記コメント参照）。
+COPY stimuli-assets/ /app/src/python_analyzer/assets/stimuli/
 
 # espeak-ng TTS で hello_world.wav fixture を合成する
 # テストで参照する固定 fixture を build 時に生成してコピーする
