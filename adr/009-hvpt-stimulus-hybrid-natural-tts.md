@@ -45,10 +45,26 @@ NativeTrace is a local MVP: single learner, single machine, no third-party distr
 # Decision
 
 **Source HVPT identification stimuli with a hybrid strategy.** The core high-functional-load contrasts —
-the Japanese-L1 confusion set's central oppositions (`/r/`–`/l/`, `/θ/`–`/s/`, and the rest) — are drawn
-from a **curated subset of VCTK / LibriTTS (CC BY 4.0)** carved out and bundled with the analyzer. The
-**long-tail contrasts** are supplemented by synthesizing from the **existing Kokoro-82M exemplar TTS**
-(ADR-001 / M-124, already implemented) using its voice and speed variation.
+the Japanese-L1 confusion set's central oppositions (`/r/`–`/l/`, `/æ/`–`/ʌ/`, `/iː/`–`/ɪ/`, `/v/`–`/b/`,
+and the rest) — are drawn from a **curated subset of LibriTTS (CC BY 4.0)** carved out and bundled with the
+analyzer. The **long-tail contrasts** are supplemented by synthesizing from the **existing Kokoro-82M
+exemplar TTS** (ADR-001 / M-124, already implemented) using its multiple American voice embeddings
+(11 female `af_*` + 9 male `am_*`) for talker variation.
+
+**Amendment (2026-06-13, feasibility investigation):** The carve-out corpus is **LibriTTS, not VCTK**.
+VCTK is structurally unable to supply multi-talker minimal pairs: its all-speaker common text (the Rainbow
+Passage + "Please Call Stella", ~15–25 sentences) does not contain the needed minimal-pair words (only
+`light` and `thick` appear, without their pair partners `right` / `sick`), and its per-speaker newspaper
+sentences are unique, so a given word is read by at most one talker. LibriTTS (2,456 talkers reading
+audiobooks) does carry common monosyllabic words (right/light, beat/bit, vote/boat) across hundreds of
+talkers. Word boundaries are obtained from **`cdminix/libritts-aligned` (HuggingFace, CC BY 4.0,
+pre-computed phone-level alignment for all LibriTTS splits)**, so no local Montreal Forced Aligner run is
+required — the carve-out is "grep the transcripts for the target words → look up the pre-computed word
+boundary → cut → quality-filter by RMS". VCTK remains a permitted auxiliary source only where it can
+supply a target word for ≥5 talkers (rare in practice). Matched-sentence minimal pairs are not achievable
+from LibriTTS (contexts differ per talker), which is consistent with HVPT's variability goal; the
+word-initial / word-medial / cluster context coverage required by REQ-122 is satisfied by classifying
+extracted tokens by their phonological context.
 
 Natural speech is the primary source by design: whether the HVPT effect is reproduced by synthetic
 speech is unverified (research T-7), so the curated natural-speech subset carries the contrasts where the
@@ -149,7 +165,11 @@ Alternatives considered:
 - Approval date: 2026-06-13
 - Approver:
 - Last updated: 2026-06-13
-- Changes: Initial entry. Related: ADR-007 (Training Context bounded context; `HvptTrial` holds its
+- Changes: Initial entry. **Amended 2026-06-13** after a feasibility investigation: carve-out corpus
+  narrowed from "VCTK / LibriTTS" to **LibriTTS** (VCTK's common text lacks the minimal-pair words and its
+  per-speaker text gives ≤1 talker per word); word boundaries sourced from `cdminix/libritts-aligned`
+  (CC BY 4.0, pre-computed, no local MFA); Kokoro supplement uses its 20 American voice embeddings for
+  talker variation. Related: ADR-007 (Training Context bounded context; `HvptTrial` holds its
   stimulus by reference), ADR-001 (Kokoro-82M exemplar TTS and GOP pipeline reused for the synthetic
   supplement), ADR-006 (license-boundary judgment precedent). Originating requirements: REQ-122 (HVPT
   perceptual training), REQ-NF-101 (OSS license constraint; L2-ARCTIC non-redistribution). Research basis:
