@@ -23,8 +23,8 @@ import { type ProgressSnapshotRepository } from "../port/progress-snapshot-repos
 
 export type ProgressSnapshotViewItem = Readonly<{
   identifier: string;
-  section: string;
-  sourceAssessment: string;
+  section: string | null;
+  sourceAssessment: string | null;
   taskKind: "rereading" | "drill";
   cefrSubscales: Readonly<{
     overall: number;
@@ -67,8 +67,9 @@ export const createViewProgress =
       .map((snapshots) => {
         const items: ProgressSnapshotViewItem[] = snapshots.map((snapshot) => ({
           identifier: String(snapshot.identifier),
-          section: String(snapshot.section),
-          sourceAssessment: String(snapshot.sourceAssessment),
+          section: snapshot.section !== null ? String(snapshot.section) : null,
+          sourceAssessment:
+            snapshot.sourceAssessment !== null ? String(snapshot.sourceAssessment) : null,
           taskKind: snapshot.taskKind,
           cefrSubscales: {
             overall: Number(snapshot.cefrScores.overall),

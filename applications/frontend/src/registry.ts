@@ -298,7 +298,7 @@ const buildContainer = (): Container => {
 
   // Infrastructure services
   const audioStorage = createLocalAudioStorage(config.audioStorageRoot);
-  const transactionManager = createDrizzleTransactionManager();
+  const transactionManager = createDrizzleTransactionManager(database);
   const clock = createSystemClock();
   const entropyProvider = createEntropyProvider();
   const logger = createStructuredLogger(config.nodeEnv);
@@ -573,6 +573,7 @@ const buildContainer = (): Container => {
       progressSnapshotRepository,
       entropyProvider,
       clock,
+      transactionManager,
     }),
   };
 

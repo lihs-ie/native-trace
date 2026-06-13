@@ -356,8 +356,10 @@ export const CATEGORY_LABELS: Record<string, string> = {
 
 export type ProgressSnapshotDto = {
   identifier: string;
-  section: string;
-  sourceAssessment: string;
+  /** PPC Section / DiagnosticSession 識別子。訓練由来スナップショットは null (DD-205)。 */
+  section: string | null;
+  /** assessment_results 識別子。訓練由来スナップショットは null (DD-205)。 */
+  sourceAssessment: string | null;
   taskKind: "rereading" | "drill";
   cefrSubscales: DiagnosticCefrSubscalesDto;
   focusScores: Array<{ contrast: string; score: number }>;

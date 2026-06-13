@@ -580,8 +580,16 @@ export const createCumulativeTrainingMinutes = (
 export type ProgressSnapshot = Readonly<{
   identifier: ProgressSnapshotIdentifier;
   learner: LearnerIdentifier;
-  section: SectionIdentifier;
-  sourceAssessment: AssessmentResultIdentifier;
+  /**
+   * PPC の Section または DiagnosticSession 識別子。
+   * 訓練由来スナップショット (HVPT 等) は AssessmentResult を持たないため null を許容する (DD-205)。
+   */
+  section: SectionIdentifier | null;
+  /**
+   * assessment_results への FK 参照識別子。
+   * 訓練由来スナップショット (HVPT 等) は AssessmentResult を持たないため null を許容する (DD-205)。
+   */
+  sourceAssessment: AssessmentResultIdentifier | null;
   taskKind: ControlledTaskKind;
   cefrScores: CefrSubscaleScores;
   focusScores: NonEmptyList<FocusScore>;
@@ -594,8 +602,8 @@ export type ProgressSnapshot = Readonly<{
 export type ProgressSnapshotCaptured = Readonly<{
   type: "progressSnapshotCaptured";
   progressSnapshot: ProgressSnapshot;
-  section: SectionIdentifier;
-  sourceAssessment: AssessmentResultIdentifier;
+  section: SectionIdentifier | null;
+  sourceAssessment: AssessmentResultIdentifier | null;
   occurredAt: Date;
 }>;
 
@@ -1071,8 +1079,14 @@ export const applySpacingTransition = (
 export type CaptureProgressSnapshotCommand = Readonly<{
   identifier: ProgressSnapshotIdentifier;
   learner: LearnerIdentifier;
-  section: SectionIdentifier;
-  sourceAssessment: AssessmentResultIdentifier;
+  /**
+   * PPC Section / DiagnosticSession 識別子。訓練由来は null を渡す (DD-205)。
+   */
+  section: SectionIdentifier | null;
+  /**
+   * assessment_results 識別子。訓練由来は AssessmentResult を持たないため null を渡す (DD-205)。
+   */
+  sourceAssessment: AssessmentResultIdentifier | null;
   taskKind: ControlledTaskKind;
   cefrScores: CefrSubscaleScores;
   focusScores: ReadonlyArray<FocusScore>;

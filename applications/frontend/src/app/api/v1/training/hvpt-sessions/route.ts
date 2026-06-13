@@ -17,7 +17,12 @@ import { z } from "zod";
 import { getContainer } from "../../../../../registry";
 import { successResponse } from "../../_shared/response";
 import { domainErrorToResponse } from "../../_shared/errors";
-import type { HvptSessionDto, HvptStimulusDto, StimulusMetadataDto, HvptChoiceDto } from "../../../../../lib/api-types";
+import type {
+  HvptSessionDto,
+  HvptStimulusDto,
+  StimulusMetadataDto,
+  HvptChoiceDto,
+} from "../../../../../lib/api-types";
 
 const startHvptSessionBodySchema = z.object({
   weaknessProfileIdentifier: z.string().min(1, "weaknessProfileIdentifier は必須です"),
@@ -66,8 +71,8 @@ export async function POST(request: NextRequest): Promise<Response> {
       speakerIdentifier: stimulus.metadata.speakerIdentifier,
       speakerSex: stimulus.metadata.speakerSex,
       context: stimulus.metadata.context,
-      sourceCorpus: "",
-      licenseIdentifier: "",
+      sourceCorpus: stimulus.metadata.sourceCorpus,
+      licenseIdentifier: stimulus.metadata.licenseIdentifier,
     };
 
     const choices: HvptChoiceDto[] = stimulus.choices.map((choice) => ({

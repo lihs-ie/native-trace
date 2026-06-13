@@ -19,9 +19,8 @@
  *
  * OQ-4（progress snapshot の section/sourceAssessment）:
  *   HVPT セッションは産出ドリルと異なり AssessmentResult を持たない。
- *   section = TrainingSession 識別子（訓練セッション自体を section 参照とする）。
- *   sourceAssessment = sentinel 固定値（訓練由来スナップショットの識別）。
- *   これは diagnostic baseline と同パターン（OQ-4 の「training スライス実装後は実 Section 識別子を渡す」に対応）。
+ *   section / sourceAssessment はともに null を渡す（DD-205 nullable 変更済）。
+ *   progress_snapshots.source_assessment は FK + nullable なので FK 違反にならない。
  *
  * LLM 呼び出しなし（ADR-007）。閾値は config 由来（DD-293）。
  */
@@ -50,13 +49,12 @@ import {
   applySpacingTransition,
   captureProgressSnapshot,
 } from "../../domain/training";
-import { type SectionIdentifier } from "../../domain/section";
-import { type AssessmentResultIdentifier } from "../../domain/assessment-result";
 import { type TrainingSessionRepository } from "../port/training-session-repository";
 import { type HvptTrialRepository } from "../port/hvpt-trial-repository";
 import { type SpacingScheduleRepository } from "../port/spacing-schedule-repository";
 import { type WeaknessProfileRepository } from "../port/weakness-profile-repository";
 import { type ProgressSnapshotRepository } from "../port/progress-snapshot-repository";
+import { type TransactionManager } from "../port/transaction-manager";
 import { type EntropyProvider } from "../port/entropy-provider";
 import { type Clock } from "../port/clock";
 
@@ -99,6 +97,7 @@ export type CompleteHvptSessionDependencies = Readonly<{
   spacingScheduleRepository: SpacingScheduleRepository;
   weaknessProfileRepository: WeaknessProfileRepository;
   progressSnapshotRepository: ProgressSnapshotRepository;
+  transactionManager: TransactionManager;
   entropyProvider: EntropyProvider;
   clock: Clock;
 }>;
@@ -129,7 +128,7 @@ export const createCompleteHvptSession =
       );
     }
 
-    // 1. TrainingSession を取得する
+    // 1. TrainingSession を取得する（トランザクション外：read-only）
     return dependencies.trainingSessionRepository
       .find(trainingSessionIdentifier)
       .andThen((trainingSession) => {
@@ -144,7 +143,7 @@ export const createCompleteHvptSession =
 
         const contrast = createPhonemeContrast(String(trainingSession.contrast)) as PhonemeContrast;
 
-        // 2. セッション内の HvptTrial 全件を取得して正答率を算出する（DD-266）
+        // 2. セッション内の HvptTrial 全件を取得して正答率を算出する（DD-266、read-only）
         return dependencies.hvptTrialRepository
           .findByTrainingSessionOrderedByPresentedAt(trainingSessionIdentifier)
           .andThen((trials) => {
@@ -173,7 +172,7 @@ export const createCompleteHvptSession =
 
             const { session: completedSession } = completeResult.value;
 
-            // 4. SpacingSchedule を取得または新規作成し applySpacingTransition を実行する（DD-267）
+            // 4. SpacingSchedule を取得（read-only、トランザクション外）
             return dependencies.spacingScheduleRepository
               .findByLearnerAndContrast(learner, String(contrast))
               .andThen((existingSchedule) => {
@@ -211,100 +210,94 @@ export const createCompleteHvptSession =
                 const spacingState: "rest" | "gate" =
                   updatedSchedule.state === "gate" ? "gate" : "rest";
 
-                // 5. SpacingSchedule を永続化する（DD-204 不変条件 4）
-                return dependencies.spacingScheduleRepository
-                  .persist(updatedSchedule)
-                  .andThen(() => {
-                    // 6. TrainingSession を completed として永続化する
-                    return dependencies.trainingSessionRepository
-                      .persist(completedSession)
-                      .andThen(() => {
-                        // 7. WeaknessProfile を取得して focusScores を生成する（progress snapshot 用）
-                        return dependencies.weaknessProfileRepository
-                          .find(weaknessProfileIdentifier)
-                          .andThen((weaknessProfile) => {
-                            // OQ-4: HVPT セッションは section = TrainingSession 識別子、
-                            // sourceAssessment = sentinel 固定値で honest empty
-                            const sectionIdentifier =
-                              input.trainingSessionIdentifier as SectionIdentifier;
-                            const sourceAssessmentIdentifier =
-                              `hvpt-${input.trainingSessionIdentifier}` as AssessmentResultIdentifier;
+                // WeaknessProfile を取得して focusScores を生成する（read-only）
+                return dependencies.weaknessProfileRepository
+                  .find(weaknessProfileIdentifier)
+                  .andThen((weaknessProfile) => {
+                    const snapshotIdentifierRaw = dependencies.entropyProvider.generateUlid();
+                    const snapshotIdentifier =
+                      createProgressSnapshotIdentifier(snapshotIdentifierRaw);
+                    if (!snapshotIdentifier) {
+                      return errAsync(
+                        validationFailed(
+                          "progressSnapshotIdentifier",
+                          "ProgressSnapshot 識別子の生成に失敗しました",
+                        ),
+                      );
+                    }
 
-                            const snapshotIdentifierRaw =
-                              dependencies.entropyProvider.generateUlid();
-                            const snapshotIdentifier =
-                              createProgressSnapshotIdentifier(snapshotIdentifierRaw);
-                            if (!snapshotIdentifier) {
-                              return errAsync(
-                                validationFailed(
-                                  "progressSnapshotIdentifier",
-                                  "ProgressSnapshot 識別子の生成に失敗しました",
-                                ),
-                              );
-                            }
+                    // CEFR スコア: HVPT は分節スコアを正答率から近似
+                    // accuracy 0-1 → 0-100 スコア変換（honest empty、実 CEFR 計算は産出ドリルで行う）
+                    const segmentalScore = Math.round(accuracyValue * 100);
+                    const cefrScoresResult = createCefrSubscaleScores(
+                      segmentalScore,
+                      segmentalScore,
+                      0,
+                    );
+                    if (cefrScoresResult.isErr()) {
+                      return errAsync(cefrScoresResult.error);
+                    }
 
-                            // CEFR スコア: HVPT は分節スコアを正答率から近似
-                            // accuracy 0-1 → 0-100 スコア変換（honest empty、実 CEFR 計算は産出ドリルで行う）
-                            const segmentalScore = Math.round(accuracyValue * 100);
-                            const cefrScoresResult = createCefrSubscaleScores(
-                              segmentalScore,
-                              segmentalScore,
-                              0,
-                            );
-                            if (cefrScoresResult.isErr()) {
-                              return errAsync(cefrScoresResult.error);
-                            }
+                    // focusScores: WeaknessProfile の mastery から生成
+                    const focusScoreResults = weaknessProfile.focusSounds.map((sound) => {
+                      const score0To100 = Math.round(Number(sound.mastery) * 100);
+                      return createFocusScore(String(sound.contrast), score0To100);
+                    });
+                    for (const result of focusScoreResults) {
+                      if (result.isErr()) {
+                        return errAsync(result.error);
+                      }
+                    }
+                    const focusScores = focusScoreResults.map((r) => r._unsafeUnwrap());
 
-                            // focusScores: WeaknessProfile の mastery から生成
-                            const focusScoreResults = weaknessProfile.focusSounds.map((sound) => {
-                              const score0To100 = Math.round(Number(sound.mastery) * 100);
-                              return createFocusScore(String(sound.contrast), score0To100);
-                            });
-                            for (const result of focusScoreResults) {
-                              if (result.isErr()) {
-                                return errAsync(result.error);
-                              }
-                            }
-                            const focusScores = focusScoreResults.map((r) => r._unsafeUnwrap());
+                    // cumulativeTrainingMinutes: このセッションの durationMinutes
+                    const cumulativeResult = createCumulativeTrainingMinutes(input.durationMinutes);
+                    if (cumulativeResult.isErr()) {
+                      return errAsync(cumulativeResult.error);
+                    }
 
-                            // cumulativeTrainingMinutes: このセッションの durationMinutes
-                            const cumulativeResult = createCumulativeTrainingMinutes(
-                              input.durationMinutes,
-                            );
-                            if (cumulativeResult.isErr()) {
-                              return errAsync(cumulativeResult.error);
-                            }
+                    // OQ-4: HVPT は AssessmentResult を持たない。
+                    // section / sourceAssessment は null（DD-205 nullable 変更済、FK 違反なし）。
+                    const captureResult = captureProgressSnapshot({
+                      identifier: snapshotIdentifier,
+                      learner,
+                      section: null,
+                      sourceAssessment: null,
+                      taskKind: "drill",
+                      cefrScores: cefrScoresResult.value,
+                      focusScores,
+                      cumulativeTrainingMinutes: cumulativeResult.value,
+                      capturedAt: now,
+                    });
 
-                            const captureResult = captureProgressSnapshot({
-                              identifier: snapshotIdentifier,
-                              learner,
-                              section: sectionIdentifier,
-                              sourceAssessment: sourceAssessmentIdentifier,
-                              taskKind: "drill",
-                              cefrScores: cefrScoresResult.value,
-                              focusScores,
-                              cumulativeTrainingMinutes: cumulativeResult.value,
-                              capturedAt: now,
-                            });
+                    if (captureResult.isErr()) {
+                      return errAsync(captureResult.error);
+                    }
 
-                            if (captureResult.isErr()) {
-                              return errAsync(captureResult.error);
-                            }
+                    const { progressSnapshot } = captureResult.value;
 
-                            const { progressSnapshot } = captureResult.value;
-
-                            return dependencies.progressSnapshotRepository
-                              .save(progressSnapshot)
-                              .andThen(() =>
-                                okAsync({
-                                  trainingSessionIdentifier: String(completedSession.identifier),
-                                  sessionAccuracy: accuracyValue,
-                                  spacingState,
-                                  cumulativeTrainingMinutes: input.durationMinutes,
-                                }),
-                              );
-                          });
-                      });
+                    // 全 write 操作を単一トランザクションで囲む（部分 commit 防止）
+                    return dependencies.transactionManager.execute(() =>
+                      // 5. SpacingSchedule を永続化する（DD-204 不変条件 4）
+                      dependencies.spacingScheduleRepository
+                        .persist(updatedSchedule)
+                        .andThen(() =>
+                          // 6. TrainingSession を completed として永続化する
+                          dependencies.trainingSessionRepository.persist(completedSession),
+                        )
+                        .andThen(() =>
+                          // 7. progress_snapshots に接続する（M-TR-3、section/sourceAssessment は null）
+                          dependencies.progressSnapshotRepository.save(progressSnapshot),
+                        )
+                        .andThen(() =>
+                          okAsync({
+                            trainingSessionIdentifier: String(completedSession.identifier),
+                            sessionAccuracy: accuracyValue,
+                            spacingState,
+                            cumulativeTrainingMinutes: input.durationMinutes,
+                          }),
+                        ),
+                    );
                   });
               });
           });

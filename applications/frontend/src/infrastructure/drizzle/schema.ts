@@ -390,10 +390,10 @@ export const progressSnapshots = sqliteTable(
     learner: text("learner").notNull(),
     // section は PPC の Section または DiagnosticSession 識別子を格納する。
     // diagnostic baseline では DiagnosticSession 識別子を使用するため FK 制約は持たない (ADR-007 識別子のみ結合)。
-    section: text("section").notNull(),
-    sourceAssessment: text("source_assessment")
-      .notNull()
-      .references(() => assessmentResults.identifier),
+    // 訓練由来スナップショット (HVPT 等) は section/sourceAssessment を持たないため nullable (DD-205)。
+    section: text("section"),
+    // assessment_results への FK 参照。訓練由来スナップショットは AssessmentResult を持たないため nullable (DD-205)。
+    sourceAssessment: text("source_assessment").references(() => assessmentResults.identifier),
     taskKind: text("task_kind").notNull(),
     cefrOverallScore: integer("cefr_overall_score").notNull(),
     cefrSegmentalScore: integer("cefr_segmental_score").notNull(),

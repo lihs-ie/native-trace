@@ -63,6 +63,8 @@ export type HvptStimulusWithChoices = Readonly<{
     speakerIdentifier: string;
     speakerSex: string;
     context: string;
+    sourceCorpus: string;
+    licenseIdentifier: string;
   }>;
   choices: ReadonlyArray<ResponseLabel>;
   correctLabel: ResponseLabel;
@@ -183,10 +185,7 @@ export const createStartHvptSession =
 
             if (!selectedContrast) {
               return errAsync(
-                validationFailed(
-                  "contrast",
-                  "WeaknessProfile に有効な focus 対立がありません",
-                ),
+                validationFailed("contrast", "WeaknessProfile に有効な focus 対立がありません"),
               );
             }
 
@@ -212,7 +211,10 @@ export const createStartHvptSession =
                 ) as TrainingSessionIdentifier;
                 if (!sessionIdentifier) {
                   return errAsync(
-                    validationFailed("sessionIdentifier", "訓練セッション識別子の生成に失敗しました"),
+                    validationFailed(
+                      "sessionIdentifier",
+                      "訓練セッション識別子の生成に失敗しました",
+                    ),
                   );
                 }
 
@@ -246,6 +248,8 @@ export const createStartHvptSession =
                         speakerIdentifier: record.speakerIdentifier,
                         speakerSex: record.speakerSex,
                         context: record.context,
+                        sourceCorpus: record.sourceCorpus,
+                        licenseIdentifier: record.licenseIdentifier,
                       },
                       choices,
                       correctLabel,
@@ -253,15 +257,13 @@ export const createStartHvptSession =
                   },
                 );
 
-                return dependencies.trainingSessionRepository
-                  .persist(trainingSession)
-                  .andThen(() =>
-                    okAsync({
-                      trainingSession,
-                      contrast: String(capturedContrast),
-                      stimuli: stimuliWithChoices,
-                    }),
-                  );
+                return dependencies.trainingSessionRepository.persist(trainingSession).andThen(() =>
+                  okAsync({
+                    trainingSession,
+                    contrast: String(capturedContrast),
+                    stimuli: stimuliWithChoices,
+                  }),
+                );
               });
           });
       });

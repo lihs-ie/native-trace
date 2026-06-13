@@ -70,8 +70,9 @@ const rowToProgressSnapshot = (row: ProgressSnapshotRow): ProgressSnapshot => {
   return {
     identifier,
     learner,
-    section: row.section as SectionIdentifier,
-    sourceAssessment: row.sourceAssessment as AssessmentResultIdentifier,
+    section: row.section !== null ? (row.section as SectionIdentifier) : null,
+    sourceAssessment:
+      row.sourceAssessment !== null ? (row.sourceAssessment as AssessmentResultIdentifier) : null,
     taskKind,
     cefrScores: cefrScoresResult.value,
     focusScores,
@@ -89,8 +90,8 @@ const progressSnapshotToRow = (snapshot: ProgressSnapshot): ProgressSnapshotRow 
   return {
     identifier: String(snapshot.identifier),
     learner: String(snapshot.learner),
-    section: String(snapshot.section),
-    sourceAssessment: String(snapshot.sourceAssessment),
+    section: snapshot.section !== null ? String(snapshot.section) : null,
+    sourceAssessment: snapshot.sourceAssessment !== null ? String(snapshot.sourceAssessment) : null,
     taskKind: snapshot.taskKind,
     cefrOverallScore: Number(snapshot.cefrScores.overall),
     cefrSegmentalScore: Number(snapshot.cefrScores.segmental),

@@ -21,6 +21,7 @@ import type { WeaknessProfileRepository } from "../port/weakness-profile-reposit
 import type { ProgressSnapshotRepository } from "../port/progress-snapshot-repository";
 import type { EntropyProvider } from "../port/entropy-provider";
 import type { Clock } from "../port/clock";
+import type { TransactionManager } from "../port/transaction-manager";
 import type {
   TrainingSession,
   InProgressTrainingSession,
@@ -167,6 +168,12 @@ const buildClockFake = (): Clock => ({
   now: vi.fn(() => FIXED_NOW),
 });
 
+const buildTransactionManagerFake = (): TransactionManager => ({
+  // Plain passthrough (not vi.fn): vi.fn cannot preserve the generic <T> signature
+  // the TransactionManager interface requires, which breaks type assignability.
+  execute: (work) => work(),
+});
+
 const buildBaseInput = (
   override?: Partial<CompleteHvptSessionInput>,
 ): CompleteHvptSessionInput => ({
@@ -192,6 +199,7 @@ describe("createCompleteHvptSession", () => {
         spacingScheduleRepository,
         weaknessProfileRepository: buildWeaknessProfileRepositoryFake(buildWeaknessProfile()),
         progressSnapshotRepository: buildProgressSnapshotRepositoryFake(),
+        transactionManager: buildTransactionManagerFake(),
         entropyProvider: buildEntropyProviderFake(),
         clock: buildClockFake(),
       });
@@ -216,6 +224,7 @@ describe("createCompleteHvptSession", () => {
         spacingScheduleRepository,
         weaknessProfileRepository: buildWeaknessProfileRepositoryFake(buildWeaknessProfile()),
         progressSnapshotRepository: buildProgressSnapshotRepositoryFake(),
+        transactionManager: buildTransactionManagerFake(),
         entropyProvider: buildEntropyProviderFake(),
         clock: buildClockFake(),
       });
@@ -240,6 +249,7 @@ describe("createCompleteHvptSession", () => {
         spacingScheduleRepository,
         weaknessProfileRepository: buildWeaknessProfileRepositoryFake(buildWeaknessProfile()),
         progressSnapshotRepository: buildProgressSnapshotRepositoryFake(),
+        transactionManager: buildTransactionManagerFake(),
         entropyProvider: buildEntropyProviderFake(),
         clock: buildClockFake(),
       });
@@ -259,6 +269,7 @@ describe("createCompleteHvptSession", () => {
         spacingScheduleRepository,
         weaknessProfileRepository: buildWeaknessProfileRepositoryFake(buildWeaknessProfile()),
         progressSnapshotRepository: buildProgressSnapshotRepositoryFake(),
+        transactionManager: buildTransactionManagerFake(),
         entropyProvider: buildEntropyProviderFake(),
         clock: buildClockFake(),
       });
@@ -292,6 +303,7 @@ describe("createCompleteHvptSession", () => {
         spacingScheduleRepository,
         weaknessProfileRepository: buildWeaknessProfileRepositoryFake(buildWeaknessProfile()),
         progressSnapshotRepository: buildProgressSnapshotRepositoryFake(),
+        transactionManager: buildTransactionManagerFake(),
         entropyProvider: buildEntropyProviderFake(),
         clock: buildClockFake(),
       });
@@ -315,6 +327,7 @@ describe("createCompleteHvptSession", () => {
         spacingScheduleRepository: buildSpacingScheduleRepositoryFake(),
         weaknessProfileRepository: buildWeaknessProfileRepositoryFake(buildWeaknessProfile()),
         progressSnapshotRepository,
+        transactionManager: buildTransactionManagerFake(),
         entropyProvider: buildEntropyProviderFake(),
         clock: buildClockFake(),
       });
@@ -348,6 +361,7 @@ describe("createCompleteHvptSession", () => {
         spacingScheduleRepository: buildSpacingScheduleRepositoryFake(),
         weaknessProfileRepository: buildWeaknessProfileRepositoryFake(buildWeaknessProfile()),
         progressSnapshotRepository: buildProgressSnapshotRepositoryFake(),
+        transactionManager: buildTransactionManagerFake(),
         entropyProvider: buildEntropyProviderFake(),
         clock: buildClockFake(),
       });
