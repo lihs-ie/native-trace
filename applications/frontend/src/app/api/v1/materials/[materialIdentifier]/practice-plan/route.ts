@@ -27,8 +27,21 @@ export async function GET(_request: NextRequest, context: RouteContext): Promise
     material: {
       identifier: output.material.identifier,
       title: output.material.title,
-      source: output.material.sourceType ? { sourceType: output.material.sourceType } : null,
+      source: output.material.sourceType
+        ? {
+            sourceType: output.material.sourceType,
+            speakerName: output.material.speakerName ?? null,
+          }
+        : null,
+      createdAt: output.material.createdAt,
       updatedAt: output.material.updatedAt,
+      stats: {
+        sectionSeriesCount: output.sectionSeriesItems.length,
+        recordingAttemptCount: output.materialLevelStats.totalRecordingAttemptCount,
+        bestOverallScore: output.materialLevelStats.bestOverallScore,
+        overallScoreHistory: [],
+        lastPracticedAt: null,
+      },
     },
     sectionSeries: output.sectionSeriesItems.map((item) => ({
       sectionSeries: {
@@ -36,6 +49,8 @@ export async function GET(_request: NextRequest, context: RouteContext): Promise
         material: materialIdentifier,
         title: item.title,
         displayOrder: item.displayOrder,
+        createdAt: item.latestSection?.createdAt ?? output.material.createdAt,
+        updatedAt: item.latestSection?.createdAt ?? output.material.updatedAt,
       },
       latestSection: item.latestSection
         ? {
@@ -51,6 +66,17 @@ export async function GET(_request: NextRequest, context: RouteContext): Promise
         version: v.version,
         createdAt: v.createdAt,
       })),
+      stats: {
+        wordCount: item.stats.wordCount,
+        recordingAttemptCount: item.stats.recordingAttemptCount,
+        bestOverallScore: item.stats.bestOverallScore,
+        overallScoreHistory: [...item.stats.overallScoreHistory],
+      },
     })),
+    materialLevelStats: {
+      totalWordCount: output.materialLevelStats.totalWordCount,
+      totalRecordingAttemptCount: output.materialLevelStats.totalRecordingAttemptCount,
+      bestOverallScore: output.materialLevelStats.bestOverallScore,
+    },
   });
 }
