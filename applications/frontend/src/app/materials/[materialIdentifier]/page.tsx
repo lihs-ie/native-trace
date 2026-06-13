@@ -48,9 +48,7 @@ export default function MaterialDetailPage({ params }: PageProps) {
           setErrorMessage(null);
         })
         .catch((error: unknown) => {
-          setErrorMessage(
-            isApiClientError(error) ? error.message : "練習計画の取得に失敗しました",
-          );
+          setErrorMessage(isApiClientError(error) ? error.message : "練習計画の取得に失敗しました");
         })
         .finally(() => setLoading(false)),
     [materialIdentifier],
@@ -68,9 +66,7 @@ export default function MaterialDetailPage({ params }: PageProps) {
       await apiDelete(`/api/v1/materials/${materialIdentifier}`);
       router.push("/");
     } catch (error: unknown) {
-      setErrorMessage(
-        isApiClientError(error) ? error.message : "教材の削除に失敗しました",
-      );
+      setErrorMessage(isApiClientError(error) ? error.message : "教材の削除に失敗しました");
     }
   };
 
@@ -92,11 +88,7 @@ export default function MaterialDetailPage({ params }: PageProps) {
           </>
         }
         action={
-          <button
-            className="btn btn--sm btn--ghost"
-            style={{ marginLeft: "auto" }}
-            type="button"
-          >
+          <button className="btn btn--sm btn--ghost" style={{ marginLeft: "auto" }} type="button">
             複製して編集
           </button>
         }
@@ -124,10 +116,7 @@ export default function MaterialDetailPage({ params }: PageProps) {
             <div className="src">
               {sourceType && (
                 <span
-                  className={[
-                    "srctag",
-                    isTed(sourceType) ? "srctag--ted" : "",
-                  ]
+                  className={["srctag", isTed(sourceType) ? "srctag--ted" : ""]
                     .filter(Boolean)
                     .join(" ")}
                 >
@@ -139,6 +128,12 @@ export default function MaterialDetailPage({ params }: PageProps) {
             <div className="mhero-foot">
               <div className="mhero-meta">
                 <span>{sectionCount} sections</span>
+                <span>
+                  <b>{plan.material.stats.recordingAttemptCount}</b> 試行
+                </span>
+                {plan.material.stats.lastPracticedAt && (
+                  <span>最終練習 {formatDate(plan.material.stats.lastPracticedAt)}</span>
+                )}
                 {updatedAt && <span>updated {updatedAt}</span>}
               </div>
               <div className="mhero-actions">
@@ -190,13 +185,9 @@ export default function MaterialDetailPage({ params }: PageProps) {
                       <div className="ss-body">
                         <div className="ss-title">
                           <b>{series.title}</b>
-                          {latest && (
-                            <span className="ver-badge">本文版 v{latest.version}</span>
-                          )}
+                          {latest && <span className="ver-badge">本文版 v{latest.version}</span>}
                         </div>
-                        {latest && (
-                          <p className="ss-text">{latest.bodyText}</p>
-                        )}
+                        {latest && <p className="ss-text">{latest.bodyText}</p>}
                         <div className="ss-stats">
                           {latest ? null : (
                             <span style={{ color: "var(--text-faint)" }}>未録音</span>
@@ -226,10 +217,14 @@ export default function MaterialDetailPage({ params }: PageProps) {
                           return (
                             <div key={version.identifier} className="vrow">
                               <span
-                                className={["vdot", isCurrent ? "cur" : ""].filter(Boolean).join(" ")}
+                                className={["vdot", isCurrent ? "cur" : ""]
+                                  .filter(Boolean)
+                                  .join(" ")}
                               />
                               <span
-                                className={["vtag", isCurrent ? "cur" : ""].filter(Boolean).join(" ")}
+                                className={["vtag", isCurrent ? "cur" : ""]
+                                  .filter(Boolean)
+                                  .join(" ")}
                               >
                                 v{version.version} {isCurrent ? "最新" : ""}
                               </span>
@@ -258,14 +253,24 @@ export default function MaterialDetailPage({ params }: PageProps) {
                 <div className="gauge" style={{ width: "76px", height: "76px" }}>
                   <svg viewBox="0 0 120 120" width="76" height="76">
                     <circle className="g-track" cx="60" cy="60" r="52" />
-                    <circle className="g-val" cx="60" cy="60" r="52" />
+                    <circle
+                      className="g-val"
+                      cx="60"
+                      cy="60"
+                      r="52"
+                      style={{
+                        strokeDashoffset:
+                          plan.material.stats.bestOverallScore !== null
+                            ? 326.7 * (1 - plan.material.stats.bestOverallScore / 100)
+                            : 326.7,
+                      }}
+                    />
                   </svg>
                   <div className="g-center">
-                    <span
-                      className="mono g-num"
-                      style={{ fontSize: "var(--text-xl)" }}
-                    >
-                      —
+                    <span className="mono g-num" style={{ fontSize: "var(--text-xl)" }}>
+                      {plan.material.stats.bestOverallScore !== null
+                        ? plan.material.stats.bestOverallScore
+                        : "—"}
                     </span>
                   </div>
                 </div>
