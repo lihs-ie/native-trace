@@ -152,6 +152,25 @@ export const createDrizzleSpacingScheduleRepository = (
     });
   },
 
+  findAllByLearner: (learner: LearnerIdentifier) => {
+    return okAsync(null).andThen(() => {
+      try {
+        const rows = db
+          .select()
+          .from(spacingSchedules)
+          .where(
+            and(eq(spacingSchedules.learner, String(learner)), isNull(spacingSchedules.deletedAt)),
+          )
+          .orderBy(asc(spacingSchedules.nextPresentationAt))
+          .all();
+
+        return okAsync(rows.map(rowToSpacingSchedule));
+      } catch (e) {
+        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
+      }
+    });
+  },
+
   persist: (schedule: SpacingSchedule) => {
     return okAsync(null).andThen(() => {
       try {

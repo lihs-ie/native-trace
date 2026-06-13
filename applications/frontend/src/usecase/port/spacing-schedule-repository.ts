@@ -41,6 +41,14 @@ export type SpacingScheduleRepository = Readonly<{
   ) => ResultAsync<ReadonlyArray<SpacingSchedule>, DomainError>;
 
   /**
+   * findAllByLearner — 学習者の全スケジュール（全 state）を返す。
+   * training 画面の .sched rail 表示用。nextPresentationAt 昇順。
+   */
+  findAllByLearner: (
+    learner: LearnerIdentifier,
+  ) => ResultAsync<ReadonlyArray<SpacingSchedule>, DomainError>;
+
+  /**
    * persist — スケジュールを保存する（新規作成 / 状態更新の両方）。
    * 全遷移を repository 経由で書き戻す（DD-204不変条件4、メモリ保持にしない）。
    */

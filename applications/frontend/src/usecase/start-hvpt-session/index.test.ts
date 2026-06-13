@@ -114,12 +114,11 @@ const buildSpacingScheduleRepositoryFake = (
   ),
   findByLearnerAndContrast: vi.fn((_learner, _contrast) => okAsync(null)),
   findDueByLearner: vi.fn((_learner) => okAsync(dueSchedules)),
+  findAllByLearner: vi.fn((_learner) => okAsync([])),
   persist: vi.fn((_schedule) => okAsync(undefined)),
 });
 
-const buildAnalyzerStimulusClientFake = (
-  records: StimulusRecord[],
-): AnalyzerStimulusClient => ({
+const buildAnalyzerStimulusClientFake = (records: StimulusRecord[]): AnalyzerStimulusClient => ({
   fetchStimuli: vi.fn((_contrast, _context, _limit) => okAsync(records)),
 });
 

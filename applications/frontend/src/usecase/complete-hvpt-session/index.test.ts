@@ -134,6 +134,7 @@ const buildSpacingScheduleRepositoryFake = (
   ),
   findByLearnerAndContrast: vi.fn((_learner, _contrast) => okAsync(existingSchedule)),
   findDueByLearner: vi.fn((_learner) => okAsync([])),
+  findAllByLearner: vi.fn((_learner) => okAsync([])),
   persist: vi.fn((_schedule) => okAsync(undefined)),
 });
 
@@ -186,9 +187,7 @@ describe("createCompleteHvptSession", () => {
       const spacingScheduleRepository = buildSpacingScheduleRepositoryFake();
 
       const usecase = createCompleteHvptSession({
-        trainingSessionRepository: buildTrainingSessionRepositoryFake(
-          buildInProgressHvptSession(),
-        ),
+        trainingSessionRepository: buildTrainingSessionRepositoryFake(buildInProgressHvptSession()),
         hvptTrialRepository: buildHvptTrialRepositoryFake(trials),
         spacingScheduleRepository,
         weaknessProfileRepository: buildWeaknessProfileRepositoryFake(buildWeaknessProfile()),
@@ -212,9 +211,7 @@ describe("createCompleteHvptSession", () => {
       const spacingScheduleRepository = buildSpacingScheduleRepositoryFake();
 
       const usecase = createCompleteHvptSession({
-        trainingSessionRepository: buildTrainingSessionRepositoryFake(
-          buildInProgressHvptSession(),
-        ),
+        trainingSessionRepository: buildTrainingSessionRepositoryFake(buildInProgressHvptSession()),
         hvptTrialRepository: buildHvptTrialRepositoryFake(trials),
         spacingScheduleRepository,
         weaknessProfileRepository: buildWeaknessProfileRepositoryFake(buildWeaknessProfile()),
@@ -238,9 +235,7 @@ describe("createCompleteHvptSession", () => {
       const spacingScheduleRepository = buildSpacingScheduleRepositoryFake();
 
       const usecase = createCompleteHvptSession({
-        trainingSessionRepository: buildTrainingSessionRepositoryFake(
-          buildInProgressHvptSession(),
-        ),
+        trainingSessionRepository: buildTrainingSessionRepositoryFake(buildInProgressHvptSession()),
         hvptTrialRepository: buildHvptTrialRepositoryFake(trials),
         spacingScheduleRepository,
         weaknessProfileRepository: buildWeaknessProfileRepositoryFake(buildWeaknessProfile()),
@@ -259,9 +254,7 @@ describe("createCompleteHvptSession", () => {
       const spacingScheduleRepository = buildSpacingScheduleRepositoryFake(null);
 
       const usecase = createCompleteHvptSession({
-        trainingSessionRepository: buildTrainingSessionRepositoryFake(
-          buildInProgressHvptSession(),
-        ),
+        trainingSessionRepository: buildTrainingSessionRepositoryFake(buildInProgressHvptSession()),
         hvptTrialRepository: buildHvptTrialRepositoryFake(trials),
         spacingScheduleRepository,
         weaknessProfileRepository: buildWeaknessProfileRepositoryFake(buildWeaknessProfile()),
@@ -294,9 +287,7 @@ describe("createCompleteHvptSession", () => {
       const spacingScheduleRepository = buildSpacingScheduleRepositoryFake(existingSchedule);
 
       const usecase = createCompleteHvptSession({
-        trainingSessionRepository: buildTrainingSessionRepositoryFake(
-          buildInProgressHvptSession(),
-        ),
+        trainingSessionRepository: buildTrainingSessionRepositoryFake(buildInProgressHvptSession()),
         hvptTrialRepository: buildHvptTrialRepositoryFake(trials),
         spacingScheduleRepository,
         weaknessProfileRepository: buildWeaknessProfileRepositoryFake(buildWeaknessProfile()),
@@ -319,9 +310,7 @@ describe("createCompleteHvptSession", () => {
       const progressSnapshotRepository = buildProgressSnapshotRepositoryFake();
 
       const usecase = createCompleteHvptSession({
-        trainingSessionRepository: buildTrainingSessionRepositoryFake(
-          buildInProgressHvptSession(),
-        ),
+        trainingSessionRepository: buildTrainingSessionRepositoryFake(buildInProgressHvptSession()),
         hvptTrialRepository: buildHvptTrialRepositoryFake(trials),
         spacingScheduleRepository: buildSpacingScheduleRepositoryFake(),
         weaknessProfileRepository: buildWeaknessProfileRepositoryFake(buildWeaknessProfile()),

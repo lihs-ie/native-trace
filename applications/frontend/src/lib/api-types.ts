@@ -522,6 +522,21 @@ export type HvptCompletionDto = {
   cumulativeTrainingMinutes: number;
 };
 
+// ---- SpacingSchedule DTO (Training Context — REQ-127) ----
+
+export type SpacingScheduleDto = {
+  identifier: string;
+  contrast: string;
+  state: "rest" | "due" | "gate" | "done";
+  nextPresentationAt: string;
+  recentAccuracy: number | null;
+};
+
+export type TrainingScheduleDto = {
+  schedules: SpacingScheduleDto[];
+  cumulativeTrainingMinutes: number;
+};
+
 // ---- Diagnostic DTOs (Training Context) ----
 
 export type DiagnosticPromptDto = {
