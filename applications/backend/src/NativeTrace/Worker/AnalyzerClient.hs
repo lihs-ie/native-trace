@@ -1,5 +1,6 @@
 -- | python-analyzer への HTTP クライアント。
 -- POST /v1/analyze を呼び出し AnalyzerResult を返す。
+-- POST /v1/shadowing-lag を呼び出し AnalyzerShadowingLagResult を返す。
 -- ANALYZER_URL 環境変数で接続先を変える（デフォルト: http://localhost:8788）。
 module NativeTrace.Worker.AnalyzerClient (
   AnalyzerResult (..),
@@ -13,7 +14,9 @@ module NativeTrace.Worker.AnalyzerClient (
   WeakFormRealization (..),
   SyllableInfo (..),
   InsertedVowelInfo (..),
+  AnalyzerShadowingLagResult (..),
   analyzeAudio,
+  analyzeShadowingLag,
 )
 where
 
@@ -25,6 +28,7 @@ import Data.ByteString.Lazy qualified as LBS
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as TextEncoding
+import NativeTrace.Worker.Types (PerSegmentLagEntry (..))
 import Network.HTTP.Client (
   Request (..),
   RequestBody (..),
@@ -314,6 +318,33 @@ instance FromJSON AnalyzerResult where
           analyzedSyllables = syllables
         }
 
+-- | python-analyzer の POST /v1/shadowing-lag レスポンス（M-SHL-3 / ADR-013）。
+-- analyzer の生計測値をそのまま保持する。閾値判定は worker 側で行う。
+data AnalyzerShadowingLagResult = AnalyzerShadowingLagResult
+  { analyzerLagMilliseconds :: Double,
+    analyzerPerSegmentLag :: [PerSegmentLagEntry],
+    analyzerSpeechRateRatio :: Maybe Double,
+    analyzerPauseCountLearner :: Maybe Int,
+    analyzerPauseCountReference :: Maybe Int
+  }
+  deriving (Show, Eq)
+
+instance FromJSON AnalyzerShadowingLagResult where
+  parseJSON = withObject "AnalyzerShadowingLagResult" $ \o -> do
+    lagMs <- o .: "lagMilliseconds"
+    perSegmentLag <- o .:? "perSegmentLag" .!= []
+    speechRateRatio <- o .:? "speechRateRatio"
+    pauseCountLearner <- o .:? "pauseCountLearner"
+    pauseCountReference <- o .:? "pauseCountReference"
+    pure
+      AnalyzerShadowingLagResult
+        { analyzerLagMilliseconds = lagMs,
+          analyzerPerSegmentLag = perSegmentLag,
+          analyzerSpeechRateRatio = speechRateRatio,
+          analyzerPauseCountLearner = pauseCountLearner,
+          analyzerPauseCountReference = pauseCountReference
+        }
+
 -- ---- リクエスト型（multipart 組み立て用） ----
 
 -- | analyzer に渡す metadata JSON。
@@ -331,6 +362,21 @@ instance ToJSON AnalyzerMetadata where
         "targetAccent" .= analyzerTargetAccent meta,
         "mimeType" .= analyzerMimeType meta,
         "durationMilliseconds" .= analyzerDurationMilliseconds meta
+      ]
+
+-- | shadowing-lag エンドポイントに渡す metadata JSON。
+data ShadowingMetadata = ShadowingMetadata
+  { shadowingMetadataReferenceText :: Text,
+    shadowingMetadataMimeType :: Text,
+    shadowingMetadataDurationMilliseconds :: Int
+  }
+
+instance ToJSON ShadowingMetadata where
+  toJSON meta =
+    object
+      [ "referenceText" .= shadowingMetadataReferenceText meta,
+        "mimeType" .= shadowingMetadataMimeType meta,
+        "durationMilliseconds" .= shadowingMetadataDurationMilliseconds meta
       ]
 
 -- ---- HTTP クライアント ----
@@ -399,6 +445,76 @@ analyzeAudio audioBytes mimeType referenceText targetAccent durationMilliseconds
                       "unexpected analyzer status: " <> Text.pack (show httpStatus)
               }
 
+-- | python-analyzer の POST /v1/shadowing-lag を呼び出し AnalyzerShadowingLagResult を取得する。
+-- reference_audio + learner_audio + metadata を multipart/form-data で送信する（ADR-013）。
+-- 5xx の場合は 502 に変換して上位に伝播する。
+analyzeShadowingLag ::
+  -- | お手本音声バイト列（Kokoro TTS 生成済み）
+  ByteString ->
+  -- | 学習者録音バイト列
+  ByteString ->
+  -- | 音声 MIME タイプ（両音声共通）
+  Text ->
+  -- | 参照テキスト
+  Text ->
+  -- | 音声長（ミリ秒）
+  Int ->
+  Handler AnalyzerShadowingLagResult
+analyzeShadowingLag referenceAudioBytes learnerAudioBytes mimeType referenceText durationMilliseconds = do
+  baseUrl <- resolveAnalyzerUrl
+  let analyzerUrl = Text.unpack baseUrl <> "/v1/shadowing-lag"
+  manager <- liftIO $ newManager tlsManagerSettings
+  initialRequest <- liftIO $ parseRequest analyzerUrl
+  let boundary = "native-trace-shadowing-boundary"
+  let metadataJson =
+        Aeson.encode
+          ShadowingMetadata
+            { shadowingMetadataReferenceText = referenceText,
+              shadowingMetadataMimeType = mimeType,
+              shadowingMetadataDurationMilliseconds = durationMilliseconds
+            }
+  let requestBody =
+        buildShadowingMultipartBody
+          boundary
+          mimeType
+          referenceAudioBytes
+          learnerAudioBytes
+          (LBS.toStrict metadataJson)
+  let contentTypeHeader =
+        ( "Content-Type",
+          "multipart/form-data; boundary=" <> TextEncoding.encodeUtf8 boundary
+        )
+  let httpRequest =
+        initialRequest
+          { method = "POST",
+            requestBody = RequestBodyBS requestBody,
+            requestHeaders = [contentTypeHeader]
+          }
+  response <- liftIO $ httpLbs httpRequest manager
+  let httpStatus = responseStatus response
+  if httpStatus == status200
+    then case Aeson.eitherDecode (responseBody response) of
+      Right result -> pure result
+      Left decodeError ->
+        throwError
+          err502
+            { errBody =
+                LBS.fromStrict $
+                  TextEncoding.encodeUtf8 $
+                    "shadowing-lag response parse error: " <> Text.pack decodeError
+            }
+    else
+      if httpStatus >= status500
+        then throwError err502 {errBody = responseBody response}
+        else
+          throwError
+            err502
+              { errBody =
+                  LBS.fromStrict $
+                    TextEncoding.encodeUtf8 $
+                      "unexpected shadowing-lag status: " <> Text.pack (show httpStatus)
+              }
+
 -- | ANALYZER_URL 環境変数を読む。未設定時は http://localhost:8788 を返す。
 resolveAnalyzerUrl :: Handler Text
 resolveAnalyzerUrl = do
@@ -432,6 +548,41 @@ buildMultipartBody boundary mimeType audioBytes metadataBytes =
           <> crlf
       closing = sep <> "--\r\n"
    in metaPart <> audioPart <> closing
+
+-- | shadowing-lag 用 multipart body を組み立てる（reference_audio + learner_audio + metadata）。
+-- analyzer の POST /v1/shadowing-lag が期待するフィールド名に合わせる（ADR-013）。
+buildShadowingMultipartBody ::
+  Text -> Text -> ByteString -> ByteString -> ByteString -> ByteString
+buildShadowingMultipartBody boundary mimeType referenceBytes learnerBytes metadataBytes =
+  let sep = TextEncoding.encodeUtf8 ("--" <> boundary)
+      crlf = "\r\n"
+      ext = mimeTypeToExtension mimeType
+      metaPart =
+        sep
+          <> crlf
+          <> "Content-Disposition: form-data; name=\"metadata\"\r\n"
+          <> "Content-Type: application/json; charset=utf-8\r\n"
+          <> crlf
+          <> metadataBytes
+          <> crlf
+      referencePart =
+        sep
+          <> crlf
+          <> TextEncoding.encodeUtf8 ("Content-Disposition: form-data; name=\"reference_audio\"; filename=\"reference." <> ext <> "\"\r\n")
+          <> TextEncoding.encodeUtf8 ("Content-Type: " <> mimeType <> "\r\n")
+          <> crlf
+          <> referenceBytes
+          <> crlf
+      learnerPart =
+        sep
+          <> crlf
+          <> TextEncoding.encodeUtf8 ("Content-Disposition: form-data; name=\"learner_audio\"; filename=\"learner." <> ext <> "\"\r\n")
+          <> TextEncoding.encodeUtf8 ("Content-Type: " <> mimeType <> "\r\n")
+          <> crlf
+          <> learnerBytes
+          <> crlf
+      closing = sep <> "--\r\n"
+   in metaPart <> referencePart <> learnerPart <> closing
 
 -- | MIME タイプから拡張子を返す。未知の場合は "bin"。
 mimeTypeToExtension :: Text -> Text

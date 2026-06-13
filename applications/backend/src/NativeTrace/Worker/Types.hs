@@ -24,6 +24,8 @@ module NativeTrace.Worker.Types (
   WorkerResponseMetadata (..),
   WorkerError (..),
   WorkerErrorBody (..),
+  PerSegmentLagEntry (..),
+  ShadowingLagDto (..),
 )
 where
 
@@ -522,3 +524,57 @@ newtype WorkerError = WorkerError
 
 instance ToJSON WorkerError where
   toJSON err = object ["error" .= workerError err]
+
+-- ---- Shadowing Lag (M-SHL-3 / ADR-013) ----
+
+-- | perSegmentLag の 1 要素。analyzer の per_segment_lag 配列の各エントリに対応。
+data PerSegmentLagEntry = PerSegmentLagEntry
+  { perSegmentLagPhoneme :: Text,
+    perSegmentLagMilliseconds :: Double
+  }
+  deriving (Show, Eq)
+
+instance ToJSON PerSegmentLagEntry where
+  toJSON entry =
+    object
+      [ "phoneme" .= perSegmentLagPhoneme entry,
+        "lagMilliseconds" .= perSegmentLagMilliseconds entry
+      ]
+
+instance FromJSON PerSegmentLagEntry where
+  parseJSON = withObject "PerSegmentLagEntry" $ \o -> do
+    phoneme <- o .: "phoneme"
+    lagMs <- o .: "lagMilliseconds"
+    pure
+      PerSegmentLagEntry
+        { perSegmentLagPhoneme = phoneme,
+          perSegmentLagMilliseconds = lagMs
+        }
+
+-- | worker が frontend に返す shadowing ラグ計測 DTO（M-SHL-3 / ADR-013）。
+-- analyzer の全フィールド + recommendSlowPlayback + thresholdMilliseconds を追加する。
+-- 閾値は SHADOWING_LAG_THRESHOLD_MS 環境変数から読み、domain literal を埋め込まない（M-SHL-6）。
+data ShadowingLagDto = ShadowingLagDto
+  { shadowingLagMilliseconds :: Double,
+    shadowingPerSegmentLag :: [PerSegmentLagEntry],
+    shadowingSpeechRateRatio :: Maybe Double,
+    shadowingPauseCountLearner :: Maybe Int,
+    shadowingPauseCountReference :: Maybe Int,
+    -- | lagMilliseconds > thresholdMilliseconds のとき True（M-SHL-6）。
+    shadowingRecommendSlowPlayback :: Bool,
+    -- | 閾値（ms）。SHADOWING_LAG_THRESHOLD_MS から読む。frontend 表示用に含める（ADR-013）。
+    shadowingThresholdMilliseconds :: Int
+  }
+  deriving (Show, Eq)
+
+instance ToJSON ShadowingLagDto where
+  toJSON dto =
+    object
+      [ "lagMilliseconds" .= shadowingLagMilliseconds dto,
+        "perSegmentLag" .= shadowingPerSegmentLag dto,
+        "speechRateRatio" .= shadowingSpeechRateRatio dto,
+        "pauseCountLearner" .= shadowingPauseCountLearner dto,
+        "pauseCountReference" .= shadowingPauseCountReference dto,
+        "recommendSlowPlayback" .= shadowingRecommendSlowPlayback dto,
+        "thresholdMilliseconds" .= shadowingThresholdMilliseconds dto
+      ]

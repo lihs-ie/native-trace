@@ -3,13 +3,15 @@ module NativeTrace.Worker.Application (
 )
 where
 
-import Data.Aeson (eitherDecodeStrict, encode)
+import Control.Monad.IO.Class (liftIO)
+import Data.Aeson (FromJSON (..), eitherDecodeStrict, encode, withObject, (.:))
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as LBS
+import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding (encodeUtf8)
-import NativeTrace.Worker.AnalyzerClient (analyzeAudio)
+import NativeTrace.Worker.AnalyzerClient (AnalyzerShadowingLagResult (..), analyzeAudio, analyzeShadowingLag)
 import NativeTrace.Worker.Api (WorkerApi, workerApi)
 import NativeTrace.Worker.Assessment (
   AssessmentError,
@@ -22,6 +24,7 @@ import NativeTrace.Worker.Types (
   AssessmentResponse,
   AudioMetadata (..),
   HealthResponse (..),
+  ShadowingLagDto (..),
   VersionResponse (..),
   WorkerError (..),
   WorkerErrorBody (..),
@@ -39,12 +42,14 @@ import Servant (
   (:<|>) (..),
  )
 import Servant.Multipart (FileData (..), Mem, MultipartData (..), lookupFile, lookupInput)
+import System.Environment (lookupEnv)
+import Text.Read (readMaybe)
 
 application :: Application
 application = serve workerApi server
 
 server :: Server WorkerApi
-server = health :<|> version :<|> assessPronunciation
+server = health :<|> version :<|> assessPronunciation :<|> shadowingLag
 
 health :: Handler HealthResponse
 health = pure (HealthResponse "ok")
@@ -76,6 +81,76 @@ assessPronunciation multipart = do
           (targetAccent request)
           (audioDurationMilliseconds audio)
       pure (buildAssessmentResponseFromGop request analyzerResult)
+
+-- | シャドーイング ラグ計測（M-SHL-3 / ADR-013）。reference_audio + learner_audio を
+-- analyzer の /v1/shadowing-lag に渡し、閾値判定（recommendSlowPlayback）を付与して返す。
+shadowingLag :: MultipartData Mem -> Handler ShadowingLagDto
+shadowingLag multipart = do
+  metadataBytes <- lookupMetadataBytes multipart
+  meta <- parseShadowingMeta metadataBytes
+  referenceAudio <- lookupNamedFile "reference_audio" multipart
+  learnerAudio <- lookupNamedFile "learner_audio" multipart
+  result <-
+    analyzeShadowingLag
+      referenceAudio
+      learnerAudio
+      (shadowingMetaMimeType meta)
+      (shadowingMetaReferenceText meta)
+      (shadowingMetaDurationMs meta)
+  threshold <- liftIO readShadowingThresholdMs
+  pure (buildShadowingLagDto result threshold)
+
+-- | shadowing-lag リクエストの metadata（referenceText / mimeType / durationMilliseconds）。
+data ShadowingMeta = ShadowingMeta
+  { shadowingMetaReferenceText :: Text,
+    shadowingMetaMimeType :: Text,
+    shadowingMetaDurationMs :: Int
+  }
+
+instance FromJSON ShadowingMeta where
+  parseJSON = withObject "ShadowingMeta" $ \object ->
+    ShadowingMeta
+      <$> object .: "referenceText"
+      <*> object .: "mimeType"
+      <*> object .: "durationMilliseconds"
+
+parseShadowingMeta :: ByteString -> Handler ShadowingMeta
+parseShadowingMeta bytes =
+  case eitherDecodeStrict bytes of
+    Right meta -> pure meta
+    Left decodeError ->
+      throwError
+        ( badRequest
+            "invalid_metadata_json"
+            ("Failed to parse metadata JSON: " <> Text.pack decodeError)
+        )
+
+lookupNamedFile :: Text -> MultipartData Mem -> Handler ByteString
+lookupNamedFile name multipart =
+  case lookupFile name multipart of
+    Right fileData -> pure (LBS.toStrict (fdPayload fileData))
+    Left _ ->
+      throwError
+        (badRequest "missing_audio_part" ("The '" <> name <> "' part is required."))
+
+-- | SHADOWING_LAG_THRESHOLD_MS 環境変数（既定 500ms, M-SHL-6）を読む。domain literal を埋め込まない。
+readShadowingThresholdMs :: IO Int
+readShadowingThresholdMs = do
+  raw <- lookupEnv "SHADOWING_LAG_THRESHOLD_MS"
+  pure (maybe 500 (fromMaybe 500 . readMaybe) raw)
+
+buildShadowingLagDto :: AnalyzerShadowingLagResult -> Int -> ShadowingLagDto
+buildShadowingLagDto result threshold =
+  ShadowingLagDto
+    { shadowingLagMilliseconds = analyzerLagMilliseconds result,
+      shadowingPerSegmentLag = analyzerPerSegmentLag result,
+      shadowingSpeechRateRatio = analyzerSpeechRateRatio result,
+      shadowingPauseCountLearner = analyzerPauseCountLearner result,
+      shadowingPauseCountReference = analyzerPauseCountReference result,
+      shadowingRecommendSlowPlayback =
+        analyzerLagMilliseconds result > fromIntegral threshold,
+      shadowingThresholdMilliseconds = threshold
+    }
 
 lookupMetadataBytes :: MultipartData Mem -> Handler ByteString
 lookupMetadataBytes multipart =

@@ -9,6 +9,8 @@ services:
     environment:
       WORKER_PORT: "8787"
       ANALYZER_URL: "http://analyzer:8788"
+      # シャドーイング ラグ計測のスロー再生推奨閾値（ms, M-SHL-6 / ADR-013）
+      SHADOWING_LAG_THRESHOLD_MS: "500"
     depends_on:
       analyzer:
         condition: service_healthy
