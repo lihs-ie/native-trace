@@ -19,5 +19,11 @@ runtime-verifier が使う。「コードが存在する」ではなく「入口
 - feature flag が常に off / migration 未適用
 - フロント操作後に network request が飛ばない / 成功 toast だけ出て persistence されない
 - event は publish するが consumer がいない
+- E2E seed が worker / usecase を経由せず、derived 値 (`wordPositionLabel` / `whatJa` 等の
+  実行時に算出されるフィールド) を直接 DB に差し込む。これは「seed → render が通る」ことしか証明せず、
+  **live-derivation の証拠にならない** (実 entrypoint で導出が走らなくても seed 直焼きで緑になる)。
+  derived フィールドを含む Must は、real entrypoint → usecase → DB の **integration assert** を
+  別途要求する (実 generator / 実 analyzer で導出を走らせて DB state diff で確認する。incident 2026-06-13 M-104R-c)。
 
 > 「成功 toast が出る」は証拠にならない。**reload 後 / read-back / DB state diff** まで確認する。
+> 「E2E が緑」も、seed が derived 値を直焼きしているなら導出の証拠にならない。導出を走らせる経路を別途 assert する。

@@ -25,6 +25,21 @@ $out"
   fi
 done
 
+# *.cabal を編集したら cabal warning 設定の硬さ (-Werror=missing-fields) を repo 全体で検査する。
+# verify-haskell-warnings.sh は単一ファイル引数ではなく tree 全体を検査する設計のため、
+# トリガーは「編集ファイルが *.cabal か否か」で判定する。
+case "$rel" in
+  *.cabal)
+    if [ -f scripts/verify-haskell-warnings.sh ]; then
+      if ! out="$(bash scripts/verify-haskell-warnings.sh 2>&1)"; then
+        violations="${violations}
+== verify-haskell-warnings.sh ==
+$out"
+      fi
+    fi
+    ;;
+esac
+
 if [ -n "$violations" ]; then
   {
     echo "agent-policy 違反があります。修正してください:"

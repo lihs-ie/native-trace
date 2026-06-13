@@ -38,3 +38,21 @@ rules:
       - "wiring_manifest.yml"
     reason: "AnalyzerClient.hs は worker→python-analyzer の HTTP 依存。ANALYZER_URL の配線を compose.yaml に明示する"
     smoke: "docker compose up -d analyzer worker && curl -fsS localhost:8787/health && curl -fsS localhost:8788/health"
+
+  # 注: when は drizzle schema 正本 (infrastructure/drizzle/schema.ts) のみを対象にする。
+  #     acl/**/schema.ts は Zod contract schema で DB migration とは無関係なので対象外。
+  - id: frontend-schema-needs-migration
+    when: "applications/frontend/src/infrastructure/drizzle/schema.ts"
+    require_one_of:
+      # drizzle-kit は migration を drizzle/ 直下にフラット生成する (meta/ は snapshot で SQL ではない)。
+      # verify-wiring の glob では ** が中間ディレクトリ 1 段以上を要求するため、直下を *.sql で指す。
+      - "applications/frontend/drizzle/*.sql"
+    reason: "drizzle schema.ts を変更したら pnpm db:generate で migration SQL を再生成する。typecheck 緑は migration 生成の証拠ではない (実機で no such table になる)。意図的に migration 不要な変更 (コメント等) なら .agent-evidence/wiring-waivers.txt に rule id を 1 行書いて理由を証跡化する"
+    smoke: "pnpm db:generate して drizzle/ に未追跡 diff が出ないこと (schema と migration が一致) を確認する"
+
+  - id: python-analyzer-pyproject-needs-dockerfile
+    when: "applications/python-analyzer/pyproject.toml"
+    require_one_of:
+      - "applications/python-analyzer/Dockerfile"
+    reason: "pyproject.toml に依存を追加しただけではコンテナに反映されない。Dockerfile はハードコード pip list なので Dockerfile の pip インストール行も共変更する。version bump 等で Dockerfile 不要な変更なら .agent-evidence/wiring-waivers.txt に rule id を 1 行書いて理由を証跡化する"
+    smoke: "docker compose up -d --build analyzer && curl -fsS localhost:8788/health"

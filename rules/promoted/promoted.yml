@@ -19,3 +19,78 @@ evidence_required:
 verified_fires: true            # 違反で非ゼロ / clean で 0 を確認済みか
 rollback_condition: "false_positive_rate > 0.15"
 owner: "@lihs-ie"
+---
+# A1: Haskell の partial record construction を build error 化する設定の有無を静的検査する。
+id: haskell_werror_missing_fields
+failure_class: dataflow_unwired   # record にフィールド追加→builder 未設定→runtime thunk crash
+trigger:
+  repeated_count: 1               # P0 incident。runtime crash (worker HTTP 000) で blocking
+  sources: ["ci", "runtime_verify"]
+rule:
+  summary: "全 *.cabal の warning 設定に -Werror=missing-fields があること (partial record を build error 化)"
+  enforcement:
+    - type: grep_gate
+      detail: "scripts/verify-haskell-warnings.sh が applications/backend/**/*.cabal に -Werror=missing-fields を grep。欠ければ exit 1"
+    - type: smoke
+      detail: "fitness hook (scripts/agent-policy-hook.sh) が *.cabal 編集時に実行 + CI (.github/workflows/pr-gate.yml の policy job)"
+    - type: rubric_item
+      detail: "rubric/packs/haskell.md の cabal warnings 判定項目"
+evidence_required:
+  - changed_files
+  - grep_output
+verified_fires: true             # cabal から flag 除去→exit 1、復帰→exit 0 を実コマンドで確認
+rollback_condition: "false_positive_rate > 0.15"   # cabal は数が少なく FP リスクは極小
+owner: "@lihs-ie"
+---
+# A2: drizzle schema 変更に migration 再生成が追随しているかを co-change 検査する。
+id: frontend_schema_needs_migration
+failure_class: dataflow_unwired   # schema 変更後 db:generate 忘れ→実機 no such table
+trigger:
+  repeated_count: 1
+  sources: ["runtime", "memory"]  # incident 2026-06-12, memory: drizzle-migration-regenerate-after-schema
+rule:
+  summary: "infrastructure/drizzle/schema.ts を変更したら drizzle/*.sql (migration) も共変更する"
+  enforcement:
+    - type: smoke
+      detail: "wiring_manifest.yml rule frontend-schema-needs-migration を scripts/verify-wiring.sh が co-change 検査 (hook + CI policy job)"
+evidence_required:
+  - changed_files
+rollback_condition: "false_positive_rate > 0.15"   # 超過時は when を schema.ts 内の table 定義変更に narrow / waiver で対処
+waiver: ".agent-evidence/wiring-waivers.txt に rule id を 1 行 (無期限 allowlist は作らない)"
+verified_fires: true             # synthetic worktree: schema 単独→exit1、schema+sql→exit0 を確認
+owner: "@lihs-ie"
+---
+# A3: python-analyzer の依存追加が Dockerfile に反映されているかを co-change 検査する。
+id: python_analyzer_pyproject_needs_dockerfile
+failure_class: dataflow_unwired   # pyproject 依存追加だけ→コンテナ未反映→TTS 500 / f0 empty
+trigger:
+  repeated_count: 1
+  sources: ["runtime", "memory"]  # incident 2026-06-12, memory: python-analyzer-dockerfile-hardcoded-pip
+rule:
+  summary: "pyproject.toml を変更したら Dockerfile (ハードコード pip list) も共変更する"
+  enforcement:
+    - type: smoke
+      detail: "wiring_manifest.yml rule python-analyzer-pyproject-needs-dockerfile を scripts/verify-wiring.sh が co-change 検査 (hook + CI policy job)"
+evidence_required:
+  - changed_files
+rollback_condition: "false_positive_rate > 0.15"   # version bump 等で Dockerfile 不要なら waiver
+waiver: ".agent-evidence/wiring-waivers.txt に rule id を 1 行 (無期限 allowlist は作らない)"
+verified_fires: true             # synthetic worktree: pyproject 単独→rule fail、+Dockerfile→rule OK を確認
+owner: "@lihs-ie"
+---
+# B: E2E seed 直焼きを live-derivation の証拠と誤認しない rubric 強化 (doc-only)。
+id: e2e_seed_not_live_derivation_evidence
+failure_class: spec_violation     # derived フィールドの Must を seed-render pass で代替
+trigger:
+  repeated_count: 1
+  sources: ["spec_grade"]          # incident 2026-06-13 M-104R-c
+rule:
+  summary: "E2E seed が derived 値を直接 DB に差し込む場合、live-derivation の証拠にしない。real entrypoint→usecase→DB の integration assert を別途要求する"
+  enforcement:
+    - type: rubric_item
+      detail: "rubric/core/wiring.md の『明示的に fail とする配線ミス例』に seed 直焼き項目を追加"
+evidence_required:
+  - changed_files
+rollback_condition: "n/a (doc-only rubric。executable gate ではないため FP exit-code は無い)"
+verified_fires: false            # executable gate でないため exit-code firing は無し (rubric 追記のみ)
+owner: "@lihs-ie"

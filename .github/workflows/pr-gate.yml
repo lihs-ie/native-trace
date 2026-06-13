@@ -32,6 +32,8 @@ jobs:
         run: bash scripts/verify-wiring.sh
       - name: No unwired placeholder stub
         run: bash scripts/verify-no-stub-placeholder.sh
+      - name: Haskell cabal warnings hardened (-Werror=missing-fields)
+        run: bash scripts/verify-haskell-warnings.sh
       - name: Allowlist not expired
         run: bash scripts/verify-allowlist-expiry.sh
       - name: Upload policy evidence
