@@ -205,6 +205,11 @@ export type FocusSound = Readonly<{
 /** C3-c: 韻律生データ（F0 輪郭・語強勢・リズム・弱形実現率） */
 export type ProsodyData = Readonly<{
   f0Contour: Readonly<{ timesMs: ReadonlyArray<number>; valuesHz: ReadonlyArray<number> }> | null;
+  /** M-F0REF-c: お手本 F0 輪郭（f0Contour と同形。analyzer が返さない場合は null） */
+  referenceF0Contour: Readonly<{
+    timesMs: ReadonlyArray<number>;
+    valuesHz: ReadonlyArray<number>;
+  }> | null;
   wordStress: ReadonlyArray<
     Readonly<{ word: string; wordIndex: number; expectedStress: number; predictedStress: number }>
   > | null;

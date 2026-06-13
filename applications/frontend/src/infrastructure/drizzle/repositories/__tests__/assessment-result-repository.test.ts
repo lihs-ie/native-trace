@@ -209,6 +209,7 @@ describe("DrizzleAssessmentResultRepository", () => {
       ],
       prosody: {
         f0Contour: { timesMs: [0, 10], valuesHz: [120, 130] },
+        referenceF0Contour: { timesMs: [0, 10], valuesHz: [118, 126] },
         wordStress: [{ word: "hello", wordIndex: 0, expectedStress: 1, predictedStress: 0 }],
         rhythmNpvi: 40,
         referenceNpvi: 65,

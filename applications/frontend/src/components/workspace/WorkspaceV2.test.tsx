@@ -115,6 +115,7 @@ const buildEngineResult = (overrides: Partial<EngineResultDto> = {}): EngineResu
       timesMs: [0, 50, 100, 150, 200],
       valuesHz: [120, 135, 150, 140, 0],
     },
+    referenceF0Contour: null,
     wordStress: null,
     rhythmNpvi: null,
     referenceNpvi: null,

@@ -216,6 +216,8 @@ export type FocusSoundDto = {
 
 export type ProsodyDto = {
   f0Contour: { timesMs: number[]; valuesHz: number[] } | null;
+  /** M-F0REF-c: お手本 F0 輪郭（f0Contour と同形。worker が返さない場合は null） */
+  referenceF0Contour: { timesMs: number[]; valuesHz: number[] } | null;
   wordStress:
     | { word: string; wordIndex: number; expectedStress: number; predictedStress: number }[]
     | null;

@@ -180,6 +180,7 @@ const mapSuccessResponse = (
     prosody: response.prosody
       ? {
           f0Contour: response.prosody.f0Contour,
+          referenceF0Contour: response.prosody.referenceF0Contour,
           wordStress: response.prosody.wordStress,
           rhythmNpvi: response.prosody.rhythmNpvi,
           referenceNpvi: response.prosody.referenceNpvi,

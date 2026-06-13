@@ -115,6 +115,11 @@ export type FocusSoundDraft = Readonly<{
 
 export type ProsodyDraft = Readonly<{
   f0Contour: Readonly<{ timesMs: ReadonlyArray<number>; valuesHz: ReadonlyArray<number> }> | null;
+  /** M-F0REF-c: お手本 F0 輪郭（f0Contour と同形。analyzer が返さない場合は null） */
+  referenceF0Contour: Readonly<{
+    timesMs: ReadonlyArray<number>;
+    valuesHz: ReadonlyArray<number>;
+  }> | null;
   wordStress: ReadonlyArray<
     Readonly<{ word: string; wordIndex: number; expectedStress: number; predictedStress: number }>
   > | null;

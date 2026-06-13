@@ -202,6 +202,10 @@ const prosodySchema = z.object({
     .nullable()
     .optional()
     .transform((v) => v ?? null),
+  referenceF0Contour: f0ContourSchema
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
   wordStress: z
     .array(wordStressEntrySchema)
     .nullable()
