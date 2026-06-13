@@ -57,3 +57,4 @@ pnpm-debug.log*
 __pycache__/
 *.pyc
 *.pyo
+applications/python-analyzer/data/corpus-scratch/

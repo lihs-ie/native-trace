@@ -141,10 +141,23 @@ class SyllableResponse(BaseModel):
 
 
 class TtsRequest(BaseModel):
-    """POST /v1/tts リクエスト（C2）。"""
+    """POST /v1/tts リクエスト（C2）。
+
+    ADR-009: voice は optional（省略時 af_heart）。既存呼び出し元との後方互換を維持する。
+    """
 
     text: str = Field(description="合成対象テキスト")
     speed: float = Field(default=1.0, ge=0.5, le=1.0, description="再生速度 0.5–1.0")
+    voice: str | None = Field(
+        default=None,
+        description=(
+            "Kokoro voice ID（省略時は af_heart）。"
+            "af_heart / af_bella / af_nicole / af_aoede / af_sarah / af_sky / "
+            "af_alloy / af_nova / af_shimmer / af_jessica / af_kore / "
+            "am_michael / am_puck / am_fenrir / am_echo / am_eric / "
+            "am_liam / am_onyx / am_adam / am_santa"
+        ),
+    )
 
 
 # --- 主レスポンス ---
@@ -203,3 +216,33 @@ class HealthResponse(BaseModel):
     """GET /health レスポンス。"""
 
     status: str
+
+
+# --- HVPT 刺激配信 (ADR-009 / REQ-122) ---
+
+
+class StimulusMetadata(BaseModel):
+    """HVPT 刺激の帰属・コンテキストメタデータ。
+
+    ADR-009: 各刺激は source corpus / license / speaker / context を保持する。
+    CC BY 4.0 帰属義務を manifest で満たす。
+    """
+
+    stimulusIdentifier: str = Field(description="刺激の一意識別子文字列")
+    contrast: str = Field(description="音素対立 (例: 'r-l', 'ae-ah')")
+    word: str = Field(description="刺激の語形 (例: 'right', 'light')")
+    speakerIdentifier: str = Field(description="話者 ID (LibriTTS speaker ID or Kokoro voice ID)")
+    speakerSex: str = Field(description="話者性別: 'F' / 'M' / 'unknown'")
+    context: str = Field(description="音韻文脈: 'word-initial' / 'word-medial' / 'cluster'")
+    sourceCorpus: str = Field(description="音源コーパス (例: 'LibriTTS train-clean-100')")
+    licenseIdentifier: str = Field(description="ライセンス識別子 (例: 'CC-BY-4.0')")
+
+
+class StimulusResponse(BaseModel):
+    """GET /v1/stimuli の 1 刺激レスポンス。
+
+    音声バイナリは Base64 エンコードして wavBase64 に格納する。
+    """
+
+    metadata: StimulusMetadata
+    wavBase64: str = Field(description="WAV バイナリの Base64 エンコード文字列")

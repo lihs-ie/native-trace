@@ -25,6 +25,8 @@ dependencies = [
     "kokoro>=0.9.4",
     # kokoro 依存
     "scipy>=1.11.0",
+    # ADR-009: alignment archive download from HuggingFace (carve pipeline)
+    "huggingface_hub>=0.24.0",
 ]
 
 [project.optional-dependencies]
