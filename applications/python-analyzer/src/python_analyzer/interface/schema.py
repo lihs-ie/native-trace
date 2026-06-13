@@ -258,3 +258,50 @@ class StimulusResponse(BaseModel):
 
     metadata: StimulusMetadata
     wavBase64: str = Field(description="WAV バイナリの Base64 エンコード文字列")
+
+
+# --- シャドーイングラグ計測 (ADR-013) ---
+
+
+class ShadowingLagMetadata(BaseModel):
+    """POST /v1/shadowing-lag の metadata パート。"""
+
+    referenceText: str = Field(description="両音声が発話しているテキスト（アライナーが要求）")
+    mimeType: str = Field(description="音声 MIME タイプ（例: audio/wav）")
+    durationMilliseconds: int = Field(description="音声の長さ（ミリ秒）")
+
+
+class PerSegmentLagResponse(BaseModel):
+    """音素単位のラグ計測値。"""
+
+    phoneme: str = Field(description="音素ラベル（IPA）")
+    lagMilliseconds: float = Field(description="この音素の追随ラグ（ミリ秒、正=学習者が遅い）")
+
+
+class ShadowingLagResponse(BaseModel):
+    """POST /v1/shadowing-lag の成功レスポンス（ADR-013）。
+
+    lagMilliseconds: DTW 音素境界対応から得た追随ラグの中央値（ms）。実音声由来。
+    perSegmentLag: 音素単位のラグ列。
+    speechRateRatio: 学習者発話長 / お手本発話長。計算困難なら null。
+    pauseCountLearner / pauseCountReference: VAD 無音区間数。計算困難なら null。
+    """
+
+    lagMilliseconds: float = Field(
+        description="追随ラグ中央値（ミリ秒）。正値=学習者が遅い、負値=先行。実音声由来必須。"
+    )
+    perSegmentLag: list[PerSegmentLagResponse] = Field(
+        description="音素単位のラグ列（DTW 対応ペアから算出）"
+    )
+    speechRateRatio: float | None = Field(
+        default=None,
+        description="学習者発話長 / お手本発話長。VAD 発話長から算出。計算困難なら null。",
+    )
+    pauseCountLearner: int | None = Field(
+        default=None,
+        description="学習者音声の VAD 無音区間数。計算困難なら null。",
+    )
+    pauseCountReference: int | None = Field(
+        default=None,
+        description="お手本音声の VAD 無音区間数。計算困難なら null。",
+    )

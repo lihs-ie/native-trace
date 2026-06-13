@@ -1,8 +1,10 @@
 """FastAPI アプリケーション生成 + DI 結線（Composition Root）。
 
-http_handler の router をここで include_router して /health と /v1/tts を登録する。
+http_handler の router をここで include_router して
+/health / /v1/tts / /v1/shadowing-lag を登録する。
 /v1/analyze は Composition Root でインスタンス化された use_case を使って直接定義する。
 C1 全フィールド（NBest/F0/wordStress/rhythm/weakForm/syllables）を AnalysisResponse に組み込む。
+/v1/shadowing-lag は http_handler.router 経由で登録し use_case を DI する（ADR-013 / M-SHL-1）。
 """
 
 import json
@@ -33,6 +35,7 @@ from python_analyzer.interface.schema import (
     WordStressResponse,
 )
 from python_analyzer.usecase.analyze_pronunciation import AnalyzePronunciationUseCase
+from python_analyzer.usecase.compute_shadowing_lag import ComputeShadowingLagUseCase
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +44,7 @@ def create_app() -> FastAPI:
     """FastAPI アプリを生成して返す。
 
     infrastructure の実インスタンスを生成し、AnalyzePronunciationUseCase に注入する。
-    /health, /v1/tts, /v1/analyze の全 endpoint を登録する。
+    /health, /v1/tts, /v1/analyze, /v1/shadowing-lag の全 endpoint を登録する。
     """
     application = FastAPI(
         title="NativeTrace Python Analyzer",
@@ -63,7 +66,14 @@ def create_app() -> FastAPI:
         prosody_port=prosody_analyzer,
     )
 
-    # /health と /v1/tts を http_handler router から include する
+    # shadowing lag usecase を生成して http_handler に DI する（ADR-013 / M-SHL-1 ORPHAN-1）
+    shadowing_lag_use_case = ComputeShadowingLagUseCase(
+        g2p_port=g2p,
+        aligner_port=aligner,
+    )
+    http_handler.set_shadowing_lag_use_case(shadowing_lag_use_case)
+
+    # /health, /v1/tts, /v1/stimuli, /v1/shadowing-lag を http_handler router から include する
     application.include_router(http_handler.router)
 
     # /v1/analyze を Composition Root で直接定義して use_case を注入する
