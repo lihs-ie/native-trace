@@ -26,9 +26,7 @@ import { WorkspaceResultV2 } from "./WorkspaceResultV2";
 
 // ---- テスト用 DTO ファクトリ ----
 
-const buildFinding = (
-  overrides: Partial<EngineFindingDto> = {},
-): EngineFindingDto => ({
+const buildFinding = (overrides: Partial<EngineFindingDto> = {}): EngineFindingDto => ({
   finding: "finding-01",
   phenomenon: "substitution",
   gop: -13.8,
@@ -75,9 +73,7 @@ const buildLowConfidenceFinding = (): EngineFindingDto =>
     functionalLoad: "low",
   });
 
-const buildEngineResult = (
-  overrides: Partial<EngineResultDto> = {},
-): EngineResultDto => ({
+const buildEngineResult = (overrides: Partial<EngineResultDto> = {}): EngineResultDto => ({
   result: "result-01",
   engineKind: "oss_worker",
   engineName: "OSS Worker",
@@ -131,9 +127,7 @@ const buildEngineResult = (
 
 describe("DetailPanelV2", () => {
   it("finding=null のとき空状態メッセージを描画する", () => {
-    render(
-      <DetailPanelV2 finding={null} sectionIdentifier="sec-01" onClose={() => undefined} />,
-    );
+    render(<DetailPanelV2 finding={null} sectionIdentifier="sec-01" onClose={() => undefined} />);
     expect(
       screen.getByText("本文のハイライトをクリックすると、ここに詳細が表示されます。"),
     ).toBeInTheDocument();
@@ -307,6 +301,7 @@ describe("WorkspaceResultV2", () => {
         bodyText="I am honored to be with you today."
         engineResult={buildEngineResult()}
         sectionIdentifier="sec-01"
+        latestRecordingAttemptIdentifier="attempt-01"
       />,
     );
     expect(container.querySelector(".ws2")).toBeInTheDocument();
@@ -318,6 +313,7 @@ describe("WorkspaceResultV2", () => {
         bodyText="I am honored to be with you today."
         engineResult={buildEngineResult()}
         sectionIdentifier="sec-01"
+        latestRecordingAttemptIdentifier="attempt-01"
       />,
     );
     expect(container.querySelector(".eng-summary")).toBeInTheDocument();
@@ -329,6 +325,7 @@ describe("WorkspaceResultV2", () => {
         bodyText="I am honored to be with you today."
         engineResult={buildEngineResult()}
         sectionIdentifier="sec-01"
+        latestRecordingAttemptIdentifier="attempt-01"
       />,
     );
     const chips = container.querySelectorAll(".view-toggle .sp-chip");
@@ -341,6 +338,7 @@ describe("WorkspaceResultV2", () => {
         bodyText="I am honored to be with you today."
         engineResult={buildEngineResult()}
         sectionIdentifier="sec-01"
+        latestRecordingAttemptIdentifier="attempt-01"
       />,
     );
     expect(container.querySelector(".ab-src.is-active")).toBeInTheDocument();
@@ -352,6 +350,7 @@ describe("WorkspaceResultV2", () => {
         bodyText="world"
         engineResult={buildEngineResult()}
         sectionIdentifier="sec-01"
+        latestRecordingAttemptIdentifier="attempt-01"
       />,
     );
     // findings[0] は textRange {0,5} で bodyText "world" に重なる
@@ -365,10 +364,66 @@ describe("WorkspaceResultV2", () => {
         bodyText="world"
         engineResult={result}
         sectionIdentifier="sec-01"
+        latestRecordingAttemptIdentifier={null}
       />,
     );
     expect(
       screen.getByText("この解析エンジンではサマリーメッセージが未提供です。"),
     ).toBeInTheDocument();
+  });
+
+  it(".player .pp ボタンが描画される", () => {
+    const { container } = render(
+      <WorkspaceResultV2
+        bodyText="I am honored to be with you today."
+        engineResult={buildEngineResult()}
+        sectionIdentifier="sec-01"
+        latestRecordingAttemptIdentifier="attempt-01"
+      />,
+    );
+    expect(container.querySelector(".player .pp")).toBeInTheDocument();
+  });
+
+  it(".player .wave に i バーが 15 本描画される", () => {
+    const { container } = render(
+      <WorkspaceResultV2
+        bodyText="I am honored to be with you today."
+        engineResult={buildEngineResult()}
+        sectionIdentifier="sec-01"
+        latestRecordingAttemptIdentifier="attempt-01"
+      />,
+    );
+    const bars = container.querySelectorAll(".player .wave i");
+    expect(bars.length).toBe(15);
+  });
+
+  it(".player .tt が時間テキストを描画する", () => {
+    const { container } = render(
+      <WorkspaceResultV2
+        bodyText="I am honored to be with you today."
+        engineResult={buildEngineResult()}
+        sectionIdentifier="sec-01"
+        latestRecordingAttemptIdentifier="attempt-01"
+      />,
+    );
+    const tt = container.querySelector(".player .tt");
+    expect(tt).toBeInTheDocument();
+    expect(tt?.textContent).toMatch(/\d:\d{2}\.\d \/ \d:\d{2}\.\d/);
+  });
+
+  it("golden 選択時は .pp が disabled で .gs-gate が表示される", () => {
+    const { container } = render(
+      <WorkspaceResultV2
+        bodyText="I am honored to be with you today."
+        engineResult={buildEngineResult()}
+        sectionIdentifier="sec-01"
+        latestRecordingAttemptIdentifier="attempt-01"
+      />,
+    );
+    // golden ボタンは disabled のまま — M-AB-e
+    const goldenBtn = Array.from(container.querySelectorAll(".ab-src")).find((el) =>
+      el.textContent?.includes("Golden"),
+    ) as HTMLButtonElement | undefined;
+    expect(goldenBtn?.disabled).toBe(true);
   });
 });

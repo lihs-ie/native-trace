@@ -4,6 +4,7 @@ export { ScoreRows } from "./ScoreRows";
 export { EngineTabs } from "./EngineTabs";
 export { DetailPanel } from "./DetailPanel";
 export { DetailPanelV2 } from "./DetailPanelV2";
+export { ArticulationCard } from "./ArticulationCard";
 export { LiveWave } from "./LiveWave";
 export { HighlightedWorkspaceText } from "./HighlightedWorkspaceText";
 export { GopHeatmap } from "./GopHeatmap";

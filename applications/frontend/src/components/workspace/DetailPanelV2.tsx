@@ -9,6 +9,8 @@ import {
   getPhenomenonLabelEn,
   confidenceToLevel,
 } from "@/lib/phenomenon";
+import { ARTICULATION_DATA, HIGH_PRIORITY_PHONEME_SET } from "@/lib/articulation-data";
+import { ArticulationCard } from "./ArticulationCard";
 
 type DetailPanelV2Props = {
   finding: EngineFindingDto | null;
@@ -40,6 +42,7 @@ export const DetailPanelV2 = ({
   const [ttsAudio, setTtsAudio] = useState<HTMLAudioElement | null>(null);
   const [ttsPlaying, setTtsPlaying] = useState(false);
   const [dismissLoading, setDismissLoading] = useState(false);
+  const [showArticulation, setShowArticulation] = useState(false);
 
   if (!finding) {
     return (
@@ -61,7 +64,11 @@ export const DetailPanelV2 = ({
     try {
       const response = await fetch(
         `/api/v1/sections/${sectionIdentifier}/findings/${finding.finding}/dismissal`,
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) },
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        },
       );
       if (response.ok) {
         setIsDismissed(true);
@@ -130,6 +137,13 @@ export const DetailPanelV2 = ({
   const hasNBest = finding.nBest !== null && finding.nBest.length > 0;
   const hasFeedbackLayers = finding.feedbackLayers !== null;
 
+  // 高優先音素かどうか判定 (M-ARTIC-c)
+  const expectedIpa = finding.expected.ipa;
+  const isHighPriorityPhoneme = expectedIpa !== null && HIGH_PRIORITY_PHONEME_SET.has(expectedIpa);
+  const articulationEntry = isHighPriorityPhoneme
+    ? (ARTICULATION_DATA.find((entry) => entry.ipaDisplay === expectedIpa) ?? null)
+    : null;
+
   return (
     <div className={`panel${dismissed ? " finding--dismissed" : ""}`} style={{ maxWidth: "none" }}>
       {/* panel-top */}
@@ -161,14 +175,19 @@ export const DetailPanelV2 = ({
             {finding.functionalLoad && (
               <span className="fl" data-rank={finding.functionalLoad}>
                 <span className="fd">
-                  <i /><i /><i /><i />
+                  <i />
+                  <i />
+                  <i />
+                  <i />
                 </span>
                 FL {finding.functionalLoad}
               </span>
             )}
             <span className="conf" data-level={confidenceLevel}>
               <span className="cd">
-                <i /><i /><i />
+                <i />
+                <i />
+                <i />
               </span>
               {finding.confidence.toFixed(2)}
             </span>
@@ -221,9 +240,7 @@ export const DetailPanelV2 = ({
             <div className="phon">
               <div className="phon-lbl">期待 · expected</div>
               <div className="phon-val">{finding.expected.ipa}</div>
-              {finding.expected.text && (
-                <div className="phon-meta">{finding.expected.text}</div>
-              )}
+              {finding.expected.text && <div className="phon-meta">{finding.expected.text}</div>}
             </div>
           )}
           {finding.expected.ipa !== null && finding.detected.ipa !== null && (
@@ -233,9 +250,7 @@ export const DetailPanelV2 = ({
             <div className="phon phon--actual">
               <div className="phon-lbl">検出 · detected</div>
               <div className="phon-val">{finding.detected.ipa}</div>
-              {finding.detected.text && (
-                <div className="phon-meta">{finding.detected.text}</div>
-              )}
+              {finding.detected.text && <div className="phon-meta">{finding.detected.text}</div>}
             </div>
           )}
         </div>
@@ -246,7 +261,12 @@ export const DetailPanelV2 = ({
         <div style={{ padding: "var(--sp-4) var(--sp-5) 0" }}>
           <div
             className="kbd-label"
-            style={{ marginBottom: "8px", fontFamily: "var(--font-mono)", fontSize: "var(--text-2xs)", color: "var(--text-faint)" }}
+            style={{
+              marginBottom: "8px",
+              fontFamily: "var(--font-mono)",
+              fontSize: "var(--text-2xs)",
+              color: "var(--text-faint)",
+            }}
           >
             NBest — 実際に聞こえた音
           </div>
@@ -257,7 +277,9 @@ export const DetailPanelV2 = ({
                 <span className="nb-bar">
                   <i style={{ width: `${(candidate.confidence * 100).toFixed(0)}%` }} />
                 </span>
-                <span className="nb-p">.{String(Math.round(candidate.confidence * 100)).padStart(2, "0")}</span>
+                <span className="nb-p">
+                  .{String(Math.round(candidate.confidence * 100)).padStart(2, "0")}
+                </span>
               </div>
             ))}
           </div>
@@ -331,7 +353,17 @@ export const DetailPanelV2 = ({
                         </button>
                       ))}
                     </div>
-                    <button className="btn btn--sm btn--ghost" type="button" disabled>
+                    <button
+                      className="btn btn--sm btn--ghost"
+                      type="button"
+                      disabled={!isHighPriorityPhoneme}
+                      onClick={() => setShowArticulation((prev) => !prev)}
+                      title={
+                        isHighPriorityPhoneme
+                          ? `調音図解 ${expectedIpa ?? ""}`
+                          : "この音素の調音図解は現在準備中です"
+                      }
+                    >
                       調音図解 → {finding.expected.ipa ?? ""}
                     </button>
                     <button className="btn btn--sm btn--ghost" type="button" disabled>
@@ -342,6 +374,13 @@ export const DetailPanelV2 = ({
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* 調音図解カード展開 (M-ARTIC-c) */}
+      {showArticulation && articulationEntry && (
+        <div style={{ padding: "var(--sp-4) var(--sp-5)" }}>
+          <ArticulationCard entry={articulationEntry} />
         </div>
       )}
 
@@ -364,9 +403,7 @@ export const DetailPanelV2 = ({
           </button>
         )}
         <div className="panel-meta">
-          {finding.gop !== null && (
-            <span className="mono">GOP {finding.gop.toFixed(1)}</span>
-          )}
+          {finding.gop !== null && <span className="mono">GOP {finding.gop.toFixed(1)}</span>}
           <span
             className="mono"
             style={{

@@ -376,6 +376,7 @@ export default function WorkspacePage({ params }: PageProps) {
             bodyText={workspace!.section.bodyText}
             engineResult={activeResult}
             sectionIdentifier={sectionIdentifier}
+            latestRecordingAttemptIdentifier={latestReadyAttempt?.identifier ?? null}
           />
         </>
       ) : (
