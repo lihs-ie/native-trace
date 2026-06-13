@@ -26,6 +26,24 @@ const configSchema = z.object({
   localAudioMaxBytes: z.coerce.number().int().positive().default(104857600),
   /** infrastructure.md §11.1: OpenAI raw response 保存上限 bytes。デフォルト 1MiB。 */
   openaiRawResponseMaxBytes: z.coerce.number().int().positive().default(1048576),
+
+  // Training Context — OQ-1: sentinel LearnerIdentifier (fixed singleton for local MVP)
+  // DD-293: Training Context の全テーブルの learner 列はこの単一値を常に取る
+  /**
+   * diagnosticSentinelLearnerIdentifier — ローカル MVP 固定学習者 ULID (OQ-1 解決)
+   * ドメインに literal を埋め込まず config/定数モジュールに隔離する（DD-293）。
+   */
+  diagnosticSentinelLearnerIdentifier: z.string().min(1).default("01JWZLEARNER0000000000001"),
+
+  // ADR-010: 優先度重み w1/w2/w3 と EWMA 係数 α は config 由来（DD-293）
+  /** diagnosticFocusWeightW1 — FLランク重み（三項式第1項）。デフォルト 0.5 */
+  diagnosticFocusWeightW1: z.coerce.number().min(0).max(10).default(0.5),
+  /** diagnosticFocusWeightW2 — 出現頻度重み（三項式第2項）。デフォルト 0.3 */
+  diagnosticFocusWeightW2: z.coerce.number().min(0).max(10).default(0.3),
+  /** diagnosticFocusWeightW3 — (1−習熟度)重み（三項式第3項）。デフォルト 0.2 */
+  diagnosticFocusWeightW3: z.coerce.number().min(0).max(10).default(0.2),
+  /** diagnosticFocusAlpha — EWMA 平滑化係数（0〜1）。デフォルト 0.3 */
+  diagnosticFocusAlpha: z.coerce.number().min(0).max(1).default(0.3),
 });
 
 export type AppConfig = z.infer<typeof configSchema>;
@@ -73,6 +91,11 @@ export const createConfig = (): AppConfig => {
     ossWorkerTimeoutMilliseconds: process.env.OSS_WORKER_TIMEOUT_MS,
     localAudioMaxBytes: process.env.LOCAL_AUDIO_MAX_BYTES,
     openaiRawResponseMaxBytes: process.env.OPENAI_RAW_RESPONSE_MAX_BYTES,
+    diagnosticSentinelLearnerIdentifier: process.env.DIAGNOSTIC_SENTINEL_LEARNER_IDENTIFIER,
+    diagnosticFocusWeightW1: process.env.DIAGNOSTIC_FOCUS_WEIGHT_W1,
+    diagnosticFocusWeightW2: process.env.DIAGNOSTIC_FOCUS_WEIGHT_W2,
+    diagnosticFocusWeightW3: process.env.DIAGNOSTIC_FOCUS_WEIGHT_W3,
+    diagnosticFocusAlpha: process.env.DIAGNOSTIC_FOCUS_ALPHA,
   });
 
   if (!result.success) {

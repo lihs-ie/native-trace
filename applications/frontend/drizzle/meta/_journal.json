@@ -15,6 +15,13 @@
       "when": 1781271024639,
       "tag": "0001_daffy_dragon_lord",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1781324150204,
+      "tag": "0002_ambitious_tarantula",
+      "breakpoints": true
     }
   ]
 }

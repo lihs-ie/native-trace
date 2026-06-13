@@ -881,4 +881,42 @@ summary.fold-head { list-style: none; } summary.fold-head::-webkit-details-marke
 .mini-axis .ma .k { font-size: var(--text-xs); color: var(--text-tertiary); }
 .mini-axis .ma .n { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--text-secondary); text-align: right; }
 .ws2-main .panel { max-width: none; margin-top: var(--sp-6); }
+
+/* ============================================================
+   診断画面 (screens/diagnostic.html 由来) — M-DG-5
+   ============================================================ */
+
+/* 診断中レイアウト: 2列 1fr 300px */
+.dg { display: grid; grid-template-columns: 1fr 300px; min-height: 560px; }
+@media (max-width: 980px) { .dg { grid-template-columns: 1fr; } }
+
+.dg-main { padding: var(--sp-8); display: flex; flex-direction: column; justify-content: center; align-items: center; gap: var(--sp-6); text-align: center; }
+
+.dg-rail { border-left: 1px solid var(--border-faint); background: var(--bg-sunken); padding: var(--sp-5); }
+
+/* 進捗バー (app-top に配置) */
+.dg-prog { display: flex; align-items: center; gap: 10px; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-tertiary); }
+.dg-prog .bar { width: 220px; height: 5px; background: var(--surface-3); border-radius: var(--r-full); overflow: hidden; }
+.dg-prog .bar i { display: block; height: 100%; background: var(--accent); border-radius: var(--r-full); }
+
+/* カバレッジ一覧 */
+.cov { display: flex; flex-direction: column; gap: 8px; }
+.cov-row { display: flex; align-items: center; gap: 9px; font-size: var(--text-xs); color: var(--text-tertiary); }
+.cov-row .ck { width: 16px; height: 16px; border-radius: 4px; border: 1px solid var(--border-strong); display: grid; place-items: center; font-size: 10px; font-family: var(--font-mono); flex: none; }
+.cov-row.is-done .ck { background: var(--train-correct-soft); border-color: oklch(0.72 0.14 158 / 0.5); color: var(--positive-text); }
+.cov-row.is-now { color: var(--text-primary); }
+.cov-row.is-now .ck { border-color: var(--accent); color: var(--accent-text); }
+.cov-row .mono { margin-left: auto; font-size: var(--text-2xs); color: var(--text-faint); }
+
+/* 診断結果レイアウト */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-6); }
+@media (max-width: 980px) { .two-col { grid-template-columns: 1fr; } }
+
+.result-card { border: 1px solid var(--border-faint); border-radius: var(--r-lg); background: var(--surface-1); padding: var(--sp-5); }
+
+/* rec-btn (診断専用: 62px) */
+.rec-btn { width: 46px; height: 46px; border-radius: 50%; border: 2px solid var(--border-strong);
+  background: var(--surface-2); display: grid; place-items: center; cursor: pointer; transition: border-color .14s; }
+.rec-btn:hover { border-color: var(--sev-critical); }
+.rec-dot { width: 18px; height: 18px; border-radius: 5px; background: var(--sev-critical); }
 .gop-strip { margin-top: var(--sp-5); padding-top: var(--sp-5); border-top: 1px solid var(--border-faint); }

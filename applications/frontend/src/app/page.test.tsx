@@ -3,8 +3,13 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
 import LibraryPage from "./page";
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn() }),
+}));
+
 vi.mock("@/lib/api-client", () => ({
   apiGet: vi.fn(),
+  apiPost: vi.fn(),
   isApiClientError: (error: unknown): error is { message: string } =>
     typeof error === "object" && error !== null && "message" in error,
 }));
@@ -43,17 +48,15 @@ describe("LibraryPage", () => {
     const { container } = render(<LibraryPage />);
 
     await waitFor(() => {
-      expect(
-        within(container).getByText("最初の教材を作成しましょう")
-      ).toBeInTheDocument();
+      expect(within(container).getByText("最初の教材を作成しましょう")).toBeInTheDocument();
     });
 
     expect(within(container).getByText("/t/")).toBeInTheDocument();
     expect(
-      within(container).getByRole("link", { name: "＋ 英文を貼り付けて作成" })
+      within(container).getByRole("link", { name: "＋ 英文を貼り付けて作成" }),
     ).toBeInTheDocument();
     expect(
-      within(container).getByRole("button", { name: "サンプル教材を読み込む" })
+      within(container).getByRole("button", { name: "サンプル教材を読み込む" }),
     ).toBeInTheDocument();
     expect(within(container).getByText("英文を貼り付け")).toBeInTheDocument();
     expect(within(container).getByText("範囲選択でセクション作成")).toBeInTheDocument();
@@ -101,32 +104,22 @@ describe("LibraryPage", () => {
     expect(within(container).getByText("すべて")).toBeInTheDocument();
 
     // material cards
-    expect(
-      within(container).getByText("Stanford Commencement Address")
-    ).toBeInTheDocument();
-    expect(
-      within(container).getByText("The Power of Vulnerability")
-    ).toBeInTheDocument();
+    expect(within(container).getByText("Stanford Commencement Address")).toBeInTheDocument();
+    expect(within(container).getByText("The Power of Vulnerability")).toBeInTheDocument();
 
     // source tags: speech → スピーチ, ted → TED
     expect(within(container).getByText("スピーチ")).toBeInTheDocument();
     expect(within(container).getByText("TED")).toBeInTheDocument();
 
     // by line
-    expect(
-      within(container).getByText("Steve Jobs · Stanford University")
-    ).toBeInTheDocument();
+    expect(within(container).getByText("Steve Jobs · Stanford University")).toBeInTheDocument();
 
     // fallback stats
-    expect(
-      within(container).getAllByText("セクション未作成").length
-    ).toBeGreaterThan(0);
+    expect(within(container).getAllByText("セクション未作成").length).toBeGreaterThan(0);
     expect(within(container).getAllByText("未録音").length).toBeGreaterThan(0);
 
     // add card at end
-    expect(
-      within(container).getByText("英文を貼り付けて新しい教材を作成")
-    ).toBeInTheDocument();
+    expect(within(container).getByText("英文を貼り付けて新しい教材を作成")).toBeInTheDocument();
 
     // materials/new links exist
     const newLinks = within(container).getAllByRole("link", { name: /新しい教材/ });
@@ -139,9 +132,7 @@ describe("LibraryPage", () => {
     const { container } = render(<LibraryPage />);
 
     await waitFor(() => {
-      expect(
-        within(container).getAllByText(/NativeTrace/).length
-      ).toBeGreaterThan(0);
+      expect(within(container).getAllByText(/NativeTrace/).length).toBeGreaterThan(0);
     });
 
     const libraryLink = within(container).getByRole("link", {

@@ -19,6 +19,8 @@ import { createDrizzleAnalysisRunRepository } from "./infrastructure/drizzle/rep
 import { createDrizzleAnalysisJobRepository } from "./infrastructure/drizzle/repositories/analysis-job-repository";
 import { createDrizzleAssessmentResultRepository } from "./infrastructure/drizzle/repositories/assessment-result-repository";
 import { createDrizzleFindingDismissalRepository } from "./infrastructure/drizzle/repositories/finding-dismissal-repository";
+import { createDrizzleDiagnosticSessionRepository } from "./infrastructure/drizzle/repositories/diagnostic-session-repository";
+import { createDrizzleWeaknessProfileRepository } from "./infrastructure/drizzle/repositories/weakness-profile-repository";
 import { createLocalAudioStorage } from "./infrastructure/local-audio-storage";
 import { createSystemClock } from "./infrastructure/clock";
 import { createEntropyProvider } from "./infrastructure/entropy-provider";
@@ -47,6 +49,9 @@ import { createViewMaterialPracticePlan } from "./usecase/view-material-practice
 import { createViewPracticeWorkspace } from "./usecase/view-practice-workspace/index";
 import { createDismissFinding } from "./usecase/dismiss-finding/index";
 import { createRestoreFinding } from "./usecase/restore-finding/index";
+import { createStartDiagnosticSession } from "./usecase/start-diagnostic-session/index";
+import { createCompleteDiagnosticSession } from "./usecase/complete-diagnostic-session/index";
+import { createViewDiagnosticResult } from "./usecase/view-diagnostic-result/index";
 
 import type {
   BrowsePracticeMaterialsInput,
@@ -109,6 +114,18 @@ import type {
 } from "./usecase/view-practice-workspace/index";
 import type { DismissFindingInput, DismissFindingOutput } from "./usecase/dismiss-finding/index";
 import type { RestoreFindingInput, RestoreFindingOutput } from "./usecase/restore-finding/index";
+import type {
+  StartDiagnosticSessionInput,
+  StartDiagnosticSessionOutput,
+} from "./usecase/start-diagnostic-session/index";
+import type {
+  CompleteDiagnosticSessionInput,
+  CompleteDiagnosticSessionOutput,
+} from "./usecase/complete-diagnostic-session/index";
+import type {
+  ViewDiagnosticResultInput,
+  DiagnosticResultOutput,
+} from "./usecase/view-diagnostic-result/index";
 
 import type { ResultAsync } from "neverthrow";
 import type { DomainError } from "./domain/shared";
@@ -119,6 +136,7 @@ import type { AudioStorage } from "./usecase/port/audio-storage";
 export type Container = Readonly<{
   config: AppConfig;
   audioStorage: AudioStorage;
+  database: DrizzleDatabase;
   usecases: Readonly<{
     browsePracticeMaterials: (
       input: BrowsePracticeMaterialsInput,
@@ -169,6 +187,15 @@ export type Container = Readonly<{
     ) => ResultAsync<ViewPracticeWorkspaceOutput, DomainError>;
     dismissFinding: (input: DismissFindingInput) => ResultAsync<DismissFindingOutput, DomainError>;
     restoreFinding: (input: RestoreFindingInput) => ResultAsync<RestoreFindingOutput, DomainError>;
+    startDiagnosticSession: (
+      input: StartDiagnosticSessionInput,
+    ) => ResultAsync<StartDiagnosticSessionOutput, DomainError>;
+    completeDiagnosticSession: (
+      input: CompleteDiagnosticSessionInput,
+    ) => ResultAsync<CompleteDiagnosticSessionOutput, DomainError>;
+    viewDiagnosticResult: (
+      input: ViewDiagnosticResultInput,
+    ) => ResultAsync<DiagnosticResultOutput, DomainError>;
   }>;
 }>;
 
@@ -195,6 +222,8 @@ const buildContainer = (): Container => {
   const analysisJobRepository = createDrizzleAnalysisJobRepository(database);
   const assessmentResultRepository = createDrizzleAssessmentResultRepository(database);
   const findingDismissalRepository = createDrizzleFindingDismissalRepository(database);
+  const diagnosticSessionRepository = createDrizzleDiagnosticSessionRepository(database);
+  const weaknessProfileRepository = createDrizzleWeaknessProfileRepository(database);
 
   // Infrastructure services
   const audioStorage = createLocalAudioStorage(config.audioStorageRoot);
@@ -402,9 +431,29 @@ const buildContainer = (): Container => {
       findingDismissalRepository,
       clock,
     }),
+
+    startDiagnosticSession: createStartDiagnosticSession({
+      diagnosticSessionRepository,
+      entropyProvider,
+      clock,
+    }),
+
+    completeDiagnosticSession: createCompleteDiagnosticSession({
+      diagnosticSessionRepository,
+      weaknessProfileRepository,
+      assessmentResultRepository,
+      entropyProvider,
+      clock,
+    }),
+
+    viewDiagnosticResult: createViewDiagnosticResult({
+      diagnosticSessionRepository,
+      weaknessProfileRepository,
+      assessmentResultRepository,
+    }),
   };
 
-  return { config, audioStorage, usecases };
+  return { config, audioStorage, database, usecases };
 };
 
 // ---- Public API ----

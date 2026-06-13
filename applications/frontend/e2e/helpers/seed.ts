@@ -243,6 +243,318 @@ export function seedWorkspaceV2(): SeedIdentifiers {
   return ids;
 }
 
+// ---- Diagnostic seed types ----
+
+export type DiagnosticSeedIdentifiers = {
+  diagnosticSession: string;
+  weaknessProfile: string;
+  material: string;
+  sectionSeries: string;
+  section: string;
+  recordingAttempt: string;
+  analysisRun: string;
+  analysisJob: string;
+  assessmentResult: string;
+  findingIdentifier: string;
+  learner: string;
+};
+
+function buildDiagnosticSeedIdentifiers(): DiagnosticSeedIdentifiers {
+  return {
+    diagnosticSession: makeId("DS"),
+    weaknessProfile: makeId("WP"),
+    material: makeId("MAT"),
+    sectionSeries: makeId("SS"),
+    section: makeId("SEC"),
+    recordingAttempt: makeId("RA"),
+    analysisRun: makeId("AR"),
+    analysisJob: makeId("AJ"),
+    assessmentResult: makeId("ARES"),
+    findingIdentifier: makeId("FND"),
+    // Use unique learner per test run to avoid uq_weakness_profiles_learner conflict
+    learner: makeId("LRN"),
+  };
+}
+
+function buildDiagnosticPromptSetJson() {
+  return JSON.stringify({
+    prompts: [
+      {
+        identifier: "prompt-seg-01",
+        text: "The right light was placed on the street corner.",
+        targetCatalogId: "SUB-l-r",
+        phenomenon: "segmental",
+      },
+      {
+        identifier: "prompt-epe-01",
+        text: "Please stop at the next station.",
+        targetCatalogId: "EPN-sC",
+        phenomenon: "epenthesis",
+      },
+      {
+        identifier: "prompt-pro-01",
+        text: "I believe the project will succeed.",
+        targetCatalogId: null,
+        phenomenon: "prosodic",
+      },
+    ],
+  });
+}
+
+function buildDiagnosticFocusSoundsJson() {
+  return JSON.stringify([
+    {
+      contrast: "/l/·/r/",
+      catalogId: "SUB-l-r",
+      functionalLoadRank: "max",
+      occurrenceFrequency: 0.8,
+      mastery: 0.2,
+      priority: 0.74,
+    },
+    {
+      contrast: "/æ/·/ʌ/",
+      catalogId: "SUB-ae-a",
+      functionalLoadRank: "high",
+      occurrenceFrequency: 0.5,
+      mastery: 0.4,
+      priority: 0.545,
+    },
+    {
+      contrast: "epenthesis-sC",
+      catalogId: "EPN-sC",
+      functionalLoadRank: "mid",
+      occurrenceFrequency: 0.6,
+      mastery: 0.3,
+      priority: 0.43,
+    },
+  ]);
+}
+
+function buildDiagnosticAssessmentResultJson(findingIdentifier: string) {
+  return JSON.stringify({
+    scores: {
+      overall: 68,
+      accuracy: 62,
+      nativeLikeness: 58,
+      pronunciation: 65,
+      connectedSpeech: 72,
+      prosody: 60,
+      intelligibility: 65,
+      cefrOverall: { score: 62, band: "B1" },
+      cefrSegmental: { score: 58, band: "A2+" },
+      cefrProsodic: { score: 60, band: "B1" },
+    },
+    summary: {
+      overallCommentJa: "全体的に通じる発音ですが、/l/-/r/の混同と母音挿入が顕著です。",
+      overallCommentEn: null,
+    },
+    findings: [
+      {
+        identifier: findingIdentifier,
+        phenomenon: "substitution",
+        gop: -9.2,
+        category: "pronunciation",
+        severity: "major",
+        textRange: { startOffset: 4, endOffset: 9 },
+        audioRange: { startMilliseconds: 200, endMilliseconds: 650 },
+        expected: { text: "right", ipa: "raɪt" },
+        detected: { text: "right", ipa: "laɪt" },
+        messageJa: "「right」の /r/ が /l/ に置き換わっています",
+        messageEn: null,
+        scoreImpact: -4,
+        confidence: 0.91,
+        detectedTopCandidate: "l",
+        nBest: [
+          { phoneme: "l", confidence: 0.78 },
+          { phoneme: "r", confidence: 0.14 },
+        ],
+        matchesL1Pattern: true,
+        functionalLoad: "max",
+        catalogId: "SUB-l-r",
+        wordPair: null,
+        expectedPronunciation: null,
+        insertedVowel: null,
+        feedbackLayers: {
+          whatJa: "/r/ が /l/ として実現されています",
+          whyJa: "日本語の「ら行」は /r/ でも /l/ でもなく、英語の両音と混同されやすいです",
+          howJa: "舌先を口の中に浮かせ、どこにも触れずに /r/ を発音してください",
+        },
+        dismissed: false,
+        wordPositionLabel: "initial",
+      },
+    ],
+    segments: [],
+    metadata: {
+      engineName: "NativeTrace OSS Worker v1",
+      engineVersion: "1.0.0",
+      modelName: "wav2vec2-large-xlsr-53",
+      promptVersion: null,
+      schemaVersion: "2.0.0",
+    },
+    tokenizerVersion: "e2e-diagnostic-seed-v1",
+    perPhonemeGop: [],
+    focusSounds: [],
+    prosody: null,
+    engineSummaryMessageJa: "/l/-/r/の置換が検出されました。",
+  });
+}
+
+/**
+ * seedCompletedDiagnosticSession — 完了済み DiagnosticSession + WeaknessProfile をDBに投入する。
+ *
+ * 結果画面 e2e テスト用。FK-safe 順序で INSERT する。
+ * weakness_profiles の uq_weakness_profiles_learner 制約のため、実行ごとに異なる learner を使う。
+ */
+export function seedCompletedDiagnosticSession(): DiagnosticSeedIdentifiers {
+  const ids = buildDiagnosticSeedIdentifiers();
+  const db = new Database(DB_PATH);
+  const now = new Date().toISOString();
+
+  // 1. material (diagnostic 専用セクションの親)
+  db.prepare(
+    `INSERT INTO materials (identifier, title, source_json, created_at, updated_at) VALUES (?, ?, NULL, ?, ?)`,
+  ).run(ids.material, "E2E Diagnostic Material", now, now);
+
+  // 2. section_series
+  db.prepare(
+    `INSERT INTO section_series (identifier, material, title, display_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(ids.sectionSeries, ids.material, "E2E Diagnostic Series", 0, now, now);
+
+  // 3. section
+  const bodyText = "The right light was placed on the street corner.";
+  const bodyTextHash = Buffer.from(bodyText).toString("base64").slice(0, 32);
+  db.prepare(
+    `INSERT INTO sections (identifier, section_series, version_number, body_text, body_text_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(ids.section, ids.sectionSeries, 1, bodyText, bodyTextHash, now);
+
+  // 4. recording_attempt (uploaded_file + ready)
+  db.prepare(
+    `INSERT INTO recording_attempts (identifier, section, status, input_kind, original_file_name, duration_milliseconds, created_at, updated_at) VALUES (?, ?, 'ready', 'uploaded_file', 'diag-e2e.wav', 4500, ?, ?)`,
+  ).run(ids.recordingAttempt, ids.section, now, now);
+
+  // 5. analysis_run
+  db.prepare(
+    `INSERT INTO analysis_runs (identifier, recording_attempt, mode, status, started_at, completed_at, created_at, updated_at) VALUES (?, ?, 'oss_worker_only', 'succeeded', ?, ?, ?, ?)`,
+  ).run(ids.analysisRun, ids.recordingAttempt, now, now, now, now);
+
+  // 6. analysis_job
+  db.prepare(
+    `INSERT INTO analysis_jobs (identifier, analysis_run, engine, engine_config_json, status, attempt_count, max_attempts, next_run_at, queued_at, started_at, completed_at, created_at, updated_at) VALUES (?, ?, 'oss_worker', '{}', 'succeeded', 1, 3, ?, ?, ?, ?, ?, ?)`,
+  ).run(ids.analysisJob, ids.analysisRun, now, now, now, now, now, now);
+
+  // 7. assessment_result
+  const assessmentResultJson = buildDiagnosticAssessmentResultJson(ids.findingIdentifier);
+  const engineSnapshotJson = JSON.stringify({
+    type: "oss_worker",
+    identifier: "oss_worker_e2e_diag",
+    displayName: "NativeTrace OSS Worker (E2E Diagnostic)",
+    modelName: "wav2vec2-large-xlsr-53",
+  });
+  const rawResponseJson = JSON.stringify({ data: { source: "e2e-diagnostic-seed" } });
+
+  db.prepare(
+    `INSERT INTO assessment_results (identifier, analysis_job, overall_score, accuracy_score, native_likeness_score, pronunciation_score, connected_speech_score, prosody_score, assessment_result_json, raw_response_json, engine_snapshot_json, tokenizer_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    ids.assessmentResult,
+    ids.analysisJob,
+    68,
+    62,
+    58,
+    65,
+    72,
+    60,
+    assessmentResultJson,
+    rawResponseJson,
+    engineSnapshotJson,
+    "e2e-diagnostic-seed-v1",
+    now,
+  );
+
+  // 8. diagnostic_session (completed)
+  const promptSetJson = buildDiagnosticPromptSetJson();
+  const assessmentResultJsonArray = JSON.stringify([ids.assessmentResult]);
+  db.prepare(
+    `INSERT INTO diagnostic_sessions (identifier, learner, prompt_set_json, status, weakness_profile, assessment_result_json, started_at, completed_at, created_at, updated_at) VALUES (?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    ids.diagnosticSession,
+    ids.learner,
+    promptSetJson,
+    ids.weaknessProfile,
+    assessmentResultJsonArray,
+    now,
+    now,
+    now,
+    now,
+  );
+
+  // 9. weakness_profile
+  const focusSoundsJson = buildDiagnosticFocusSoundsJson();
+  db.prepare(
+    `INSERT INTO weakness_profiles (identifier, learner, diagnostic_session, focus_sounds_json, last_updated_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(ids.weaknessProfile, ids.learner, ids.diagnosticSession, focusSoundsJson, now, now, now);
+
+  db.close();
+  return ids;
+}
+
+/**
+ * seedPendingDiagnosticSession — pending 状態の DiagnosticSession をDBに投入する。
+ *
+ * 診断中画面 e2e テスト用。
+ */
+export function seedPendingDiagnosticSession(): DiagnosticSeedIdentifiers {
+  const ids = buildDiagnosticSeedIdentifiers();
+  const db = new Database(DB_PATH);
+  const now = new Date().toISOString();
+
+  const promptSetJson = buildDiagnosticPromptSetJson();
+
+  db.prepare(
+    `INSERT INTO diagnostic_sessions (identifier, learner, prompt_set_json, status, weakness_profile, assessment_result_json, started_at, completed_at, created_at, updated_at) VALUES (?, ?, ?, 'pending', NULL, NULL, ?, NULL, ?, ?)`,
+  ).run(ids.diagnosticSession, ids.learner, promptSetJson, now, now, now);
+
+  db.close();
+  return ids;
+}
+
+/**
+ * cleanupDiagnosticSeed — diagnostic seed の後始末（FK-safe 順序で DELETE）。
+ */
+export function cleanupDiagnosticSeed(ids: DiagnosticSeedIdentifiers): void {
+  const db = new Database(DB_PATH);
+
+  // weakness_profiles → diagnostic_sessions → assessment chain → section chain
+  db.prepare(`DELETE FROM weakness_profiles WHERE identifier = ?`).run(ids.weaknessProfile);
+  db.prepare(`DELETE FROM diagnostic_sessions WHERE identifier = ?`).run(ids.diagnosticSession);
+
+  if (ids.assessmentResult) {
+    db.prepare(`DELETE FROM finding_dismissals WHERE assessment_result = ?`).run(
+      ids.assessmentResult,
+    );
+    db.prepare(`DELETE FROM assessment_results WHERE identifier = ?`).run(ids.assessmentResult);
+  }
+  if (ids.analysisJob) {
+    db.prepare(`DELETE FROM analysis_jobs WHERE identifier = ?`).run(ids.analysisJob);
+  }
+  if (ids.analysisRun) {
+    db.prepare(`DELETE FROM analysis_runs WHERE identifier = ?`).run(ids.analysisRun);
+  }
+  if (ids.recordingAttempt) {
+    db.prepare(`DELETE FROM recording_attempts WHERE identifier = ?`).run(ids.recordingAttempt);
+  }
+  if (ids.section) {
+    db.prepare(`DELETE FROM sections WHERE identifier = ?`).run(ids.section);
+  }
+  if (ids.sectionSeries) {
+    db.prepare(`DELETE FROM section_series WHERE identifier = ?`).run(ids.sectionSeries);
+  }
+  if (ids.material) {
+    db.prepare(`DELETE FROM materials WHERE identifier = ?`).run(ids.material);
+  }
+
+  db.close();
+}
+
 // ---- Cleanup function ----
 export function cleanupSeed(ids: SeedIdentifiers): void {
   const db = new Database(DB_PATH);

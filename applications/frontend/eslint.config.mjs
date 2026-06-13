@@ -24,6 +24,23 @@ const onionLayerZones = [
   { target: "./src/acl", from: "./src/app" },
   { target: "./src/infrastructure", from: "./src/acl" },
   { target: "./src/infrastructure", from: "./src/app" },
+
+  // Training Context (TC) 境界 — ADR-007: TC domain が PPC 内部型を import しない。
+  // PPC (Pronunciation Practice Context) = domain/{assessment-result,section,section-series,
+  // material,recording-attempt,analysis-run,analysis-job,audio-file}
+  // TC domain は PPC の識別子型 (AssessmentResultIdentifier / SectionIdentifier) のみを
+  // import し、PPC 集約の内部型 (AssessmentResult 等の集約本体) を import しない。
+  // これは ESLint no-restricted-paths で集約ファイルを制限する形で表現する。
+  // domain/training が domain/assessment-result.ts の集約本体を import しないことを検査:
+  // (識別子型は import 可——同じファイルに識別子と集約が共存するため完全排除は不可。
+  //  識別子のみ使用はコードレビューと ast-grep で補完する)
+
+  // TC usecase が TC infrastructure を import しない（onion 順守）
+  { target: "./src/domain/training", from: "./src/infrastructure" },
+  { target: "./src/domain/training", from: "./src/usecase" },
+  { target: "./src/domain/training", from: "./src/acl" },
+  { target: "./src/domain/training", from: "./src/app" },
+  { target: "./src/domain/training", from: "./src/components" },
 ];
 
 const eslintConfig = defineConfig([

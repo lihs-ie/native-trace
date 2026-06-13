@@ -396,3 +396,45 @@ export type HistoryGroupDto = {
   sectionSeries: { identifier: string; title: string };
   sections: HistorySectionVersionDto[];
 };
+
+// ---- Diagnostic DTOs (Training Context) ----
+
+export type DiagnosticPromptDto = {
+  identifier: string;
+  text: string;
+  targetCatalogId: string | null;
+  phenomenon: "segmental" | "epenthesis" | "prosodic";
+};
+
+export type DiagnosticSessionDto = {
+  identifier: string;
+  status: "pending" | "completed";
+  promptSet: { prompts: DiagnosticPromptDto[] };
+  startedAt: string;
+  completedAt: string | null;
+  weaknessProfileIdentifier: string | null;
+};
+
+export type DiagnosticFocusSoundDto = {
+  contrast: string;
+  catalogId: string;
+  functionalLoadRank: string;
+  occurrenceFrequency: number;
+  mastery: number;
+  priority: number;
+};
+
+export type DiagnosticCefrSubscalesDto = {
+  overall: { score: number; band: string } | null;
+  segmental: { score: number; band: string } | null;
+  prosodic: { score: number; band: string } | null;
+};
+
+export type DiagnosticResultDto = {
+  diagnosticSessionIdentifier: string;
+  weaknessProfileIdentifier: string;
+  stage: "stageI" | "stageII";
+  cefrSubscales: DiagnosticCefrSubscalesDto;
+  focusSounds: DiagnosticFocusSoundDto[];
+  completedAt: string;
+};

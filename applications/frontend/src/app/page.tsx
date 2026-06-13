@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { apiGet, isApiClientError } from "@/lib/api-client";
-import type { MaterialDto } from "@/lib/api-types";
+import { useRouter } from "next/navigation";
+import { apiGet, apiPost, isApiClientError } from "@/lib/api-client";
+import type { MaterialDto, DiagnosticSessionDto } from "@/lib/api-types";
 import { AppTop } from "@/components/chrome/AppTop";
 import { HomeNav } from "@/components/chrome/HomeNav";
 
@@ -16,8 +17,7 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
   other: "その他",
 };
 
-const isTed = (sourceType: string): boolean =>
-  sourceType.toLowerCase() === "ted";
+const isTed = (sourceType: string): boolean => sourceType.toLowerCase() === "ted";
 
 const formatRelativeDate = (isoString: string): string => {
   const date = new Date(isoString);
@@ -42,22 +42,38 @@ const getSourceLabel = (sourceType: string): string =>
 
 const buildByLine = (
   speakerName: string | null | undefined,
-  sourceTitle: string | null | undefined
+  sourceTitle: string | null | undefined,
 ): string => {
   const parts = [speakerName, sourceTitle].filter(
-    (part): part is string => typeof part === "string" && part.length > 0
+    (part): part is string => typeof part === "string" && part.length > 0,
   );
   return parts.join(" · ");
 };
 
-type MaterialListData =
-  | { materials?: MaterialDto[] }
-  | MaterialDto[];
+type MaterialListData = { materials?: MaterialDto[] } | MaterialDto[];
 
 export default function LibraryPage() {
+  const router = useRouter();
   const [materials, setMaterials] = useState<MaterialDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [diagnosticStarting, setDiagnosticStarting] = useState(false);
+  const [diagnosticError, setDiagnosticError] = useState<string | null>(null);
+
+  const startDiagnosticSession = async () => {
+    setDiagnosticStarting(true);
+    setDiagnosticError(null);
+    try {
+      const session = await apiPost<DiagnosticSessionDto>("/api/v1/diagnostic-sessions", {});
+      sessionStorage.setItem(`diagnostic-session-${session.identifier}`, JSON.stringify(session));
+      router.push(`/diagnostic/${session.identifier}`);
+    } catch (error: unknown) {
+      setDiagnosticStarting(false);
+      setDiagnosticError(
+        isApiClientError(error) ? error.message : "診断セッションの開始に失敗しました",
+      );
+    }
+  };
 
   useEffect(() => {
     apiGet<MaterialListData>("/api/v1/materials")
@@ -86,13 +102,24 @@ export default function LibraryPage() {
       <div className="home-top">
         <AppTop />
         <HomeNav active="library" />
-        <Link
-          href="/materials/new"
-          className="btn btn--sm btn--primary"
-          style={{ marginLeft: "auto" }}
-        >
-          ＋ 新しい教材
-        </Link>
+        <div style={{ marginLeft: "auto", display: "flex", gap: "8px", alignItems: "center" }}>
+          {diagnosticError && (
+            <span style={{ fontSize: "var(--text-xs)", color: "var(--sev-critical-text)" }}>
+              {diagnosticError}
+            </span>
+          )}
+          <button
+            type="button"
+            className="btn btn--sm btn--secondary"
+            onClick={() => void startDiagnosticSession()}
+            disabled={diagnosticStarting}
+          >
+            {diagnosticStarting ? "開始中..." : "診断を始める"}
+          </button>
+          <Link href="/materials/new" className="btn btn--sm btn--primary">
+            ＋ 新しい教材
+          </Link>
+        </div>
       </div>
 
       <main>
@@ -125,7 +152,8 @@ export default function LibraryPage() {
             <div className="empty-mark">/t/</div>
             <h2>最初の教材を作成しましょう</h2>
             <p>
-              TED やスピーチのスクリプトを貼り付けて題材を作り、本文をドラッグ選択して練習セクションに切り出します。録音・解析・添削はすべて同じ画面で行えます。
+              TED
+              やスピーチのスクリプトを貼り付けて題材を作り、本文をドラッグ選択して練習セクションに切り出します。録音・解析・添削はすべて同じ画面で行えます。
             </p>
             <div className="empty-actions">
               <Link href="/materials/new" className="btn btn--primary">
@@ -154,9 +182,7 @@ export default function LibraryPage() {
             <div className="lib-head">
               <div>
                 <h2>教材ライブラリ</h2>
-                <div className="sub">
-                  {materials.length} materials
-                </div>
+                <div className="sub">{materials.length} materials</div>
               </div>
             </div>
 
@@ -178,12 +204,10 @@ export default function LibraryPage() {
             <div className="mat-grid">
               {materials.map((material) => {
                 const sourceType = material.source?.sourceType ?? "";
-                const sourceLabel = sourceType
-                  ? getSourceLabel(sourceType)
-                  : null;
+                const sourceLabel = sourceType ? getSourceLabel(sourceType) : null;
                 const byLine = buildByLine(
                   material.source?.speakerName,
-                  material.source?.sourceTitle
+                  material.source?.sourceTitle,
                 );
 
                 return (
@@ -196,19 +220,14 @@ export default function LibraryPage() {
                     <div className="src">
                       {sourceLabel && (
                         <span
-                          className={[
-                            "srctag",
-                            isTed(sourceType) ? "srctag--ted" : "",
-                          ]
+                          className={["srctag", isTed(sourceType) ? "srctag--ted" : ""]
                             .filter(Boolean)
                             .join(" ")}
                         >
                           {sourceLabel}
                         </span>
                       )}
-                      <span className="when">
-                        {formatRelativeDate(material.updatedAt)}
-                      </span>
+                      <span className="when">{formatRelativeDate(material.updatedAt)}</span>
                     </div>
                     <div>
                       <h3>{material.title}</h3>
@@ -220,13 +239,8 @@ export default function LibraryPage() {
                       <i style={{ height: "18%" }}></i>
                     </div>
                     <div className="stats">
-                      <span style={{ color: "var(--text-faint)" }}>
-                        セクション未作成
-                      </span>
-                      <span
-                        className="best"
-                        style={{ color: "var(--text-faint)" }}
-                      >
+                      <span style={{ color: "var(--text-faint)" }}>セクション未作成</span>
+                      <span className="best" style={{ color: "var(--text-faint)" }}>
                         未録音
                       </span>
                     </div>
@@ -246,9 +260,7 @@ export default function LibraryPage() {
                 }}
               >
                 <span className="plus">＋</span>
-                <span style={{ fontSize: "var(--text-sm)" }}>
-                  英文を貼り付けて新しい教材を作成
-                </span>
+                <span style={{ fontSize: "var(--text-sm)" }}>英文を貼り付けて新しい教材を作成</span>
               </Link>
             </div>
           </>

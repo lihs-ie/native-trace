@@ -318,6 +318,68 @@ export const assessmentResults = sqliteTable(
   ],
 );
 
+// DB-010: diagnostic_sessions (Training Context — database-design.md §5b)
+// 時刻列は TEXT ISO-8601（DB-001〜DB-008 規約）に揃える。
+// assessment_result_json は AssessmentResult 識別子配列を JSON で保持する（1対多参照）。
+// weakness_profile は weakness_profiles(identifier) を参照（completed 時は必須）。
+export const diagnosticSessions = sqliteTable(
+  "diagnostic_sessions",
+  {
+    identifier: text("identifier").primaryKey(),
+    learner: text("learner").notNull(),
+    promptSetJson: text("prompt_set_json").notNull(),
+    status: text("status").notNull(),
+    weaknessProfile: text("weakness_profile"),
+    assessmentResultJson: text("assessment_result_json"),
+    startedAt: text("started_at").notNull(),
+    completedAt: text("completed_at"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+    deletedAt: text("deleted_at"),
+  },
+  (table) => [
+    check("ck_diagnostic_sessions_status", sql`${table.status} IN ('pending', 'completed')`),
+    check("ck_diagnostic_sessions_prompt_set_json", sql`json_valid(${table.promptSetJson})`),
+    check(
+      "ck_diagnostic_sessions_assessment_result_json",
+      sql`${table.assessmentResultJson} IS NULL OR json_valid(${table.assessmentResultJson})`,
+    ),
+    check(
+      "ck_diagnostic_sessions_completed",
+      sql`${table.status} != 'completed' OR (${table.weaknessProfile} IS NOT NULL AND ${table.assessmentResultJson} IS NOT NULL AND ${table.completedAt} IS NOT NULL)`,
+    ),
+    index("idx_diagnostic_sessions_learner_created").on(
+      table.learner,
+      table.deletedAt,
+      table.createdAt,
+    ),
+  ],
+);
+
+// DB-011: weakness_profiles (Training Context — database-design.md §5b)
+// 学習者ごとに1プロファイル（uq_weakness_profiles_learner）。
+// focus_sounds_json は FocusSound 配列を JSON で保持する（NonEmptyList 不変条件）。
+export const weaknessProfiles = sqliteTable(
+  "weakness_profiles",
+  {
+    identifier: text("identifier").primaryKey(),
+    learner: text("learner").notNull(),
+    diagnosticSession: text("diagnostic_session")
+      .notNull()
+      .references(() => diagnosticSessions.identifier),
+    focusSoundsJson: text("focus_sounds_json").notNull(),
+    lastUpdatedAt: text("last_updated_at").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+    deletedAt: text("deleted_at"),
+  },
+  (table) => [
+    unique("uq_weakness_profiles_learner").on(table.learner),
+    check("ck_weakness_profiles_focus_sounds_json", sql`json_valid(${table.focusSoundsJson})`),
+    index("idx_weakness_profiles_learner").on(table.learner, table.deletedAt),
+  ],
+);
+
 // DB-009: finding_dismissals
 export const findingDismissals = sqliteTable(
   "finding_dismissals",
