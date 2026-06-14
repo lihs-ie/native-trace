@@ -3,10 +3,10 @@
 /**
  * 訓練画面 — /training
  *
- * design-reference/screens/training.html に完全合致。
+ * design-reference/screens/training.html に合致 (差分は .agent-evidence/training-screen-pixel-audit.md)。
  * M-TR-8: .tr-body (2列 1fr 320px) / .tr-main / .tr-rail / .tr-dock / .tr-fbslot
  *         / .choice-grid#choices / .choice[data-ans] / .sched / .cum-bar / .drill-pair
- *         / .two-col (シャドーイング honest placeholder)
+ *         / .two-col (シャドーイング窓)
  *
  * HVPT フロー (ADR-009 実刺激駆動、偽刺激禁止):
  *   1. sessionStorage から weaknessProfileIdentifier 取得
@@ -19,8 +19,9 @@
  * 産出ドリルプレビュー (.tr-dock):
  *   DrillDto から .drill-pair 表示、録音ボタン表示 (録音→ POST drills/{id}/attempts は TODO sub-2)
  *
- * シャドーイング窓 (.two-col):
- *   sub-4 未実装のため honest「準備中」placeholder (偽ラグ値なし)
+ * シャドーイング窓 (.two-col, REQ-125 / M-SHL-4/5/6):
+ *   お手本 TTS 読込 → 同時録音 → POST /api/v1/training/shadowing-lag → 実計測ラグを
+ *   .lag-needle / .callout / .scope-note に実値駆動描画 (ADR-013; 偽ラグ値なし)。
  */
 
 import Link from "next/link";
