@@ -124,7 +124,8 @@ async function fetchTree(sectionSeriesParam: string | null): Promise<TreeMateria
             sectionSeriesIdentifier: item.sectionSeries.identifier,
             title: item.sectionSeries.title,
             displayOrder: item.sectionSeries.displayOrder,
-            bestScore: null,
+            // practice-plan の section series 集計 (material-detail と同源) から最高スコアを配線
+            bestScore: item.stats.bestOverallScore,
           }));
           return {
             identifier: material.identifier,
