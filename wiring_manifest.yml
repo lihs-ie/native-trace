@@ -56,3 +56,36 @@ rules:
       - "applications/python-analyzer/Dockerfile"
     reason: "pyproject.toml に依存を追加しただけではコンテナに反映されない。Dockerfile はハードコード pip list なので Dockerfile の pip インストール行も共変更する。version bump 等で Dockerfile 不要な変更なら .agent-evidence/wiring-waivers.txt に rule id を 1 行書いて理由を証跡化する"
     smoke: "docker compose up -d --build analyzer && curl -fsS localhost:8788/health"
+
+  # golden speaker 配線エッジ（ADR-012 / M-GRV-1 / M-GRV-4）
+  - id: golden-speaker-entrypoint-needs-app-wiring
+    when: "applications/golden-speaker/src/golden_speaker/interface/http_handler.py"
+    require_one_of:
+      - "applications/golden-speaker/src/golden_speaker/app.py"
+    reason: "http_handler.py の router を app.py の FastAPI Composition Root で include_router しなければ /v1/convert が到達不能になる（ORPHAN-1）"
+    smoke: "docker compose --profile golden up -d golden && curl -fsS localhost:8789/health"
+
+  - id: golden-speaker-compose-edge
+    when: "applications/golden-speaker/**"
+    require_one_of:
+      - "compose.yaml"
+      - "wiring_manifest.yml"
+    reason: "golden-speaker の変更は compose.yaml または wiring_manifest.yml も共変更して配線を明示する（ADR-012 / M-GRV-4）"
+    smoke: "docker compose --profile golden up -d golden && curl -fsS localhost:8789/health"
+
+  - id: golden-speaker-pyproject-needs-dockerfile
+    when: "applications/golden-speaker/pyproject.toml"
+    require_one_of:
+      - "applications/golden-speaker/Dockerfile"
+    reason: "pyproject.toml に依存を追加しただけではコンテナに反映されない。Dockerfile は pip インストール行のため共変更する"
+    smoke: "docker compose --profile golden up -d --build golden && curl -fsS localhost:8789/health"
+
+  # frontend/worker → golden /v1/convert HTTP エッジ（M-GRV-4）
+  # golden サービスは applications/frontend / applications/backend の内部型を import しない（HTTP 契約のみ）
+  # このエッジ記述は: frontend/worker → worker POST /golden-speaker/convert → golden POST /v1/convert → GoldenConversionResponse
+  - id: worker-golden-speaker-http-edge
+    when: "applications/golden-speaker/src/golden_speaker/interface/schema.py"
+    require_one_of:
+      - "compose.yaml"
+    reason: "GoldenConversionResponse スキーマ変更は compose.yaml の golden サービス定義と一致させる（worker/frontend が HTTP contract に合わせる）"
+    smoke: "grep 'GoldenConversionResponse' applications/golden-speaker/src/golden_speaker/interface/schema.py"
