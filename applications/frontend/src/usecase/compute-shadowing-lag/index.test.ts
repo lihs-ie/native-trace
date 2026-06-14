@@ -14,7 +14,11 @@ import type { ShadowingLagClient, ShadowingLagResult } from "../port/shadowing-l
 import type { TrainingSessionRepository } from "../port/training-session-repository";
 import type { EntropyProvider } from "../port/entropy-provider";
 import type { Clock } from "../port/clock";
-import type { TrainingSession, SpacingSchedulerConfig, PhonemeContrast } from "../../domain/training";
+import type {
+  TrainingSession,
+  SpacingSchedulerConfig,
+  PhonemeContrast,
+} from "../../domain/training";
 
 const FIXED_NOW = new Date("2026-01-15T10:00:00.000Z");
 const FIXED_ULID = "01JWZSHADOW0000000000000001";
@@ -64,7 +68,10 @@ const buildDeps = () => {
   const shadowingLagClient: ShadowingLagClient = {
     computeLag: vi.fn(() => okAsync(LAG_RESULT)),
   };
-  const entropyProvider: EntropyProvider = { generateUlid: () => FIXED_ULID };
+  const entropyProvider: EntropyProvider = {
+    generateUlid: () => FIXED_ULID,
+    generateUuidV4: () => "00000000-0000-4000-8000-000000000000",
+  };
   const clock: Clock = { now: () => FIXED_NOW };
   return { trainingSessionRepository, shadowingLagClient, entropyProvider, clock, persisted };
 };

@@ -67,6 +67,7 @@ import { createStartHvptSession } from "./usecase/start-hvpt-session/index";
 import { createSubmitHvptTrial } from "./usecase/submit-hvpt-trial/index";
 import { createCompleteHvptSession } from "./usecase/complete-hvpt-session/index";
 import { createComputeShadowingLag } from "./usecase/compute-shadowing-lag/index";
+import { createRecordAudioSourceUsage } from "./usecase/record-audio-source-usage/index";
 
 import type {
   BrowsePracticeMaterialsInput,
@@ -167,6 +168,10 @@ import type {
   ComputeShadowingLagInput,
   ComputeShadowingLagOutput,
 } from "./usecase/compute-shadowing-lag/index";
+import type {
+  RecordAudioSourceUsageInput,
+  RecordAudioSourceUsageOutput,
+} from "./usecase/record-audio-source-usage/index";
 
 import type { ResultAsync } from "neverthrow";
 import type { DomainError } from "./domain/shared";
@@ -177,6 +182,7 @@ import type { SpacingScheduleRepository } from "./usecase/port/spacing-schedule-
 import type { DrillContentRepository } from "./usecase/port/drill-content-repository";
 import { createAnalyzerStimulusClient } from "./infrastructure/analyzer/stimulus-client";
 import { createOssWorkerShadowingLagAdaptor } from "./acl/pronunciation-assessment/oss-worker/create-oss-worker-shadowing-lag-adaptor";
+import { createDrizzleAbUsageLogRepository } from "./infrastructure/drizzle/repositories/ab-usage-log-repository";
 
 // ---- Container type ----
 
@@ -273,6 +279,9 @@ export type Container = Readonly<{
     computeShadowingLag: (
       input: ComputeShadowingLagInput,
     ) => ResultAsync<ComputeShadowingLagOutput, DomainError>;
+    recordAudioSourceUsage: (
+      input: RecordAudioSourceUsageInput,
+    ) => ResultAsync<RecordAudioSourceUsageOutput, DomainError>;
   }>;
 }>;
 
@@ -308,6 +317,7 @@ const buildContainer = (): Container => {
   const hvptTrialRepository = createDrizzleHvptTrialRepository(database);
   const spacingScheduleRepository = createDrizzleSpacingScheduleRepository(database);
   const drillContentRepository = createDrillContentRepository();
+  const abUsageLogRepository = createDrizzleAbUsageLogRepository(database);
 
   // ACL: analyzer stimulus client (HVPT 刺激取得 ADR-009)
   const analyzerStimulusClient = createAnalyzerStimulusClient(config.analyzerApiEndpoint);
@@ -604,6 +614,11 @@ const buildContainer = (): Container => {
       shadowingLagClient,
       trainingSessionRepository,
       entropyProvider,
+      clock,
+    }),
+
+    recordAudioSourceUsage: createRecordAudioSourceUsage({
+      abUsageLogRepository,
       clock,
     }),
   };

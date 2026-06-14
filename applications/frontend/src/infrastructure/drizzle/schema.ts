@@ -561,6 +561,29 @@ export const spacingSchedules = sqliteTable(
   ],
 );
 
+// DB-016: ab_usage_logs (M-GRV-8, ORPHAN-5)
+// A/B audio source 使用ログ: self / model / golden の再生操作を時系列で記録。
+// qualityGatePassed は golden の品質ゲート通過可否 (self/model は NULL)。
+export const abUsageLogs = sqliteTable(
+  "ab_usage_logs",
+  {
+    identifier: text("identifier").primaryKey(),
+    learner: text("learner").notNull(),
+    source: text("source").notNull(),
+    playedAt: text("played_at").notNull(),
+    qualityGatePassed: integer("quality_gate_passed"),
+  },
+  (table) => [
+    check("ck_ab_usage_logs_source", sql`${table.source} IN ('self', 'model', 'golden')`),
+    check(
+      "ck_ab_usage_logs_quality_gate_passed",
+      sql`${table.qualityGatePassed} IS NULL OR ${table.qualityGatePassed} IN (0, 1)`,
+    ),
+    index("idx_ab_usage_logs_learner_played").on(table.learner, table.playedAt),
+    index("idx_ab_usage_logs_source_played").on(table.source, table.playedAt),
+  ],
+);
+
 // DB-009: finding_dismissals
 export const findingDismissals = sqliteTable(
   "finding_dismissals",

@@ -7,9 +7,17 @@ import { GopHeatmap } from "./GopHeatmap";
 import { F0Chart } from "./F0Chart";
 import { DetailPanelV2 } from "./DetailPanelV2";
 import { RailV2 } from "./RailV2";
+import type { GoldenConversionResponse } from "@/acl/golden-speaker/schema";
 
 type ViewMode = "highlight" | "gopmap" | "f0";
 type AudioSource = "self" | "model" | "golden";
+
+/**
+ * Golden speaker fetch 結果。
+ * null = 未取得、"fetching" = 取得中、"unavailable" = worker 503 / 通信失敗。
+ * response オブジェクト = 取得済み (qualityGatePassed が分岐を決定)。
+ */
+type GoldenAudioState = null | "fetching" | "unavailable" | { response: GoldenConversionResponse };
 
 type WorkspaceResultV2Props = {
   bodyText: string;
@@ -29,6 +37,17 @@ const formatPlayerTime = (seconds: number): string => {
 
 const WAVE_BAR_COUNT = 15;
 
+/** ab_usage_logs へのログ記録 (M-GRV-8, fire-and-forget) */
+const recordAudioSourceUsage = (source: AudioSource, qualityGatePassed: boolean | null): void => {
+  void fetch("/api/v1/ab-usage-logs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source, qualityGatePassed }),
+  }).catch(() => {
+    // ログ記録の失敗は再生を妨げない
+  });
+};
+
 /**
  * ワークスペース v2 結果ビュー (M-WS / workspace-v2.html)
  *
@@ -39,6 +58,7 @@ const WAVE_BAR_COUNT = 15;
  * - `.gopmap`: GOP ヒートマップ
  * - 詳細パネル `.panel`: DetailPanelV2
  * - dock: `.ab-srcs` / player / `.speed` — M-AB 実再生配線
+ * - golden: worker POST /golden-speaker/convert → qualityGatePassed 分岐 (M-GRV-7, ORPHAN-4)
  */
 export const WorkspaceResultV2 = ({
   bodyText,
@@ -55,6 +75,9 @@ export const WorkspaceResultV2 = ({
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+
+  // golden 変換取得状態 (M-GRV-7)
+  const [goldenState, setGoldenState] = useState<GoldenAudioState>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   /** TTS キャッシュ: キー = `${text}__${speed}` */
@@ -142,6 +165,7 @@ export const WorkspaceResultV2 = ({
       audioRef.current = audio;
       void audio.play();
       setIsPlaying(true);
+      recordAudioSourceUsage("self", null);
     } catch {
       // fetch unavailable — no-op
     }
@@ -175,6 +199,7 @@ export const WorkspaceResultV2 = ({
       audioRef.current = cachedAudio;
       void cachedAudio.play();
       setIsPlaying(true);
+      recordAudioSourceUsage("model", null);
       return;
     }
 
@@ -195,10 +220,119 @@ export const WorkspaceResultV2 = ({
       audioRef.current = audio;
       void audio.play();
       setIsPlaying(true);
+      recordAudioSourceUsage("model", null);
     } catch {
       // TTS unavailable — no-op
     }
   }, [bodyText, playSpeed, isPlaying, stopCurrentAudio, attachAudioEvents]);
+
+  /**
+   * golden ソース: worker POST /golden-speaker/convert を呼び出し、
+   * qualityGatePassed=true の場合のみ audioBase64 を再生する (M-GRV-7, ORPHAN-4)。
+   * qualityGatePassed=false / 503 の場合は .gs-gate フォールバックを表示。
+   * UI 文言は API レスポンスの targetVoice 由来 (ORPHAN-7: 「自分の声」と焼かない)。
+   */
+  const playGoldenAudio = useCallback(async () => {
+    // 取得済みで audioBase64 が存在する場合は再生/一時停止トグル
+    if (
+      goldenState !== null &&
+      goldenState !== "fetching" &&
+      goldenState !== "unavailable" &&
+      goldenState.response.qualityGatePassed &&
+      goldenState.response.audioBase64
+    ) {
+      if (audioRef.current) {
+        if (isPlaying) {
+          audioRef.current.pause();
+          setIsPlaying(false);
+        } else {
+          void audioRef.current.play();
+          setIsPlaying(true);
+        }
+        return;
+      }
+    }
+
+    // qualityGatePassed=false / unavailable 時は再生しない (ORPHAN-4)
+    if (
+      goldenState !== null &&
+      goldenState !== "fetching" &&
+      goldenState !== "unavailable" &&
+      !goldenState.response.qualityGatePassed
+    ) {
+      return;
+    }
+
+    if (!latestRecordingAttemptIdentifier) return;
+    if (goldenState === "fetching") return;
+
+    setGoldenState("fetching");
+
+    try {
+      // learner_audio を録音試行 API から取得
+      const audioResponse = await fetch(
+        `/api/v1/recording-attempts/${latestRecordingAttemptIdentifier}/audio`,
+      );
+      if (!audioResponse.ok) {
+        setGoldenState("unavailable");
+        return;
+      }
+      const audioBlob = await audioResponse.blob();
+      const learnerAudioFile = new File([audioBlob], "learner.webm", { type: audioBlob.type });
+
+      const workerFormData = new FormData();
+      workerFormData.append("learnerAudio", learnerAudioFile);
+      workerFormData.append(
+        "metadata",
+        JSON.stringify({ mimeType: audioBlob.type || "audio/webm" }),
+      );
+
+      const convertResponse = await fetch("/api/v1/golden-speaker/convert", {
+        method: "POST",
+        body: workerFormData,
+      });
+
+      if (!convertResponse.ok) {
+        // 503 = golden speaker 利用不可 (M-GRV-7d)
+        setGoldenState("unavailable");
+        return;
+      }
+
+      const json = (await convertResponse.json()) as {
+        data: GoldenConversionResponse;
+      };
+      const conversionResult = json.data;
+
+      setGoldenState({ response: conversionResult });
+      recordAudioSourceUsage("golden", conversionResult.qualityGatePassed);
+
+      // ORPHAN-4: qualityGatePassed=false の場合は audioBase64 を再生しない
+      if (!conversionResult.qualityGatePassed || !conversionResult.audioBase64) {
+        return;
+      }
+
+      // audioBase64 を再生
+      const binaryString = atob(conversionResult.audioBase64);
+      const bytes = Uint8Array.from(binaryString, (char) => char.charCodeAt(0));
+      const wavBlob = new Blob([bytes], { type: "audio/wav" });
+      const url = URL.createObjectURL(wavBlob);
+      const audio = new Audio(url);
+      const cleanup = attachAudioEvents(audio);
+      void cleanup;
+      stopCurrentAudio();
+      audioRef.current = audio;
+      void audio.play();
+      setIsPlaying(true);
+    } catch {
+      setGoldenState("unavailable");
+    }
+  }, [
+    goldenState,
+    isPlaying,
+    latestRecordingAttemptIdentifier,
+    attachAudioEvents,
+    stopCurrentAudio,
+  ]);
 
   /** player 再生/一時停止ボタンのハンドラ */
   const handlePlayerToggle = useCallback(() => {
@@ -206,9 +340,10 @@ export const WorkspaceResultV2 = ({
       void playSelfAudio();
     } else if (activeAudioSource === "model") {
       void playModelAudio();
+    } else if (activeAudioSource === "golden") {
+      void playGoldenAudio();
     }
-    // golden は何もしない (M-AB-e)
-  }, [activeAudioSource, playSelfAudio, playModelAudio]);
+  }, [activeAudioSource, playSelfAudio, playModelAudio, playGoldenAudio]);
 
   /** speed chip 変更 (M-AB-c) */
   const handleSpeedChange = useCallback(
@@ -223,8 +358,32 @@ export const WorkspaceResultV2 = ({
   );
 
   const isGoldenSelected = activeAudioSource === "golden";
-  const isPlayerDisabled = isGoldenSelected || (activeAudioSource === "self" && !latestRecordingAttemptIdentifier);
+  const isPlayerDisabled =
+    (activeAudioSource === "self" && !latestRecordingAttemptIdentifier) ||
+    (isGoldenSelected && goldenState === "fetching") ||
+    (isGoldenSelected &&
+      goldenState !== null &&
+      goldenState !== "fetching" &&
+      goldenState !== "unavailable" &&
+      !goldenState.response.qualityGatePassed);
   const playerTimeText = `${formatPlayerTime(currentTime)} / ${formatPlayerTime(duration)}`;
+
+  /**
+   * .gs-gate に表示するメッセージ (ORPHAN-7: API レスポンス由来、「自分の声」と焼かない)
+   * - "fetching": 取得中
+   * - "unavailable": Golden speaker 準備中 (M-GRV-7d)
+   * - qualityGatePassed=false: withholdReason 由来 (ORPHAN-4)
+   */
+  const goldenGateMessage = (() => {
+    if (!isGoldenSelected) return null;
+    if (goldenState === null) return null;
+    if (goldenState === "fetching") return "Golden speaker 変換中...";
+    if (goldenState === "unavailable") return "Golden speaker 準備中";
+    if (!goldenState.response.qualityGatePassed) {
+      return goldenState.response.withholdReason ?? "Golden speaker 変換品質不足";
+    }
+    return null;
+  })();
 
   return (
     <div className="ws2">
@@ -236,9 +395,7 @@ export const WorkspaceResultV2 = ({
             className="eng-dot"
             style={{
               background:
-                engineResult.engineKind === "cloud"
-                  ? "var(--engine-openai)"
-                  : "var(--engine-rust)",
+                engineResult.engineKind === "cloud" ? "var(--engine-openai)" : "var(--engine-rust)",
               marginTop: "5px",
             }}
           />
@@ -364,11 +521,11 @@ export const WorkspaceResultV2 = ({
             <span className="sd2" style={{ background: "var(--src-model)" }} />
             お手本
           </button>
+          {/* golden ボタン: M-GRV-7a で disabled 解除 */}
           <button
-            className="ab-src"
+            className={`ab-src${activeAudioSource === "golden" ? " is-active" : ""}`}
             type="button"
-            disabled
-            title="Golden speaker — GPU 必要 / 準備中"
+            onClick={() => setActiveAudioSource("golden")}
           >
             <span className="sd2" style={{ background: "var(--src-golden)" }} />
             Golden
@@ -423,8 +580,8 @@ export const WorkspaceResultV2 = ({
           ))}
         </div>
 
-        {/* golden プレースホルダー (M-AB-e) */}
-        {isGoldenSelected && (
+        {/* .gs-gate: golden 選択時のフォールバック / withhold メッセージ (M-GRV-7c/d, ORPHAN-4, ORPHAN-7) */}
+        {isGoldenSelected && goldenGateMessage !== null && (
           <span
             className="gs-gate"
             style={{
@@ -433,9 +590,26 @@ export const WorkspaceResultV2 = ({
               color: "var(--text-faint)",
             }}
           >
-            GPU 必要 / 準備中
+            {goldenGateMessage}
           </span>
         )}
+
+        {/* golden 再生中: targetVoice 表示 (ORPHAN-7: API 由来、静的文字列を焼かない) */}
+        {isGoldenSelected &&
+          goldenState !== null &&
+          goldenState !== "fetching" &&
+          goldenState !== "unavailable" &&
+          goldenState.response.qualityGatePassed && (
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: "var(--text-2xs)",
+                color: "var(--text-faint)",
+              }}
+            >
+              {goldenState.response.targetVoice}
+            </span>
+          )}
       </div>
     </div>
   );

@@ -412,7 +412,7 @@ describe("WorkspaceResultV2", () => {
     expect(tt?.textContent).toMatch(/\d:\d{2}\.\d \/ \d:\d{2}\.\d/);
   });
 
-  it("golden 選択時は .pp が disabled で .gs-gate が表示される", () => {
+  it("golden ボタンは有効で、選択すると .pp が操作可能になる (M-GRV-7a)", () => {
     const { container } = render(
       <WorkspaceResultV2
         bodyText="I am honored to be with you today."
@@ -421,10 +421,10 @@ describe("WorkspaceResultV2", () => {
         latestRecordingAttemptIdentifier="attempt-01"
       />,
     );
-    // golden ボタンは disabled のまま — M-AB-e
+    // M-GRV-7a: golden ボタンは disabled 解除されている
     const goldenBtn = Array.from(container.querySelectorAll(".ab-src")).find((el) =>
       el.textContent?.includes("Golden"),
     ) as HTMLButtonElement | undefined;
-    expect(goldenBtn?.disabled).toBe(true);
+    expect(goldenBtn?.disabled).toBe(false);
   });
 });
