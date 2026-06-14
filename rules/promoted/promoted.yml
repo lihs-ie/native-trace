@@ -94,3 +94,88 @@ evidence_required:
 rollback_condition: "n/a (doc-only rubric。executable gate ではないため FP exit-code は無い)"
 verified_fires: false            # executable gate でないため exit-code firing は無し (rubric 追記のみ)
 owner: "@lihs-ie"
+---
+# FC-1: 新規 .hs の postpositive `import X qualified` で fourmolu per-edit hook が parse 失敗する
+# 根本を、grep gate ではなく fourmolu 起動オプションの単一点修正で解決する (FP ゼロ)。
+id: fourmolu_new_file_import_qualified_post
+failure_class: harness_false_block   # 正しいコードを per-edit hook が誤ってブロックする (toolchain 不整合)
+trigger:
+  repeated_count: 3                  # ShadowingLagSpec / GoldenSpeakerSpec / GoldenSpeakerClient で回避 pragma を後付け
+  sources: ["fitness_hook"]
+rule:
+  summary: "fitness hook の fourmolu 呼び出しに --ghc-opt -XImportQualifiedPost を渡し、cabal 未登録の新規 .hs でも postpositive qualified を GHC2024 整合で parse できるようにする"
+  root_cause: "fourmolu は .cabal の exposed-modules/other-modules に登録済みの module からのみ default-language(GHC2024)/default-extensions を抽出する。新規 .hs は未登録のため GHC2024 由来の ImportQualifiedPost が効かず parse error になる。既存 .hs が pragma 無しで通るのは cabal 登録済みだから (= grep gate は大量 FP を生む。採用せず)。"
+  enforcement:
+    - type: short_rule
+      detail: "scripts/fitness/hook.sh の run_backend_checks 内 fourmolu 呼び出しに --ghc-opt -XImportQualifiedPost を追加 (単一点修正)"
+    - type: rubric_item
+      detail: "rubric/packs/haskell.md の補足節に『新規 .hs の postpositive qualified は hook の --ghc-opt で解決済み・pragma 都度付与不要』を記録"
+evidence_required:
+  - changed_files
+  - grep_output                      # 全 .hs で plain と --ghc-opt の exit-code diff = 0
+rollback_condition: "false_positive_rate > 0.15"   # フラグ追加で既存挙動が変わる (整形差が出る) なら rollback。全14 .hs で exit-code diff 0 を確認済みなので FP リスク極小
+not_chosen:
+  - "全 postpositive-qualified .hs に pragma 必須化する grep gate (既存 worker .hs の大半が pragma 無しで build 成立しており大量 FP。failure-miner の明示警告通り不採用)"
+verified_fires: true               # 新規未登録 .hs: plain で exit 102 (postpositive parse fail) → --ghc-opt -XImportQualifiedPost で exit 0 を実コマンドで確認。既存14 .hs は両条件で exit-code diff 0 (FP ゼロ)
+owner: "@lihs-ie"
+---
+# FC-2: Api.hs の WorkerApi 型に route を追加しても Application.hs server に handler を結線せず早期終了する。
+# wiring_manifest の co-change rule を補完し、route 数 ↔ handler 数の parity を静的に機械検査する。
+id: servant_route_handler_parity
+failure_class: dataflow_unwired      # route 型だけ追加・handler 未結線で done 報告 (build 待たず検出したい)
+trigger:
+  repeated_count: 3
+  sources: ["code_review", "implementer_early_exit"]
+rule:
+  summary: "Api.hs の WorkerApi route 数 (HTTP method combinator) と Application.hs server の handler 数 (:<|> 項+1) が一致すること。不一致で exit 1"
+  enforcement:
+    - type: grep_gate
+      detail: "scripts/verify-servant-route-handler-parity.sh が Api.hs の type WorkerApi ブロック内 method 数と Application.hs server の :<|> 項数+1 を比較。tree 全体を常時検査 (恒常的不変条件)"
+    - type: smoke
+      detail: "scripts/agent-policy-hook.sh が Api.hs/Application.hs 編集時に実行 + CI (.github/workflows/pr-gate.yml policy job の Servant route/handler parity step)"
+    - type: rubric_item
+      detail: "rubric/packs/haskell.md に Servant route↔handler parity 判定項目を追加。rubric/core/wiring.md に『implementer 終了メッセージを配線証拠にしない』節"
+evidence_required:
+  - changed_files
+  - grep_output
+rollback_condition: "false_positive_rate > 0.15"   # 超過時は method/handler カウントの正規表現を narrow に (継続行・コメント混入の誤カウントが出たら除外)
+verified_fires: true               # clean: routes=5/handlers=5 → exit 0。synthetic violation (Api.hs に route +1, handler 無し): routes=6/handlers=5 → exit 1。restore → exit 0 を実コマンドで確認
+owner: "@lihs-ie"
+---
+# FC-3: 重い Haskell per-edit hook で implementer が budget 切れ早期終了し、配線途中で離脱する。
+# memory 既出だが rule/rubric 未昇格。3 回再発で §6 (同 class 3 回) を超過 → 正本 + rubric に昇格。
+id: heavy_haskell_per_edit_hook_budget_exhaustion
+failure_class: process_early_exit    # per-edit hook 重量で配線未完了のまま離脱・偽完了報告
+trigger:
+  repeated_count: 3
+  sources: ["memory", "implementer_early_exit"]   # memory: haskell-per-edit-hook-burns-subagent-budget
+rule:
+  summary: "大 Haskell 配線は API 型 + handler + Types + cabal を一括編集してから build。implementer 早期終了時、orchestrator は終了メッセージを信用せず grep/build で landed を確認し残件だけ再投する"
+  enforcement:
+    - type: short_rule
+      detail: "正本 ~/.claude/docs/agent-policy.md §3 (Done when) に大配線一括編集 + 早期終了時 grep/build 確認の注記を追加。kit テンプレ AGENTS.md.tmpl の Wiring points 節にも同趣旨を追加 (kit 再適用で生成 AGENTS.md/CLAUDE.md に伝播)"
+    - type: rubric_item
+      detail: "rubric/core/wiring.md に『implementer 終了メッセージを配線証拠にしない (grep/build で landed 確認)』節を追加"
+evidence_required:
+  - changed_files
+propagation: "正本 + kit テンプレを更新済。生成物 AGENTS.md/CLAUDE.md は直接編集せず、次回 agent-policy-kit 再適用 (Detect→Diff→Apply) で伝播する"
+rollback_condition: "n/a (doc-only short_rule + rubric。executable gate ではないため FP exit-code は無い)"
+verified_fires: false              # doc-only 昇格 (exit-code firing は無し)
+owner: "@lihs-ie"
+---
+# FC-4: 空 __tests__ を作成して done 報告 + Playwright 未実行。done-evaluator が 1 回捕捉。
+id: empty_tests_dir_e2e_skipped_not_done
+failure_class: spec_violation        # テスト存在/空テスト緑/E2E 未実行を done 証拠に使う
+trigger:
+  repeated_count: 1
+  sources: ["done_evaluate"]
+rule:
+  summary: "空 __tests__ / テスト 0 件は done でない (1 件以上 pass 必須)。受入条件に E2E を含む Must は .agent-evidence に Playwright 実行ログを必須証拠とする"
+  enforcement:
+    - type: rubric_item
+      detail: "rubric/packs/nextjs.md に『空 __tests__ は done でない・1 件以上 pass 必須』『spec 受入に Playwright がある screen feature は E2E 実行を done 必須証拠に』の 2 項目。rubric/core/spec.md に『受入条件に E2E を含む Must は .agent-evidence に E2E 実行ログ必須』1 行"
+evidence_required:
+  - changed_files
+rollback_condition: "n/a (doc-only rubric。executable gate ではないため FP exit-code は無い)"
+verified_fires: false              # doc-only 昇格 (exit-code firing は無し)
+owner: "@lihs-ie"

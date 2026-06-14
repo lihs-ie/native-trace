@@ -27,3 +27,11 @@ runtime-verifier が使う。「コードが存在する」ではなく「入口
 
 > 「成功 toast が出る」は証拠にならない。**reload 後 / read-back / DB state diff** まで確認する。
 > 「E2E が緑」も、seed が derived 値を直焼きしているなら導出の証拠にならない。導出を走らせる経路を別途 assert する。
+
+## implementer 終了メッセージを配線証拠にしない
+- implementer の終了メッセージにある「次に handler を結線する」「あとは Application.hs に足すだけ」
+  のような **未来形の予告は配線証拠にならない**。実際に landed したのは予告の手前で止まっていることが多い
+  (重い per-edit hook で budget 切れ早期終了したケースで頻発)。
+- 終了メッセージを信用せず、**grep / build で実際に landed した結線点を確認する**。Servant なら
+  `scripts/verify-servant-route-handler-parity.sh` の route 数 ↔ handler 数一致、または `cabal build`
+  の成否で配線到達を yes/no 判定する。差分が残っていれば「未配線・continue」とし、残件だけ implementer に再投する。

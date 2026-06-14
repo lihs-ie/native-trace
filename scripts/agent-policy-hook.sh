@@ -40,6 +40,23 @@ $out"
     ;;
 esac
 
+# Servant の Api.hs (route 型) / Application.hs (handler 結線) を編集したら
+# route 数 ↔ handler 数の parity を tree 全体で検査する (FC-2)。
+# verify-servant-route-handler-parity.sh は単一ファイル引数ではなく両ファイルを常に読む設計のため、
+# トリガーは「編集ファイルが Api.hs / Application.hs か否か」で判定する。
+case "$rel" in
+  applications/backend/src/NativeTrace/Worker/Api.hs | \
+    applications/backend/src/NativeTrace/Worker/Application.hs)
+    if [ -f scripts/verify-servant-route-handler-parity.sh ]; then
+      if ! out="$(bash scripts/verify-servant-route-handler-parity.sh 2>&1)"; then
+        violations="${violations}
+== verify-servant-route-handler-parity.sh ==
+$out"
+      fi
+    fi
+    ;;
+esac
+
 if [ -n "$violations" ]; then
   {
     echo "agent-policy 違反があります。修正してください:"
