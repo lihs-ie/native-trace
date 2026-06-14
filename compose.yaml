@@ -67,7 +67,8 @@ services:
       # F0 連続性品質ゲート閾値（0.0–1.0, unvoiced 許容割合 — M-GRV-3）
       GOLDEN_QUALITY_THRESHOLD: "0.5"
       # 変換先 VCTK 話者 id（汎用ネイティブ声 — 「自分の声」でない, M-GRV-7）
-      GOLDEN_TARGET_VOICE: "p225"
+      # Nekochu/RVC-VCTK_Voice-sample に実在する女性話者（F/p231/Fp231.pth）
+      GOLDEN_TARGET_VOICE: "p231"
     volumes:
       # RVC/ContentVec/rmvpe モデル重みを volume で供給（Docker 非焼込 — M-GRV-10）
       - hf-cache-golden:/root/.cache/huggingface

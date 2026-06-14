@@ -19,10 +19,15 @@ logger = logging.getLogger(__name__)
 
 # HuggingFace Hub でモデルを DL するため hf_hub_download を使用する（M-GRV-10）
 _HF_REPO_ID = "Nekochu/RVC-VCTK_Voice-sample"
-_HF_MODEL_FILENAME_TEMPLATE = "{voice}.pth"
+# repo のレイアウトは F/{voice}/F{voice}.pth（女性 VCTK 話者）。retrieval index は
+# 可変ハッシュ名のため MVP では DL せず、.pth のみで推論する（retrieval なし）。
+_HF_MODEL_FILENAME_TEMPLATE = "F/{voice}/F{voice}.pth"
 
-# デフォルト話者
-DEFAULT_TARGET_VOICE = "p225"
+# repo に実在する女性 VCTK 話者（Nekochu/RVC-VCTK_Voice-sample の F/ 配下）
+_AVAILABLE_VOICES = ["p231", "p238", "p249", "p262", "p280", "p323", "p340"]
+
+# デフォルト話者（repo に実在するもの）
+DEFAULT_TARGET_VOICE = "p231"
 
 
 def _get_model_path(target_voice: str) -> Path:
@@ -101,15 +106,11 @@ class RvcEngine:
         try:
             Path(input_path).write_bytes(learner_audio_bytes)
 
-            # rvc-python RVCInference API
-            # RVCInference(model_path).infer_file(input, output, f0method) が基本 API
-            # CPU 推論: device="cpu", f0method="rmvpe"（MIT）
+            # rvc-python RVCInference API（実 signature: infer_file(input_path, output_path)）。
+            # f0method は set_params 経由で設定する。CPU 推論: device="cpu", f0method="rmvpe"（MIT）。
             rvc = RVCInference(model_path=str(model_path), device="cpu")
-            rvc.infer_file(
-                input_path=input_path,
-                output_path=output_path,
-                f0method="rmvpe",
-            )
+            rvc.set_params(f0method="rmvpe")
+            rvc.infer_file(input_path=input_path, output_path=output_path)
             converted_bytes = Path(output_path).read_bytes()
         except Exception as infer_error:
             raise RuntimeError(f"RVC inference failed: {infer_error}") from infer_error
@@ -130,31 +131,8 @@ def _safe_unlink(path: str) -> None:
 
 
 def get_available_voices() -> list[str]:
-    """VCTK モデルで利用可能な話者リストを返す（情報提供用）。
+    """golden サービスで利用可能な話者リストを返す（情報提供用）。
 
-    実際の利用可否は HF DL 成功に依存する。
+    Nekochu/RVC-VCTK_Voice-sample の F/ 配下に実在する女性 VCTK 話者のみ。
     """
-    return [
-        "p225", "p226", "p227", "p228", "p229",
-        "p230", "p231", "p232", "p233", "p234",
-        "p236", "p237", "p238", "p239", "p240",
-        "p241", "p243", "p244", "p245", "p246",
-        "p247", "p248", "p249", "p250", "p251",
-        "p252", "p253", "p254", "p255", "p256",
-        "p257", "p258", "p259", "p260", "p261",
-        "p262", "p263", "p264", "p265", "p266",
-        "p267", "p268", "p269", "p270", "p271",
-        "p272", "p273", "p274", "p275", "p276",
-        "p277", "p278", "p279", "p280", "p281",
-        "p282", "p283", "p284", "p285", "p286",
-        "p287", "p288", "p292", "p293", "p294",
-        "p295", "p297", "p298", "p299", "p300",
-        "p301", "p302", "p303", "p304", "p305",
-        "p306", "p307", "p308", "p310", "p311",
-        "p312", "p313", "p314", "p316", "p317",
-        "p318", "p323", "p326", "p329", "p330",
-        "p333", "p334", "p335", "p336", "p339",
-        "p340", "p341", "p343", "p345", "p347",
-        "p351", "p360", "p361", "p362", "p363",
-        "p364", "p374", "p376",
-    ]
+    return list(_AVAILABLE_VOICES)
