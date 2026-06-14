@@ -28,6 +28,7 @@ library
         NativeTrace.Worker.Application
         NativeTrace.Worker.Assessment
         NativeTrace.Worker.Catalog
+        NativeTrace.Worker.GoldenSpeakerClient
         NativeTrace.Worker.Scoring
         NativeTrace.Worker.Types
 

@@ -19,10 +19,12 @@ import NativeTrace.Worker.Assessment (
   validatePronunciationRequest,
  )
 import NativeTrace.Worker.Assessment qualified as Assessment
+import NativeTrace.Worker.GoldenSpeakerClient (convertGoldenSpeaker)
 import NativeTrace.Worker.Types (
   AssessmentRequest (..),
   AssessmentResponse,
   AudioMetadata (..),
+  GoldenSpeakerConversionDto,
   HealthResponse (..),
   ShadowingLagDto (..),
   VersionResponse (..),
@@ -49,7 +51,7 @@ application :: Application
 application = serve workerApi server
 
 server :: Server WorkerApi
-server = health :<|> version :<|> assessPronunciation :<|> shadowingLag
+server = health :<|> version :<|> assessPronunciation :<|> shadowingLag :<|> goldenSpeakerConvert
 
 health :: Handler HealthResponse
 health = pure (HealthResponse "ok")
@@ -99,6 +101,19 @@ shadowingLag multipart = do
       (shadowingMetaDurationMs meta)
   threshold <- liftIO readShadowingThresholdMs
   pure (buildShadowingLagDto result threshold)
+
+-- | golden speaker 音色変換（M-GRV-6 / ADR-012）。learner_audio を golden サービスへ渡し
+-- 変換結果（or 品質ゲート withhold）を返す。GOLDEN_SPEAKER_URL 未設定時は 503（M-GRV-9 軟無効化）。
+goldenSpeakerConvert :: MultipartData Mem -> Handler GoldenSpeakerConversionDto
+goldenSpeakerConvert multipart =
+  case lookupFile "learner_audio" multipart of
+    Right fileData ->
+      convertGoldenSpeaker
+        (LBS.toStrict (fdPayload fileData))
+        (fdFileCType fileData)
+    Left _ ->
+      throwError
+        (badRequest "missing_audio_part" "The 'learner_audio' part is required.")
 
 -- | shadowing-lag リクエストの metadata（referenceText / mimeType / durationMilliseconds）。
 data ShadowingMeta = ShadowingMeta

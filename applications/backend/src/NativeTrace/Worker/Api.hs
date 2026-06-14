@@ -5,7 +5,13 @@ module NativeTrace.Worker.Api (
 where
 
 import Data.Proxy (Proxy (..))
-import NativeTrace.Worker.Types (AssessmentResponse, HealthResponse, ShadowingLagDto, VersionResponse)
+import NativeTrace.Worker.Types (
+  AssessmentResponse,
+  GoldenSpeakerConversionDto,
+  HealthResponse,
+  ShadowingLagDto,
+  VersionResponse,
+ )
 import Servant.API (Get, JSON, Post, (:<|>), (:>))
 import Servant.Multipart (Mem, MultipartData, MultipartForm)
 
@@ -21,6 +27,10 @@ type WorkerApi =
       :> "shadowing"
       :> MultipartForm Mem (MultipartData Mem)
       :> Post '[JSON] ShadowingLagDto
+    :<|> "golden-speaker"
+      :> "convert"
+      :> MultipartForm Mem (MultipartData Mem)
+      :> Post '[JSON] GoldenSpeakerConversionDto
 
 workerApi :: Proxy WorkerApi
 workerApi = Proxy

@@ -26,6 +26,7 @@ module NativeTrace.Worker.Types (
   WorkerErrorBody (..),
   PerSegmentLagEntry (..),
   ShadowingLagDto (..),
+  GoldenSpeakerConversionDto (..),
 )
 where
 
@@ -578,3 +579,33 @@ instance ToJSON ShadowingLagDto where
         "recommendSlowPlayback" .= shadowingRecommendSlowPlayback dto,
         "thresholdMilliseconds" .= shadowingThresholdMilliseconds dto
       ]
+
+-- ---- Golden Speaker Conversion (M-GRV-6 / ADR-012) ----
+
+-- | worker が frontend に返す golden speaker 変換 DTO（M-GRV-6 / ADR-012）。
+-- golden サービスの GoldenConversionResponse をそのまま透過する（worker は proxy）。
+-- targetVoice は golden サービスが使用したボイスモデル識別子。
+data GoldenSpeakerConversionDto = GoldenSpeakerConversionDto
+  { goldenAudioBase64 :: Maybe Text,
+    goldenQualityGatePassed :: Bool,
+    goldenWithholdReason :: Maybe Text,
+    goldenTargetVoice :: Text
+  }
+  deriving (Show, Eq)
+
+instance ToJSON GoldenSpeakerConversionDto where
+  toJSON dto =
+    object
+      [ "audioBase64" .= goldenAudioBase64 dto,
+        "qualityGatePassed" .= goldenQualityGatePassed dto,
+        "withholdReason" .= goldenWithholdReason dto,
+        "targetVoice" .= goldenTargetVoice dto
+      ]
+
+instance FromJSON GoldenSpeakerConversionDto where
+  parseJSON = withObject "GoldenSpeakerConversionDto" $ \o ->
+    GoldenSpeakerConversionDto
+      <$> o .:? "audioBase64"
+      <*> o .: "qualityGatePassed"
+      <*> o .:? "withholdReason"
+      <*> o .: "targetVoice"
