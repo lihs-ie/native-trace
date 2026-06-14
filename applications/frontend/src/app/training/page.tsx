@@ -132,19 +132,15 @@ const formatNextPresentationDate = (isoString: string): string => {
 // ---- Component ----
 
 /**
- * sessionStorage から training-weakness-profile-id を読んで初期 HvptPhase を決める。
- * lazy initializer として使うため、レンダー時に 1 回だけ呼ばれる。
- * SSR では sessionStorage が存在しないため try/catch で保護する。
+ * 初期 HvptPhase を決める。
+ *
+ * SSR と初回ハイドレーションでは sessionStorage を参照できないため、決定論的に `loading` を返す。
+ * lazy initializer 内で sessionStorage を読むと SSR (window 無し → no_weakness_profile) と
+ * client (window 有り → loading) で初期描画が割れ hydration mismatch になるため、ここでは読まない。
+ * 実際の phase (no_weakness_profile / session_active) は mount 後の初期化 useEffect で解決する。
  */
 function buildInitialHvptPhase(): HvptPhase {
-  try {
-    const cached =
-      typeof window !== "undefined" ? sessionStorage.getItem("training-weakness-profile-id") : null;
-    if (!cached) return { type: "no_weakness_profile" };
-    return { type: "loading" };
-  } catch {
-    return { type: "no_weakness_profile" };
-  }
+  return { type: "loading" };
 }
 
 function readCachedWeaknessProfileId(): string | null {
@@ -309,6 +305,12 @@ export default function TrainingPage() {
     if (profileId) {
       setTimeout(() => {
         void startHvptSession(profileId);
+      }, 0);
+    } else {
+      // profile 未取得 (診断未完了) は loading からガード表示へ解決する。
+      // effect 内の同期 setState を避けるため setTimeout 0 で非同期化する (profile 分岐と同方針)。
+      setTimeout(() => {
+        setHvptPhase({ type: "no_weakness_profile" });
       }, 0);
     }
   }, [startHvptSession]);
