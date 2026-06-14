@@ -105,9 +105,17 @@ because the research evidence is weak, the feature is treated as a verification 
 
 Positive:
 
-- The license posture stays clean: RVC is MIT (permissive, redistributable), so the golden speaker
-  service carries no GPL-family encumbrance, unlike the parselmouth case isolated in ADR-006. The
-  frontend and worker remain permissively licensed.
+- The license posture is contained: RVC itself is MIT (permissive, redistributable). The frontend and
+  worker remain permissively licensed, and any GPL encumbrance is confined to the golden speaker
+  service at its HTTP boundary.
+  **Amendment (2026-06-14):** implementation revealed that the chosen CPU-installable package
+  `rvc-python` transitively pulls `praat-parselmouth` (GPL-3.0) as a dependency. The golden speaker
+  service is therefore **GPL-isolated at the service boundary — the same posture as the
+  python-analyzer service (ADR-006), not GPL-free** as this ADR originally stated. This is acceptable
+  under the ADR-006 precedent (GPL contained in a separate service reached only over HTTP, no GPL
+  import leaking into frontend/worker/python-analyzer), but the "no GPL-family encumbrance" framing
+  above was wrong and is corrected here. The golden service's own code uses librosa (ISC) for the F0
+  quality gate and does not import parselmouth directly; parselmouth arrives only via rvc-python.
 - CPU inference keeps the local MVP usable without GPU; GPU is needed only to train a learner voice
   model, which is the genuinely optional step.
 - Reusing the existing `.ab-srcs` switch and `--src-golden` token means the feature lands in the model
@@ -164,8 +172,12 @@ Alternatives considered:
 - Author: lihs
 - Approval date: 2026-06-13
 - Approver:
-- Last updated: 2026-06-13
-- Changes: Initial entry. Related: ADR-007 (Training Context; golden speaker's usage logs and effect
+- Last updated: 2026-06-14
+- Changes: Initial entry (2026-06-13). Amended 2026-06-14: corrected the license posture — the CPU
+  RVC stack (rvc-python) transitively pulls praat-parselmouth (GPL-3.0), so the golden speaker service
+  is GPL-isolated at its service boundary (ADR-006 pattern), not GPL-free; the CPU MVP converts to a
+  generic VCTK native voice, not the learner's own voice (self-voice requires GPU training, deferred
+  per the GPU-only path). Related: ADR-007 (Training Context; golden speaker's usage logs and effect
   verification belong to the training/verification loop), ADR-005 (Python service onion architecture
   and service separation; same-PR fitness-function rule), ADR-006 (license-boundary judgment precedent
   and the no-import-outside enforcement pattern), ADR-001 (native TTS via Kokoro as the first model

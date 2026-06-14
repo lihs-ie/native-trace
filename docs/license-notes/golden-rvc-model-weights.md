@@ -42,8 +42,23 @@ Author: lihs.
 | librosa (F0 via pyin) | https://librosa.org/ | ISC | Compliant |
 | numpy | https://numpy.org/ | BSD-3-Clause | Compliant |
 
-**Note**: parselmouth (GPL-3.0) is NOT used in the golden-speaker service.
-F0 extraction uses librosa pyin (ISC license) to maintain license-clean status (ADR-012).
+**Note**: the golden-speaker service's **own code** uses librosa pyin (ISC) for F0
+extraction in the quality gate, and does **not** import parselmouth directly.
+
+## Transitive GPL dependency (rvc-python → praat-parselmouth)
+
+| Component | Source | License | REQ-NF-101 |
+|-----------|--------|---------|------------|
+| praat-parselmouth (transitive dep of rvc-python) | https://github.com/YannickJadoul/Parselmouth | GPL-3.0 | Service-isolated |
+| fairseq (transitive dep of rvc-python) | https://github.com/facebookresearch/fairseq | MIT | Compliant |
+
+**rvc-python pins `praat-parselmouth>=0.4.2` (GPL-3.0) as a dependency**, so the GPL is
+present in the golden-speaker service's dependency tree even though the service code does
+not import it. This is handled the same way as parselmouth in the python-analyzer service
+(ADR-006): **GPL is isolated inside a single service reached only over an HTTP boundary**, and
+no GPL import leaks into the frontend, the Haskell worker, or python-analyzer (enforced by
+`.ast-grep/rules/no-rvc-outside-golden-speaker.yml`). ADR-012 was amended (2026-06-14) to
+correct its original "no GPL-family encumbrance" claim accordingly.
 
 ## Model Weight Supply
 
@@ -54,7 +69,11 @@ They are supplied at runtime via:
 
 ## Compliance Summary
 
-All components used in the golden-speaker service are Apache-2.0 / MIT / BSD / CC BY,
-which complies with REQ-NF-101. No GPL-family component is included.
-Any distribution model change (SaaS launch, image conveyance to third parties)
-must re-confirm license terms per ADR-012 Compliance section.
+The model weights (target voice, content encoder, pitch) and the golden-speaker service's
+own runtime code are Apache-2.0 / MIT / BSD / CC BY / ISC, complying with REQ-NF-101. The
+one GPL-3.0 component (praat-parselmouth) enters transitively via rvc-python and is
+**isolated inside the golden-speaker service at its HTTP boundary** (ADR-006 pattern;
+ADR-012 amended 2026-06-14) — it does not leak into the frontend, worker, or python-analyzer.
+Any distribution model change (SaaS launch, image conveyance to third parties) must re-confirm
+license terms — including the GPL obligations of the isolated golden-speaker service — per the
+ADR-012 Compliance section.
