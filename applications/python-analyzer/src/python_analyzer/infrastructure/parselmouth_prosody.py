@@ -42,14 +42,37 @@ def extract_f0_contour(
         return F0Contour(times_milliseconds=(), values_hz=())
 
     import io
+    import subprocess
 
     import numpy as np
     import soundfile as sf
 
+    def _decode_samples(raw: bytes) -> tuple[object, int]:
+        # soundfile(libsndfile) は WAV/FLAC 等しか読めず、ブラウザ録音の WebM/OGG は読めない。
+        # まず soundfile を試し、失敗したら ffmpeg で WAV PCM に変換して読み直す
+        # (ffmpeg は入力フォーマットをストリームから自動判定するため mime_type 不要)。
+        try:
+            return sf.read(io.BytesIO(raw), dtype="float64")
+        except Exception:
+            result = subprocess.run(
+                [
+                    "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
+                    "-i", "pipe:0", "-f", "wav", "-acodec", "pcm_s16le", "pipe:1",
+                ],
+                input=raw,
+                capture_output=True,
+                timeout=30,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"ffmpeg デコード失敗: {result.stderr.decode(errors='replace')}"
+                )
+            return sf.read(io.BytesIO(result.stdout), dtype="float64")
+
     try:
-        # parselmouth.Sound は BytesIO を受け付けないため、soundfile でデコードして
+        # parselmouth.Sound は BytesIO を受け付けないため、デコードして
         # numpy 波形 + サンプリングレートから Sound を構築する。
-        samples, decoded_rate = sf.read(io.BytesIO(audio_bytes), dtype="float64")
+        samples, decoded_rate = _decode_samples(audio_bytes)
         # ステレオはモノにまとめる
         if samples.ndim > 1:
             samples = samples.mean(axis=1)
