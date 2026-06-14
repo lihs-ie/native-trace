@@ -249,7 +249,9 @@ export const ossWorkerSuccessResponseSchema = z.object({
   scores: scoresSchema,
   summary: summarySchema,
   findings: z.array(findingSchema),
-  segments: z.array(segmentSchema).min(1, "segments は 1 件以上必要です"),
+  // segments は空配列を許容する: 発話がほぼ検出されない低品質音声では worker が status="low_quality"
+  // と空 segments を返す。空を schema hard fail にせず、response-mapper で low_quality_audio として扱う。
+  segments: z.array(segmentSchema),
   metadata: workerMetadataSchema,
   // C3-c トップレベル追加フィールド
   perPhonemeGop: z

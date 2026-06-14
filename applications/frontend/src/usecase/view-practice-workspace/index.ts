@@ -314,7 +314,14 @@ export const createViewPracticeWorkspace =
                 const derivedStatus = jobsNonEmpty
                   ? deriveAnalysisRunStatus(jobsNonEmpty)
                   : "queued";
-                const failedJob = jobPage.items.find((j) => j.type === "failed");
+                // 失敗 errorCode は low_quality_audio を優先する。comparison mode で cloud(404)と
+                // oss(low_quality_audio)が両方失敗したとき、cloud のエンジン失敗より「発話を検出
+                // できなかった」を優先表示して UI が再録音導線(low_quality)を出せるようにする。
+                const failedJobs = jobPage.items.filter((j) => j.type === "failed");
+                const lowQualityJob = failedJobs.find(
+                  (j) => j.type === "failed" && j.lastErrorCode === "low_quality_audio",
+                );
+                const failedJob = lowQualityJob ?? failedJobs[0];
                 const errorCodeValue =
                   derivedStatus === "failed" && failedJob && failedJob.type === "failed"
                     ? (failedJob.lastErrorCode ?? null)

@@ -99,10 +99,10 @@ describe("oss-worker schema", () => {
     expect(result.success).toBe(true);
   });
 
-  it("rejects fixture without segments", () => {
+  it("accepts empty segments (low_quality は response-mapper で判定するため schema では許容)", () => {
     const fixture = { ...workerFixture, segments: [] };
     const result = ossWorkerSuccessResponseSchema.safeParse(fixture);
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
   });
 });
 
@@ -164,8 +164,9 @@ describe("oss-worker response-mapper", () => {
     }
   });
 
-  // low_quality パステスト: Haskell worker が status:"low_quality" を返したとき draft.status が "low_quality" になること
-  it("maps status=low_quality from worker response to draft.status", () => {
+  // low_quality パス: worker が status:"low_quality" を返したとき low_quality_audio エンジン失敗にする
+  // (schema hard fail でなく graceful。run-assessment-job が errorCode=low_quality_audio に写像し UI が再録音導線を出す)
+  it("maps status=low_quality from worker response to low_quality_audio engine failure", () => {
     const engine = makeEngine();
     const lowQualityFixture = {
       ...workerFixture,
@@ -180,9 +181,38 @@ describe("oss-worker response-mapper", () => {
       tokenizerVersion: "v1",
     });
 
-    expect(result.isOk()).toBe(true);
-    if (result.isOk()) {
-      expect(result.value.status).toBe("low_quality");
+    expect(result.isErr()).toBe(true);
+    if (result.isErr()) {
+      expect(result.error.type).toBe("assessmentEngineFailed");
+      if (result.error.type === "assessmentEngineFailed") {
+        expect(result.error.reason).toBe("low_quality_audio");
+        expect(result.error.failureKind).toBe("nonRetryable");
+      }
+    }
+  });
+
+  // 発話がほぼ検出されず segments が空のとき low_quality_audio エンジン失敗にする (再録音導線)
+  it("maps empty segments to low_quality_audio engine failure", () => {
+    const engine = makeEngine();
+    const emptySegmentsFixture = {
+      ...workerFixture,
+      segments: [],
+    };
+    const result = mapOssWorkerResponse({
+      status: 200,
+      rawBody: emptySegmentsFixture,
+      capturedAt: new Date("2026-01-01T00:00:00Z"),
+      engine,
+      assessmentSchemaVersion: "1",
+      tokenizerVersion: "v1",
+    });
+
+    expect(result.isErr()).toBe(true);
+    if (result.isErr()) {
+      expect(result.error.type).toBe("assessmentEngineFailed");
+      if (result.error.type === "assessmentEngineFailed") {
+        expect(result.error.reason).toBe("low_quality_audio");
+      }
     }
   });
 

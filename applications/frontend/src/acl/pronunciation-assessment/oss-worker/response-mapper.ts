@@ -70,6 +70,16 @@ export const mapOssWorkerResponse = (
     );
   }
 
+  // 低品質音声の graceful 扱い: worker が status="low_quality" を返す、または発話がほぼ検出されず
+  // segments が空のとき、schema hard fail にせず low_quality_audio エンジン失敗として返す。
+  // run-assessment-job が reason==="low_quality_audio" を errorCode に写像し、UI が再録音導線を出す。
+  // nonRetryable: 同じ音声を再解析しても結果は変わらないためリトライで run を滞留させない。
+  if (parsed.data.status === "low_quality" || parsed.data.segments.length === 0) {
+    return err(
+      assessmentEngineFailed(String(input.engine.type), "low_quality_audio", "nonRetryable"),
+    );
+  }
+
   return mapSuccessResponse({
     response: parsed.data,
     rawResponse,
