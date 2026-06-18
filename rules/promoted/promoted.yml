@@ -179,3 +179,77 @@ evidence_required:
 rollback_condition: "n/a (doc-only rubric。executable gate ではないため FP exit-code は無い)"
 verified_fires: false              # doc-only 昇格 (exit-code firing は無し)
 owner: "@lihs-ie"
+---
+# FC-5: worker の外部サービス HTTP client が responseTimeout 未設定で http-client default 30s に依存し、
+# 重い ML/推論サービスで ResponseTimeout を「解析失敗」に化けさせる。
+# AnalyzerClient は修正済だが GoldenSpeakerClient が同型未修正 (live false-negative) だった。
+id: worker_http_client_explicit_timeout
+failure_class: dataflow_unwired      # 正常応答直前に worker が諦め、成功すべき経路が失敗に化ける
+trigger:
+  repeated_count: 2                  # AnalyzerClient (修正済) + GoldenSpeakerClient (未修正) の 2 occurrence
+  sources: ["code_review", "ci"]     # incident 2026-06-14-worker-http-client-default-30s-timeout
+rule:
+  summary: "Worker/*Client.hs で newManager tlsManagerSettings + httpLbs を使う外部サービス呼び出しは Request に responseTimeout を明示し env (XXX_TIMEOUT_SECONDS) から読む。未設定の default 30s 依存を禁止"
+  enforcement:
+    - type: grep_gate
+      detail: "scripts/verify-worker-http-client-timeout.sh が applications/backend/src/NativeTrace/Worker/*Client.hs を走査。newManager tlsManagerSettings を含むファイルに responseTimeout が無ければ exit 1。tree 全体を常時検査 (恒常的不変条件、BSD/GNU 両対応の find + grep -qF)"
+    - type: smoke
+      detail: "scripts/agent-policy-hook.sh が worker の *Client.hs 編集時に実行 + CI (.github/workflows/pr-gate.yml policy job の Worker HTTP client explicit responseTimeout step)"
+    - type: rubric_item
+      detail: "rubric/packs/haskell.md に『Worker HTTP client responseTimeout 明示』+『Timeout ladder 単調性 (frontend OSS_WORKER_TIMEOUT_MS ≥ worker XXX_TIMEOUT_SECONDS×1000 ≥ 下流 p95)』。rubric/core/wiring.md に『real_entrypoint を下流サービスのパスと取り違えない (worker inbound は POST /v1/pronunciation-assessments、/v1/analyze は analyzer 側)』節"
+evidence_required:
+  - changed_files
+  - grep_output
+rollback_condition: "false_positive_rate > 0.15"   # 超過時は対象を「外部 HTTP する client」に narrow (現状 newManager tlsManagerSettings の有無で gate 済。manager を立てない pure helper は対象外なので FP リスク極小)
+verified_fires: true               # clean (golden 修正後): exit 0。synthetic violation (GoldenSpeakerClient の responseTimeout 行を一時削除): exit 1 + 正しいエラー。restore → exit 0 を実コマンドで確認。修正前の現状 tree でも GoldenSpeakerClient 未修正を exit 1 で検出済 (live false-negative の実証)
+owner: "@lihs-ie"
+---
+# CAND-A: default (no-arg) mode の verify-*.sh が committed diff (base...HEAD) のみで changed を作るため、
+# 未コミット/untracked のみの作業ツリーで committed diff が空だと走査対象ゼロで空振り exit 0 (vacuous pass)。
+# committed diff が空のときだけ working-tree 変更にフォールバックする (CI は常に非空なので CI-inert)。
+id: verify_gate_working_tree_blindspot
+failure_class: harness_false_negative   # process: 決定論ゲートが未コミット作業を検査せず空振り green を返す (gate-blindspot)
+trigger:
+  repeated_count: 2                  # memory verify-scripts-skip-untracked (2026-06-11) + this-session (2026-06-17/18)
+  sources: ["memory", "this_session"]
+rule:
+  summary: "verify-{no-prod-doubles,test-bypass,no-stub-placeholder,wiring}.sh の default モードで committed diff (base...HEAD) が空なら working-tree (git diff HEAD + git ls-files --others) にフォールバックして未コミット/untracked も検査する"
+  root_cause: "default モードは changed を base...HEAD (committed diff、base=origin/main) で作る。未コミット/untracked のみの作業ツリーで base に対する committed diff が空だと走査対象ゼロになり vacuously exit 0。per-file ($1) モード (fitness hook) と CI (commit 済みブランチで base...HEAD 非空) は影響なし。default モードの未コミット作業だけが盲点。"
+  enforcement:
+    - type: short_rule
+      detail: "4 スクリプト ×3 location (native-trace scripts/, dotfiles scripts/, kit templates executable_*) の default else 分岐に『committed diff 空なら working-tree フォールバック』を追加。changed 算出後・早期 exit 前 (verify-wiring は line 25 の early exit 前) に挿入。per-file 分岐は不変"
+    - type: short_rule
+      detail: "正本 ~/.claude/docs/agent-policy.md §3 (Done when) の『working-tree 状態で回す決定論ゲートは未コミット変更も検査対象に含める』を workspace/dotfiles 側 source にも反映 (live ~/.claude には既存)"
+evidence_required:
+  - changed_files
+  - grep_output                      # 全 12 copy で fallback ブロックが byte-identical (md5 一致) を確認済
+rollback_condition: "false_positive_rate > 0.15"   # 超過時は working-tree フォールバックに generated/ 等の除外を追加 (現状 test_dir_re/generated/ の既存除外と code_ext_re で絞り済み)
+verified_fires: true               # BASE_REF=HEAD で committed diff を空に → 修正前 (committed HEAD 版) exit 0 (vacuous pass=bug 再現)、修正後 violation で exit 1、clean で exit 0、per-file ($1) exit 0、CI-mode (origin/main base, 785 file 非空) exit 0 で fallback inert。no-prod-doubles でも cross-check (violation exit 1 / clean exit 0)。証跡 .agent-evidence/self-improve-fire-check-2026-06-18.txt
+owner: "@lihs-ie"
+---
+# CAND-B: spec-curator が worker の inbound entrypoint (POST :8787/v1/pronunciation-assessments) と
+# worker が呼ぶ下流 route (/v1/analyze on analyzer :8788, /v1/convert on golden) を取り違える。
+# prose grep gate は FP 過多 (spec は下流 route を正当に列挙する) で不可 → doc-only (rubric + 正本)。
+id: spec_curator_worker_route_confusion
+failure_class: spec_violation        # real_entrypoint に下流 route を記録し inbound と取り違える
+trigger:
+  repeated_count: 2                  # incident 2026-06-14 (done-evaluator が wiring-map entrypoint 取り違え) + this-session の spec draft
+  sources: ["incident", "spec_draft"]
+rule:
+  summary: "spec-curator は real_entrypoint に対象サービスの inbound route を記録し、そのサービスが呼ぶ下流 route を inbound entrypoint と取り違えない。worker は inbound = POST /v1/pronunciation-assessments (8787)、/v1/analyze (8788) / /v1/convert は下流"
+  enforcement:
+    - type: rubric_item
+      detail: "rubric/core/wiring.md の real_entrypoint 節に spec-curator 向けチェック行を追加 (worker inbound = POST /v1/pronunciation-assessments、下流 route を inbound に記録しない)"
+    - type: rubric_item
+      detail: "rubric/core/spec.md の判定原則に Must 正規化行を追加 (worker feature の spec は real entrypoint を POST /v1/pronunciation-assessments と明記)"
+    - type: short_rule
+      detail: "正本 ~/.claude/docs/agent-policy.md §2 に spec-curator 向け 1 行 (generic): real_entrypoint に対象サービスの inbound route を記録し下流呼び出し route を inbound と取り違えない。kit templates rubric/core/{wiring,spec}.md にも generic 版を追加 (kit 再適用で各 repo に伝播)"
+not_chosen:
+  - "spec 散文への grep gate (spec は下流 route を正当に列挙するため FP 過多。failure-miner の明示警告通り不採用)"
+eval_deferred:
+  reason: "§6 しきい値 (同 failure class 3 回) で eval 作成。現在 2 回 (incident 2026-06-14 + this-session spec draft) のため eval は 3 回目の再発まで保留 (evals/ ファイルは作成しない)"
+evidence_required:
+  - changed_files
+rollback_condition: "n/a (doc-only rubric + 正本。executable gate ではないため FP exit-code は無い)"
+verified_fires: false              # doc-only 昇格 (exit-code firing は無し)
+owner: "@lihs-ie"

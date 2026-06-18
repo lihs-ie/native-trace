@@ -18,6 +18,11 @@ else
   else
     changed="$(git diff --name-only --diff-filter=ACMRT HEAD~1 2>/dev/null || git ls-files)"
   fi
+  if [ -z "$changed" ]; then
+    # no committed diff vs base — fall back to working-tree changes so uncommitted/untracked
+    # work is not vacuously passed (CI always has a committed diff, so this branch is CI-inert).
+    changed="$(git diff --name-only --diff-filter=ACMRT HEAD 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null)"
+  fi
 fi
 
 test_dir_re='(^|/)(test|tests|__tests__|spec|specs|fixtures|testdata|mocks?|stubs?|fakes?)(/|$)'

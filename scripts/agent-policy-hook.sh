@@ -57,6 +57,22 @@ $out"
     ;;
 esac
 
+# Worker の外部サービス HTTP クライアント (*Client.hs) を編集したら responseTimeout 明示を
+# tree 全体で検査する (incident 2026-06-14-worker-http-client-default-30s-timeout)。
+# verify-worker-http-client-timeout.sh は単一ファイル引数ではなく worker 配下を常に読む設計のため、
+# トリガーは「編集ファイルが worker の *Client.hs か否か」で判定する。
+case "$rel" in
+  applications/backend/src/NativeTrace/Worker/*Client.hs)
+    if [ -f scripts/verify-worker-http-client-timeout.sh ]; then
+      if ! out="$(bash scripts/verify-worker-http-client-timeout.sh 2>&1)"; then
+        violations="${violations}
+== verify-worker-http-client-timeout.sh ==
+$out"
+      fi
+    fi
+    ;;
+esac
+
 if [ -n "$violations" ]; then
   {
     echo "agent-policy 違反があります。修正してください:"

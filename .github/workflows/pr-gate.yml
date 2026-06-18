@@ -36,6 +36,8 @@ jobs:
         run: bash scripts/verify-haskell-warnings.sh
       - name: Servant route/handler parity (Api.hs <-> Application.hs)
         run: bash scripts/verify-servant-route-handler-parity.sh
+      - name: Worker HTTP client explicit responseTimeout (*Client.hs)
+        run: bash scripts/verify-worker-http-client-timeout.sh
       - name: Allowlist not expired
         run: bash scripts/verify-allowlist-expiry.sh
       - name: Upload policy evidence

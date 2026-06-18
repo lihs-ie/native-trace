@@ -22,6 +22,11 @@ if git rev-parse --verify "$base" >/dev/null 2>&1; then
 else
   changed="$(git diff --name-only --diff-filter=ACMRT HEAD~1 2>/dev/null || true)"
 fi
+if [ -z "$changed" ]; then
+  # no committed diff vs base — fall back to working-tree changes so uncommitted/untracked
+  # work is not vacuously passed (CI always has a committed diff, so this branch is CI-inert).
+  changed="$(git diff --name-only --diff-filter=ACMRT HEAD 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null)"
+fi
 [ -z "$changed" ] && { echo "verify-wiring: no changes (OK)"; exit 0; }
 
 waivers=""

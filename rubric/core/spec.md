@@ -19,6 +19,9 @@ spec-grader が使う。仕様違反は diff の品質問題ではなく **contr
 - 証拠が不十分なら PASS ではなく **FAIL ("missing evidence")**。
 - 指摘は spec の Must 番号・コードパス・artifact に紐付ける (抽象的懸念だけで判定しない)。
 - 「モック禁止」は仕様違反 rubric・静的 gate・review guideline に **重複登録** されている (冗長配置が正解)。
+- **worker feature の spec は受入条件の real entrypoint を `POST /v1/pronunciation-assessments` (port 8787)
+  と明記する**。worker が呼ぶ下流サービス (`/v1/analyze` (analyzer :8788) / `/v1/convert` (golden) 等) の
+  route を worker の inbound entrypoint と取り違えない (incident 2026-06-14 + spec draft で 2 回)。
 - **受入条件 (acceptance) に E2E (Playwright 等) を含む Must は、`.agent-evidence/` に E2E の実行ログ
   (pass 結果 / trace) を必須証拠とする。** テストファイルの存在・空テストの緑・「E2E スキップで unit 緑」は
   Must の充足証拠にしない。E2E が未実行なら PASS ではなく FAIL ("missing evidence") とする (FC-4)。

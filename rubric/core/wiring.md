@@ -28,6 +28,19 @@ runtime-verifier が使う。「コードが存在する」ではなく「入口
 > 「成功 toast が出る」は証拠にならない。**reload 後 / read-back / DB state diff** まで確認する。
 > 「E2E が緑」も、seed が derived 値を直焼きしているなら導出の証拠にならない。導出を走らせる経路を別途 assert する。
 
+## real_entrypoint を下流サービスのパスと取り違えない
+- worker の **inbound real entrypoint** は `POST :8787/v1/pronunciation-assessments` (Servant `WorkerApi`)。
+  `/v1/analyze` / `/v1/shadowing-lag` / `/v1/convert` は worker が呼ぶ **下流サービス (analyzer / golden) の
+  パス** であり、worker の inbound entrypoint ではない。wiring-map の `real_entrypoint` には worker の
+  inbound POST を記録し、下流クライアントが叩くパスと混同しない (incident 2026-06-14 で done-evaluator が
+  spec / wiring-map の entrypoint を analyzer パスと取り違えていたのを指摘)。
+- runtime-verify は real entrypoint (`POST :8787/v1/pronunciation-assessments`) から流して観測する。
+  下流パスへ直 POST した結果は、worker の入口接続・中継接続の証拠にならない。
+- **spec-curator チェック**: spec の受入条件 / wiring-map の `real_entrypoint` には worker の inbound
+  = `POST /v1/pronunciation-assessments` (port 8787) を記録し、`/v1/analyze` (analyzer :8788) /
+  `/v1/convert` (golden) 等の worker が呼ぶ下流サービスの route を worker の inbound entrypoint として
+  記録しない (incident 2026-06-14 + spec draft の取り違え 2 回)。
+
 ## implementer 終了メッセージを配線証拠にしない
 - implementer の終了メッセージにある「次に handler を結線する」「あとは Application.hs に足すだけ」
   のような **未来形の予告は配線証拠にならない**。実際に landed したのは予告の手前で止まっていることが多い
