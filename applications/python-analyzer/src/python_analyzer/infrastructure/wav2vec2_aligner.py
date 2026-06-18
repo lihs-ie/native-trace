@@ -24,6 +24,7 @@ from python_analyzer.domain.phoneme import (
     PhonemeLabel,
 )
 from python_analyzer.infrastructure.audio_energy import (
+    compute_speech_active_rms,
     compute_speech_duration_seconds_from_energy,
 )
 
@@ -290,25 +291,29 @@ class Wav2Vec2Aligner:
     def measure_audio_quality(self, audio: AudioInput) -> tuple[float, float]:
         """録音品質を計測する。
 
-        16kHz モノラル waveform の RMS から mean dBFS を計算し、
+        16kHz モノラル waveform の発話区間フレーム RMS から mean dBFS を計算し、
         エネルギーベース VAD で実音声長（秒）を計測する。
 
-        dBFS = 20 * log10(RMS)。無音（RMS≒0）は -100.0 dBFS を返す。
+        mean_dbfs = 20 * log10(speech_active_rms)。
+        発話区間フレームが 0 件（no-speech）の場合は -100.0 dBFS を返す（番兵値）。
+        発話区間フレームは audio_energy.compute_speech_active_rms で算出する
+        （energy-VAD フレーミング: 320 サンプル / 20ms、ENERGY_SILENCE_RMS_THRESHOLD）。
+        全区間 RMS の代わりに発話区間 RMS を使うことで、語間ポーズや末尾無音による
+        ラウドネス希釈を除去し、明瞭発話の誤棄却を防ぐ（ADR-015 D1）。
         speechDurationSeconds: compute_speech_duration_seconds_from_energy で算出する。
-        CTC 非 blank フレーム数は音素検出数に近く実発話時間と桁が乖離するため使わない。
-        エネルギーフレームの RMS > _ENERGY_SILENCE_RMS_THRESHOLD のフレームが発話区間。
 
         Returns:
             (mean_dbfs, speech_duration_seconds)
         """
         waveform = self._load_audio_tensor(audio)
-        rms = float(waveform.pow(2).mean().sqrt().item())
-        if rms < 1e-9:
+        waveform_numpy = waveform.numpy()
+
+        speech_active_rms = compute_speech_active_rms(waveform_numpy)
+        if speech_active_rms < 1e-9:
             mean_dbfs = -100.0
         else:
-            mean_dbfs = 20.0 * math.log10(rms)
+            mean_dbfs = 20.0 * math.log10(speech_active_rms)
 
-        waveform_numpy = waveform.numpy()
         speech_duration_seconds = compute_speech_duration_seconds_from_energy(waveform_numpy)
 
         return mean_dbfs, speech_duration_seconds

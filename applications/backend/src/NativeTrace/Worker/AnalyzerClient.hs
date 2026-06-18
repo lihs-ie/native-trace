@@ -266,7 +266,9 @@ data AnalyzerResult = AnalyzerResult
     analyzedInterWordSilences :: [InterWordSilence],
     analyzedSchwaRealizations :: [SchwaRealization],
     analyzedSpeechRatePhonemePerSecond :: Double,
-    -- | 音声の平均 dBFS（RMS）。python-analyzer が計測して付与する。
+    -- | 発話区間フレーム RMS の dBFS（代表的な発話ラウドネス）。python-analyzer が計測して付与する。
+    -- ADR-015 D1 で全区間 RMS から発話区間 RMS（speech-active frame RMS）へ意味を移行した。
+    -- wire 名 "meanDbfs" / 型 Double は変更なし。発話フレームなし（no-speech）時は -100.0 dBFS。
     analyzedMeanDbfs :: Double,
     -- | 実音声長（秒）。強制アライメントの非 blank フレームから計算する。
     analyzedSpeechDurationSeconds :: Double,

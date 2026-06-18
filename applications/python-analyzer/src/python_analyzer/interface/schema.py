@@ -179,7 +179,15 @@ class AnalysisResponse(BaseModel):
     schwaRealizations: list[SchwaRealizationResponse]
     speechRatePhonemePerSecond: float
     # 録音品質計測値（採点はしない。低品質判定は Haskell worker が行う）。
-    meanDbfs: float = Field(default=0.0, description="波形 RMS の dBFS 値（0 dBFS = フルスケール）")
+    meanDbfs: float = Field(
+        default=0.0,
+        description=(
+            "発話区間フレーム RMS の dBFS 値（代表的な発話ラウドネス; ADR-015 D1）。"
+            "energy-VAD（320 サンプル / 20ms フレーム）で抽出した発話区間のみの RMS を"
+            "20 * log10(rms) で変換する。語間ポーズや末尾無音は除外される。"
+            "発話区間フレームが 0 件（no-speech）の場合は -100.0 dBFS（番兵値）。"
+        ),
+    )
     speechDurationSeconds: float = Field(
         default=0.0, description="forced_align 非 blank フレームから推定した実音声長（秒）"
     )

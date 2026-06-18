@@ -45,8 +45,14 @@ class AlignerPort(Protocol):
     def measure_audio_quality(self, audio: AudioInput) -> tuple[float, float]:
         """録音品質を計測する。
 
-        16kHz モノラル waveform から RMS を計算して dBFS に変換し、
-        forced_align の非 blank フレーム数から実音声長（秒）を推定する。
+        16kHz モノラル waveform の発話区間フレーム（energy-VAD: 320 サンプル / 20ms、
+        ENERGY_SILENCE_RMS_THRESHOLD）の RMS から mean_dbfs を計算し、
+        実音声長（秒）を計測する。
+
+        mean_dbfs は発話区間フレームの RMS を dBFS 変換した値であり、語間ポーズや
+        末尾無音を除いた代表的な発話ラウドネスを示す（ADR-015 D1）。
+        発話区間フレームが 0 件（no-speech）の場合は -100.0 dBFS を返す（番兵値）。
+        wire 名: meanDbfs / Haskell フィールド: analyzedMeanDbfs（名前・型は不変）。
 
         Returns:
             (mean_dbfs, speech_duration_seconds)

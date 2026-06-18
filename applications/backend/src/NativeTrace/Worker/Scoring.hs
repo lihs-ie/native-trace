@@ -134,8 +134,11 @@ speechRateLowerThreshold = 3.0
 
 -- ---- 音質ガード定数（calibratable threshold） ----
 
+-- | 発話区間フレーム RMS の dBFS 下限。全区間 RMS から発話区間 RMS に変更（ADR-015 D2）。
+-- 再較正値: -36.0 dBFS（2026-06-17、実録音コーパス 30 件で speech-active RMS を計測）。
+-- 01KTT0W1 クラス（speech_active -24.7 dBFS）が通過し、準無音クリップ（-39.5 dBFS）が棄却される。
 audioQualityMinMeanDbfs :: Double
-audioQualityMinMeanDbfs = -35.0
+audioQualityMinMeanDbfs = -36.0
 
 audioQualityMinRecordingDurationMs :: Int
 audioQualityMinRecordingDurationMs = 1000
