@@ -85,11 +85,20 @@ const generateFeedbackLayersFromInput = (
       break;
     }
     case "epenthesis": {
-      const vowel = input.insertedVowel ?? detectedDisplay;
-      if (vowel !== null) {
-        whatJa = `「${vowel}」という母音が挿入されています（カタカナ読み混入の傾向があります）`;
+      const targetWord = expectedDisplay ?? detectedDisplay;
+      if (input.insertedVowel != null) {
+        // 挿入母音が同定されている場合: 母音と位置を明示する
+        const positionPhrase = positionLabel ? `の${positionLabel}に` : "に";
+        whatJa =
+          targetWord !== null
+            ? `「${targetWord}」${positionPhrase}母音 /${input.insertedVowel}/ が挿入されています（カタカナ読み混入の傾向があります）`
+            : `母音 /${input.insertedVowel}/ が挿入されています（カタカナ読み混入の傾向があります）`;
       } else {
-        whatJa = "子音間への母音挿入（カタカナ読み混入）が検出されました";
+        // 挿入母音が未同定の場合: 単語を「母音」として名指さない汎用位置メッセージ
+        whatJa =
+          targetWord !== null
+            ? `「${targetWord}」に余分な母音が入っています（カタカナ読み混入の傾向があります）`
+            : "子音間への母音挿入（カタカナ読み混入）が検出されました";
       }
       break;
     }

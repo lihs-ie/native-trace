@@ -96,6 +96,8 @@ export type EngineFindingOutput = Readonly<{
   wordPair: Readonly<{ first: string; second: string }> | null;
   expectedPronunciation: string | null;
   insertedVowel: string | null;
+  /** D4 (ADR-017): epenthesis挿入母音の時刻位置（ミリ秒）*/
+  insertionPositionMs: number | null;
   feedbackLayers: Readonly<{ whatJa: string; whyJa: string; howJa: string }> | null;
   dismissed: boolean;
 }>;
@@ -470,6 +472,7 @@ export const createViewPracticeWorkspace =
                               wordPair: finding.wordPair,
                               expectedPronunciation: finding.expectedPronunciation,
                               insertedVowel: finding.insertedVowel,
+                              insertionPositionMs: finding.insertionPositionMs,
                               feedbackLayers: finding.feedbackLayers,
                               dismissed:
                                 dismissedByResult

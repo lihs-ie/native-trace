@@ -180,6 +180,8 @@ export type AssessmentFindingDraft = Readonly<{
   expectedPronunciation: string | null;
   /** C3-a: epenthesis挿入母音 */
   insertedVowel: string | null;
+  /** D4 (ADR-017): epenthesis挿入母音の時刻位置（ミリ秒）*/
+  insertionPositionMs: number | null;
   /** M-104: 3層フィードバック文 (ACL/usecase で生成) */
   feedbackLayers: FeedbackLayersDraft | null;
   /** C4-b: 却下フラグ (この Wave では false 固定、次 Wave で永続化) */

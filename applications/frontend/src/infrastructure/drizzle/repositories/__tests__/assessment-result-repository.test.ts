@@ -173,6 +173,7 @@ describe("DrizzleAssessmentResultRepository", () => {
           wordPair: null,
           expectedPronunciation: null,
           insertedVowel: null,
+          insertionPositionMs: null,
           feedbackLayers: { whatJa: "観測", whyJa: "原因", howJa: "修正" },
           dismissed: false,
           wordPositionLabel: "initial" as const,

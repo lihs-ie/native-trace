@@ -254,6 +254,8 @@ export type EngineFindingDto = {
   wordPair: { first: string; second: string } | null;
   expectedPronunciation: string | null;
   insertedVowel: string | null;
+  /** D4 (ADR-017): 挿入母音の時刻位置（ミリ秒）。null は未同定。*/
+  insertionPositionMs: number | null;
   feedbackLayers: FeedbackLayersDto | null;
   dismissed: boolean;
 };

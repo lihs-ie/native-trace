@@ -258,7 +258,7 @@ const resolveCatalogIdFromIpaAndPhenomenon = (finding: FindingProjectionInput): 
     const phenomenonDirectMap: Record<string, string> = {
       omission: "final-consonant-omission",
       epenthesis: "epenthesis",
-      insertion: "epenthesis",
+      insertion: "insertion",
       lexicalStress: "lexical-stress-error",
       weakForm: "weak-form-realization",
       reduction: "rhythm-npvi",

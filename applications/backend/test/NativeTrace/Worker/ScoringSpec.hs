@@ -4,6 +4,7 @@ import Data.Maybe (isNothing)
 import Data.Text qualified as Text
 import NativeTrace.Worker.AnalyzerClient (
   AnalyzerResult (..),
+  InsertedVowelInfo (..),
   InterWordSilence (..),
   NBestEntry (..),
   PhonemeGop (..),
@@ -33,6 +34,11 @@ import Test.Hspec
 isSuggestion :: FindingSeverity -> Bool
 isSuggestion FindingSeveritySuggestion = True
 isSuggestion _ = False
+
+-- | FindingSeverity の Major 判定ヘルパー（ADR-017 D1 asserts 用）。
+isMajor :: FindingSeverity -> Bool
+isMajor FindingSeverityMajor = True
+isMajor _ = False
 
 -- | テスト用の AnalyzerResult フィクスチャ（test-only、本番に入らない）。
 fixtureAnalyzerResult :: AnalyzerResult
@@ -114,9 +120,9 @@ spec = do
       let (meanDbfs, durationMs, detected, expected, gopValues) = defaultQualityParams
       checkAudioQuality meanDbfs durationMs detected expected gopValues `shouldBe` False
 
-    it "returns True (low_quality) when meanDbfs is below threshold (-35.0)" $ do
+    it "returns True (low_quality) when meanDbfs is below threshold (-36.0, speech-active RMS, ADR-015)" $ do
       let (_, durationMs, detected, expected, gopValues) = defaultQualityParams
-      checkAudioQuality (-36.0) durationMs detected expected gopValues `shouldBe` True
+      checkAudioQuality (-37.0) durationMs detected expected gopValues `shouldBe` True
 
     it "returns True (low_quality) when recording duration is below threshold (1000ms)" $ do
       let (meanDbfs, _, detected, expected, gopValues) = defaultQualityParams
@@ -210,6 +216,72 @@ spec = do
               }
       let findings = generateFindingsFromGop "strike" epenthesisResult
       any (\f -> findingPhenomenon f == "epenthesis") findings `shouldBe` True
+
+    it "epenthesis finding has severity == Major and scoreImpact == -5.0 (ADR-017 D1)" $ do
+      let epenthesisResult =
+            fixtureAnalyzerResult
+              { analyzedSyllables =
+                  [ NativeTrace.Worker.AnalyzerClient.SyllableInfo
+                      { syllableInfoWord = "strike",
+                        syllableInfoWordIndex = 0,
+                        syllableInfoExpectedCount = 1,
+                        syllableInfoActualCount = 2,
+                        syllableInfoInsertedVowels = []
+                      }
+                  ],
+                analyzedPerPhonemeGop = [],
+                analyzedInterWordSilences = []
+              }
+      let epenthesisFindings =
+            filter (\f -> findingPhenomenon f == "epenthesis") $
+              generateFindingsFromGop "strike" epenthesisResult
+      all (isMajor . findingSeverity) epenthesisFindings `shouldBe` True
+      all (\f -> findingScoreImpact f == -5.0) epenthesisFindings `shouldBe` True
+
+    it "epenthesis finding has findingInsertedVowel == Just vowel when insertedVowel is present (ADR-017 D1)" $ do
+      let epenthesisResult =
+            fixtureAnalyzerResult
+              { analyzedSyllables =
+                  [ NativeTrace.Worker.AnalyzerClient.SyllableInfo
+                      { syllableInfoWord = "strike",
+                        syllableInfoWordIndex = 0,
+                        syllableInfoExpectedCount = 1,
+                        syllableInfoActualCount = 2,
+                        syllableInfoInsertedVowels =
+                          [ NativeTrace.Worker.AnalyzerClient.InsertedVowelInfo
+                              { insertedVowelPositionMs = 350,
+                                insertedVowelPhoneme = "ɯ"
+                              }
+                          ]
+                      }
+                  ],
+                analyzedPerPhonemeGop = [],
+                analyzedInterWordSilences = []
+              }
+      let epenthesisFindings =
+            filter (\f -> findingPhenomenon f == "epenthesis") $
+              generateFindingsFromGop "strike" epenthesisResult
+      any (\f -> findingInsertedVowel f == Just "ɯ") epenthesisFindings `shouldBe` True
+
+    it "epenthesis finding has findingInsertedVowel == Nothing when insertedVowels is empty (ADR-017 D1)" $ do
+      let epenthesisResult =
+            fixtureAnalyzerResult
+              { analyzedSyllables =
+                  [ NativeTrace.Worker.AnalyzerClient.SyllableInfo
+                      { syllableInfoWord = "this",
+                        syllableInfoWordIndex = 0,
+                        syllableInfoExpectedCount = 1,
+                        syllableInfoActualCount = 2,
+                        syllableInfoInsertedVowels = []
+                      }
+                  ],
+                analyzedPerPhonemeGop = [],
+                analyzedInterWordSilences = []
+              }
+      let epenthesisFindings =
+            filter (\f -> findingPhenomenon f == "epenthesis") $
+              generateFindingsFromGop "this" epenthesisResult
+      all (isNothing . findingInsertedVowel) epenthesisFindings `shouldBe` True
 
   describe "nBest matching (M-103)" $ do
     it "finding with nBest has detectedTopCandidate set" $ do

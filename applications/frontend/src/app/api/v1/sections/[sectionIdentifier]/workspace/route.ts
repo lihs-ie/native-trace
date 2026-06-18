@@ -113,6 +113,7 @@ export async function GET(_request: NextRequest, context: RouteContext): Promise
         wordPair: f.wordPair,
         expectedPronunciation: f.expectedPronunciation,
         insertedVowel: f.insertedVowel,
+        insertionPositionMs: f.insertionPositionMs,
         feedbackLayers: f.feedbackLayers,
         dismissed: f.dismissed,
       })),

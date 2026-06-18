@@ -52,6 +52,7 @@ const buildFinding = (overrides: Partial<EngineFindingDto> = {}): EngineFindingD
   wordPair: null,
   expectedPronunciation: null,
   insertedVowel: null,
+  insertionPositionMs: null,
   feedbackLayers: {
     whatJa: "「world」語末の dark L が弾き音 [ɾ] になっています。",
     whyJa: "日本語に語末の /l/ は存在せず、カタカナ語の音型が呼び出されています。",

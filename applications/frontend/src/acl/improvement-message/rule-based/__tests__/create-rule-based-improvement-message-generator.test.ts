@@ -91,4 +91,56 @@ describe("createRuleBasedImprovementMessageGenerator", () => {
     // text が優先されるので "hello" を含む
     expect(message).toContain("hello");
   });
+
+  // ADR-017 D2: epenthesis — insertedVowel present
+  it("(ADR-017 D2) epenthesis with insertedVowel names the vowel with /vowel/ notation", () => {
+    const message = generator.generate({
+      phenomenon: "epenthesis",
+      expected: { text: "strike", ipa: null },
+      detected: { text: null, ipa: null },
+      insertedVowel: "ɯ",
+    });
+    expect(typeof message).toBe("string");
+    expect(message.length).toBeGreaterThan(0);
+    // 母音が /ɯ/ 記法で含まれる
+    expect(message).toContain("/ɯ/");
+    // 単語名は含む
+    expect(message).toContain("strike");
+  });
+
+  // ADR-017 D2: epenthesis — insertedVowel null → generic position message
+  it("(ADR-017 D2) epenthesis with insertedVowel null produces generic position message", () => {
+    const message = generator.generate({
+      phenomenon: "epenthesis",
+      expected: { text: "world", ipa: null },
+      detected: { text: null, ipa: null },
+      insertedVowel: null,
+    });
+    expect(typeof message).toBe("string");
+    expect(message.length).toBeGreaterThan(0);
+    // 単語を「母音」として名指さない
+    expect(message).not.toContain("「world」という母音");
+    // 汎用位置メッセージを含む（単語名 + 余分な母音）
+    expect(message).toContain("world");
+    expect(message).toContain("母音");
+  });
+
+  // ADR-017 D2: epenthesis — word-as-vowel pattern must never appear
+  it("(ADR-017 D2) epenthesis never produces 「<word>」という母音 for any input", () => {
+    const word = "strike";
+    const messageWithVowel = generator.generate({
+      phenomenon: "epenthesis",
+      expected: { text: word, ipa: null },
+      detected: { text: null, ipa: null },
+      insertedVowel: "ɯ",
+    });
+    const messageWithoutVowel = generator.generate({
+      phenomenon: "epenthesis",
+      expected: { text: word, ipa: null },
+      detected: { text: null, ipa: null },
+      insertedVowel: null,
+    });
+    expect(messageWithVowel).not.toContain(`「${word}」という母音`);
+    expect(messageWithoutVowel).not.toContain(`「${word}」という母音`);
+  });
 });

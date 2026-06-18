@@ -143,6 +143,7 @@ const mapValidatedResponse = (
       wordPair: null,
       expectedPronunciation: null,
       insertedVowel: null,
+      insertionPositionMs: null,
       feedbackLayers: null,
       dismissed: false,
       // OpenAI は語内位置ラベルを返さない

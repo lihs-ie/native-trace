@@ -162,6 +162,7 @@ const mapSuccessResponse = (
       wordPair: finding.wordPair,
       expectedPronunciation: finding.expectedPronunciation,
       insertedVowel: finding.insertedVowel,
+      insertionPositionMs: finding.insertionPositionMs ?? null,
       feedbackLayers: null,
       dismissed: false,
       wordPositionLabel: finding.wordPositionLabel,

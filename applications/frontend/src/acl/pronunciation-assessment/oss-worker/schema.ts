@@ -96,6 +96,12 @@ const findingSchema = z.object({
     .nullable()
     .optional()
     .transform((v) => v ?? null),
+  /** D4 (ADR-017): 挿入母音の時刻位置（ミリ秒）。worker が emit する値を frontend まで通す。*/
+  insertionPositionMs: z
+    .number()
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
   /** M-104R-b: 語内位置ラベル（worker JSON key）*/
   wordPositionLabel: z
     .enum(["initial", "medial", "final"])

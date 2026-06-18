@@ -44,6 +44,7 @@ function buildFinding(
     wordPair: null,
     expectedPronunciation: null,
     insertedVowel: null,
+    insertionPositionMs: null,
     feedbackLayers: null,
     dismissed: false,
   };

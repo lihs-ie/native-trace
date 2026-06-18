@@ -95,6 +95,7 @@ const buildFinding = (overrides: Partial<AssessmentFinding>): AssessmentFinding 
   wordPair: null,
   expectedPronunciation: null,
   insertedVowel: null,
+  insertionPositionMs: null,
   feedbackLayers: null,
   dismissed: false,
   wordPositionLabel: "initial",

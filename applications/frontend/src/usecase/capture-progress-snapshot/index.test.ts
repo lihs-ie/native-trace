@@ -12,10 +12,7 @@
 
 import { describe, it, expect, vi } from "vitest";
 import { okAsync, errAsync } from "neverthrow";
-import {
-  createCaptureProgressSnapshot,
-  type CaptureProgressSnapshotDependencies,
-} from "./index";
+import { createCaptureProgressSnapshot, type CaptureProgressSnapshotDependencies } from "./index";
 import {
   createCompleteDiagnosticSession,
   type CompleteDiagnosticSessionDependencies,
@@ -102,6 +99,7 @@ const makeAssessmentResult = (): AssessmentResult => ({
       wordPair: null,
       expectedPronunciation: null,
       insertedVowel: null,
+      insertionPositionMs: null,
       feedbackLayers: null,
       dismissed: false,
       wordPositionLabel: null,

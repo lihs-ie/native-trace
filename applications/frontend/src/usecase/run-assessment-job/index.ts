@@ -589,6 +589,8 @@ export const createRunAssessmentJob =
                                                 expectedPronunciation:
                                                   findingDraft.expectedPronunciation ?? null,
                                                 insertedVowel: findingDraft.insertedVowel ?? null,
+                                                insertionPositionMs:
+                                                  findingDraft.insertionPositionMs ?? null,
                                               });
 
                                         // feedbackLayers が null の場合は generator から生成
@@ -606,6 +608,8 @@ export const createRunAssessmentJob =
                                               expectedPronunciation:
                                                 findingDraft.expectedPronunciation ?? null,
                                               insertedVowel: findingDraft.insertedVowel ?? null,
+                                              insertionPositionMs:
+                                                findingDraft.insertionPositionMs ?? null,
                                             },
                                           );
 
@@ -642,6 +646,8 @@ export const createRunAssessmentJob =
                                           expectedPronunciation:
                                             findingDraft.expectedPronunciation ?? null,
                                           insertedVowel: findingDraft.insertedVowel ?? null,
+                                          insertionPositionMs:
+                                            findingDraft.insertionPositionMs ?? null,
                                           feedbackLayers,
                                           dismissed: findingDraft.dismissed,
                                           wordPositionLabel: findingDraft.wordPositionLabel ?? null,

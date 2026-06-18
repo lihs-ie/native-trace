@@ -18,6 +18,8 @@ export type ImprovementMessageGeneratorInput = Readonly<{
   expectedPronunciation?: string | null;
   /** epenthesis 挿入母音 */
   insertedVowel?: string | null;
+  /** D4 (ADR-017): epenthesis挿入母音の時刻位置（ミリ秒）。位置メッセージ構築に使う。*/
+  insertionPositionMs?: number | null;
 }>;
 
 export type FeedbackLayersOutput = Readonly<{

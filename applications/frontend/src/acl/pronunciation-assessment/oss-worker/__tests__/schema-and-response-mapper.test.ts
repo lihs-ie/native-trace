@@ -129,6 +129,53 @@ describe("oss-worker response-mapper", () => {
     }
   });
 
+  it("passes through insertedVowel and insertionPositionMs for epenthesis findings (ADR-017 D4)", () => {
+    const engine = makeEngine();
+    const fixture = {
+      ...workerFixture,
+      findings: [
+        {
+          ...workerFixture.findings[0],
+          phenomenon: "epenthesis",
+          insertedVowel: "ɯ",
+          insertionPositionMs: 350,
+        },
+      ],
+    };
+    const result = mapOssWorkerResponse({
+      status: 200,
+      rawBody: fixture,
+      capturedAt: new Date("2026-01-01T00:00:00Z"),
+      engine,
+      assessmentSchemaVersion: "1",
+      tokenizerVersion: "v1",
+    });
+
+    expect(result.isOk()).toBe(true);
+    if (result.isOk()) {
+      const finding = result.value.findings[0];
+      expect(finding?.insertedVowel).toBe("ɯ");
+      expect(finding?.insertionPositionMs).toBe(350);
+    }
+  });
+
+  it("maps insertionPositionMs to null when absent (ADR-017 D4)", () => {
+    const engine = makeEngine();
+    const result = mapOssWorkerResponse({
+      status: 200,
+      rawBody: workerFixture,
+      capturedAt: new Date("2026-01-01T00:00:00Z"),
+      engine,
+      assessmentSchemaVersion: "1",
+      tokenizerVersion: "v1",
+    });
+
+    expect(result.isOk()).toBe(true);
+    if (result.isOk()) {
+      expect(result.value.findings[0]?.insertionPositionMs).toBeNull();
+    }
+  });
+
   it("passes through scores correctly", () => {
     const engine = makeEngine();
     const result = mapOssWorkerResponse({

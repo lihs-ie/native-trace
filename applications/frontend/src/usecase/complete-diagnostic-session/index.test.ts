@@ -70,6 +70,7 @@ const makeRealWorkerFinding = (
   wordPair: null,
   expectedPronunciation: null,
   insertedVowel: null,
+  insertionPositionMs: null,
   feedbackLayers: null,
   dismissed: false,
   wordPositionLabel: null,
@@ -145,6 +146,7 @@ const makeAssessmentResultSynthetic = (): AssessmentResult =>
       wordPair: null,
       expectedPronunciation: null,
       insertedVowel: null,
+      insertionPositionMs: null,
       feedbackLayers: null,
       dismissed: false,
       wordPositionLabel: null,
@@ -517,6 +519,54 @@ describe("projectFindingsToCatalogFocusSounds (M-DG-4)", () => {
     const catalogIds = result.map((s) => String(s.catalogId));
     const uniqueCatalogIds = new Set(catalogIds);
     expect(uniqueCatalogIds.size).toBeGreaterThanOrEqual(2);
+  });
+
+  it("phenomenon=insertion は epenthesis カタログに混入しない (D3 ADR-017)", () => {
+    // D3 assertion: insertion phenomenon maps to a different catalogId than epenthesis.
+    // "insertion" has no catalog entry (unlike "epenthesis"), so projectFindingsToCatalogFocusSounds
+    // returns nothing for insertion findings, proving insertion != epenthesis in the direct map.
+    const insertionFindings: FindingProjectionInput[] = Array.from({ length: 3 }, () => ({
+      phenomenon: "insertion",
+      gop: -10.0,
+      severity: "major",
+      catalogId: null,
+      contrast: null,
+      detectedTopCandidate: null,
+      expectedIpa: "h ə l oʊ" as string | null,
+    }));
+
+    const epenthesisFindings: FindingProjectionInput[] = Array.from({ length: 3 }, () => ({
+      phenomenon: "epenthesis",
+      gop: -10.0,
+      severity: "major",
+      catalogId: null,
+      contrast: null,
+      detectedTopCandidate: null,
+      expectedIpa: "h ə l oʊ" as string | null,
+    }));
+
+    const insertionResult = projectFindingsToCatalogFocusSounds(
+      insertionFindings,
+      12,
+      DEFAULT_GOP_RANGE,
+    );
+    const epenthesisResult = projectFindingsToCatalogFocusSounds(
+      epenthesisFindings,
+      12,
+      DEFAULT_GOP_RANGE,
+    );
+
+    // insertion phenomenon does NOT resolve to epenthesis catalog entry
+    const insertionMappedToEpenthesis = insertionResult.find(
+      (s) => String(s.catalogId) === "epenthesis",
+    );
+    expect(insertionMappedToEpenthesis).toBeUndefined();
+
+    // epenthesis phenomenon DOES resolve to epenthesis catalog entry
+    const epenthesisMappedToEpenthesis = epenthesisResult.find(
+      (s) => String(s.catalogId) === "epenthesis",
+    );
+    expect(epenthesisMappedToEpenthesis).toBeDefined();
   });
 
   it("occurrenceFrequency が totalPromptCount で正規化され 1.0 を超えない", () => {
