@@ -25,11 +25,13 @@ import Network.HTTP.Client (
   parseRequest,
   responseBody,
   responseStatus,
+  responseTimeoutMicro,
  )
 import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Network.HTTP.Types (status200, status500)
 import Servant (Handler, ServerError (..), err502, err503, throwError)
 import System.Environment (lookupEnv)
+import Text.Read (readMaybe)
 
 -- | GOLDEN_SPEAKER_URL を読む。
 -- 未設定の場合は Nothing を返す（軟無効化判定用）。
@@ -37,6 +39,16 @@ resolveGoldenSpeakerUrl :: IO (Maybe Text)
 resolveGoldenSpeakerUrl = do
   maybeUrl <- lookupEnv "GOLDEN_SPEAKER_URL"
   pure (fmap Text.pack maybeUrl)
+
+-- | GOLDEN_SPEAKER_TIMEOUT_SECONDS 環境変数を読む。未設定/不正時は 120 秒を返す。
+-- golden RVC は CPU 推論（F0 変換 + retrieval index、初回 HF DL）で容易に 30s を超えるため、
+-- http-client の default 30s に依存せず明示する（incident 2026-06-14-worker-http-client-default-30s-timeout）。
+resolveGoldenSpeakerTimeoutSeconds :: IO Int
+resolveGoldenSpeakerTimeoutSeconds = do
+  maybeRaw <- lookupEnv "GOLDEN_SPEAKER_TIMEOUT_SECONDS"
+  pure $ case maybeRaw >>= readMaybe of
+    Just n | n > 0 -> n
+    _ -> 120
 
 -- | golden サービスの POST /v1/convert を呼び出し GoldenSpeakerConversionDto を返す。
 -- GOLDEN_SPEAKER_URL が未設定の場合は 503 を返す（M-GRV-9 軟無効化）。
@@ -56,6 +68,7 @@ convertGoldenSpeaker learnerAudioBytes mimeType = do
           { errBody = "Golden speaker service is not configured. Set GOLDEN_SPEAKER_URL to enable."
           }
     Just baseUrl -> do
+      timeoutSeconds <- liftIO resolveGoldenSpeakerTimeoutSeconds
       let goldenUrl = Text.unpack baseUrl <> "/v1/convert"
       manager <- liftIO $ newManager tlsManagerSettings
       initialRequest <- liftIO $ parseRequest goldenUrl
@@ -69,7 +82,8 @@ convertGoldenSpeaker learnerAudioBytes mimeType = do
             initialRequest
               { method = "POST",
                 requestBody = RequestBodyBS requestBodyBytes,
-                requestHeaders = [contentTypeHeader]
+                requestHeaders = [contentTypeHeader],
+                responseTimeout = responseTimeoutMicro (timeoutSeconds * 1000000)
               }
       response <- liftIO $ httpLbs httpRequest manager
       let httpStatus = responseStatus response

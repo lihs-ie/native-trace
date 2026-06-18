@@ -37,11 +37,13 @@ import Network.HTTP.Client (
   parseRequest,
   responseBody,
   responseStatus,
+  responseTimeoutMicro,
  )
 import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Network.HTTP.Types (status200, status500)
 import Servant (Handler, ServerError (..), err502, throwError)
 import System.Environment (lookupEnv)
+import Text.Read (readMaybe)
 
 -- ---- レスポンス型 ----
 
@@ -397,6 +399,7 @@ analyzeAudio ::
   Handler AnalyzerResult
 analyzeAudio audioBytes mimeType referenceText targetAccent durationMilliseconds = do
   baseUrl <- resolveAnalyzerUrl
+  timeoutSeconds <- resolveAnalyzerTimeoutSeconds
   let analyzerUrl = Text.unpack baseUrl <> "/v1/analyze"
   manager <- liftIO $ newManager tlsManagerSettings
   initialRequest <- liftIO $ parseRequest analyzerUrl
@@ -418,7 +421,8 @@ analyzeAudio audioBytes mimeType referenceText targetAccent durationMilliseconds
         initialRequest
           { method = "POST",
             requestBody = RequestBodyBS requestBody,
-            requestHeaders = [contentTypeHeader]
+            requestHeaders = [contentTypeHeader],
+            responseTimeout = responseTimeoutMicro (timeoutSeconds * 1000000)
           }
   response <- liftIO $ httpLbs httpRequest manager
   let httpStatus = responseStatus response
@@ -462,6 +466,7 @@ analyzeShadowingLag ::
   Handler AnalyzerShadowingLagResult
 analyzeShadowingLag referenceAudioBytes learnerAudioBytes mimeType referenceText durationMilliseconds = do
   baseUrl <- resolveAnalyzerUrl
+  timeoutSeconds <- resolveAnalyzerTimeoutSeconds
   let analyzerUrl = Text.unpack baseUrl <> "/v1/shadowing-lag"
   manager <- liftIO $ newManager tlsManagerSettings
   initialRequest <- liftIO $ parseRequest analyzerUrl
@@ -488,7 +493,8 @@ analyzeShadowingLag referenceAudioBytes learnerAudioBytes mimeType referenceText
         initialRequest
           { method = "POST",
             requestBody = RequestBodyBS requestBody,
-            requestHeaders = [contentTypeHeader]
+            requestHeaders = [contentTypeHeader],
+            responseTimeout = responseTimeoutMicro (timeoutSeconds * 1000000)
           }
   response <- liftIO $ httpLbs httpRequest manager
   let httpStatus = responseStatus response
@@ -520,6 +526,14 @@ resolveAnalyzerUrl :: Handler Text
 resolveAnalyzerUrl = do
   maybeUrl <- liftIO $ lookupEnv "ANALYZER_URL"
   pure $ maybe "http://localhost:8788" Text.pack maybeUrl
+
+-- | ANALYZER_TIMEOUT_SECONDS 環境変数を読む。未設定/不正時は 120 秒を返す。
+resolveAnalyzerTimeoutSeconds :: Handler Int
+resolveAnalyzerTimeoutSeconds = do
+  maybeRaw <- liftIO $ lookupEnv "ANALYZER_TIMEOUT_SECONDS"
+  pure $ case maybeRaw >>= readMaybe of
+    Just n | n > 0 -> n
+    _ -> 120
 
 -- ---- multipart body 組み立て ----
 

@@ -9,10 +9,17 @@ services:
     environment:
       WORKER_PORT: "8787"
       ANALYZER_URL: "http://analyzer:8788"
+      # analyzer 呼び出しタイムアウト秒数（M-AT-1 / oss-worker-analyze-timeout spec）
+      # analyze は wav2vec2+parselmouth+Kokoro で正当に ~20s かかり実録音で 30s 超になるため 120s に設定する
+      ANALYZER_TIMEOUT_SECONDS: "120"
       # シャドーイング ラグ計測のスロー再生推奨閾値（ms, M-SHL-6 / ADR-013）
       SHADOWING_LAG_THRESHOLD_MS: "500"
       # golden サービス URL（profiles: [golden] 有効時のみ golden が起動、M-GRV-4 / M-GRV-9）
       GOLDEN_SPEAKER_URL: "http://golden:8789"
+      # golden 呼び出しタイムアウト秒数（incident 2026-06-14-worker-http-client-default-30s-timeout）
+      # golden RVC は CPU 推論（F0 変換 + retrieval index、初回 HF DL）で 30s 超になるため、
+      # http-client の default 30s ではなく明示する（ANALYZER_TIMEOUT_SECONDS と同じ timeout class）
+      GOLDEN_SPEAKER_TIMEOUT_SECONDS: "120"
     depends_on:
       analyzer:
         condition: service_healthy
@@ -67,8 +74,10 @@ services:
       # F0 連続性品質ゲート閾値（0.0–1.0, unvoiced 許容割合 — M-GRV-3）
       GOLDEN_QUALITY_THRESHOLD: "0.5"
       # 変換先 VCTK 話者 id（汎用ネイティブ声 — 「自分の声」でない, M-GRV-7）
-      # Nekochu/RVC-VCTK_Voice-sample に実在する女性話者（F/p231/Fp231.pth）
+      # Nekochu/RVC-VCTK_Voice-sample に実在する女性話者（F/p231/rmvpe/Fp231rmvpe.pth）
       GOLDEN_TARGET_VOICE: "p231"
+      # pitch shift 半音数（正=高く, 負=低く）。p231（女性）への変換で男性学習者は 12 半音が目安。
+      GOLDEN_F0_UP_KEY: "12"
     volumes:
       # RVC/ContentVec/rmvpe モデル重みを volume で供給（Docker 非焼込 — M-GRV-10）
       - hf-cache-golden:/root/.cache/huggingface

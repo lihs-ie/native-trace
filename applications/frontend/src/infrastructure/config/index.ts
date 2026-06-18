@@ -20,8 +20,12 @@ const configSchema = z.object({
   analysisJobLeaseDurationMilliseconds: z.coerce.number().int().positive().default(300000),
   /** infrastructure.md §11.1: 最大 retry 回数。デフォルト 3 回。 */
   analysisJobMaxAttempts: z.coerce.number().int().positive().default(3),
-  /** infrastructure.md §11.1: OSS Worker 呼び出し timeout (ms)。デフォルト 30000ms。 */
-  ossWorkerTimeoutMilliseconds: z.coerce.number().int().positive().default(30000),
+  /**
+   * infrastructure.md §11.1: OSS Worker 呼び出し timeout (ms)。
+   * analyze は ~20s+ かかるため worker 側 (ANALYZER_TIMEOUT_SECONDS=120s) より長い 150s を既定にする。
+   * env OSS_WORKER_TIMEOUT_MS で上書き可能。
+   */
+  ossWorkerTimeoutMilliseconds: z.coerce.number().int().positive().default(150000),
   /** infrastructure.md §11.1: ローカル音声保存上限 bytes。デフォルト 100MiB。 */
   localAudioMaxBytes: z.coerce.number().int().positive().default(104857600),
   /** infrastructure.md §11.1: OpenAI raw response 保存上限 bytes。デフォルト 1MiB。 */
