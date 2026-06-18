@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "better-sqlite3": "^11.9.1",
-    "drizzle-orm": "^0.44.2",
+    "drizzle-orm": "^0.45.2",
     "neverthrow": "^8.2.0",
     "next": "16.2.7",
     "openai": "^4.103.0",
