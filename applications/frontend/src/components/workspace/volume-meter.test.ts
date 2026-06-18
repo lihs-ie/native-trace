@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { computeRmsLevel, rmsLevelToDisplayPercentage } from "./volume-meter";
+import {
+  accumulateLowDurationMs,
+  applyPeakHold,
+  computeRmsLevel,
+  rmsLevelToDisplayPercentage,
+  SUSTAINED_LOW_MS,
+} from "./volume-meter";
 
 describe("computeRmsLevel", () => {
   it("全サンプルが 128 (無音) のとき 0 を返す", () => {
@@ -77,5 +83,119 @@ describe("rmsLevelToDisplayPercentage", () => {
 
   it("RMS が負の場合でも最小値(2)にクランプされる", () => {
     expect(rmsLevelToDisplayPercentage(-0.5)).toBe(2);
+  });
+});
+
+describe("accumulateLowDurationMs", () => {
+  // Pure function: (previousBelowMs, smoothedValue, threshold, dtMs) => number
+  // If smoothedValue < threshold: return previousBelowMs + dtMs  (accumulate)
+  // If smoothedValue >= threshold: return 0                       (reset)
+
+  const THRESHOLD = 41; // LOW_VOLUME_DISPLAY_THRESHOLD
+
+  it("(a) below threshold — accumulates dtMs", () => {
+    // smoothedValue < threshold → add dtMs to previousBelowMs
+    expect(accumulateLowDurationMs(0, 40, THRESHOLD, 16.67)).toBeCloseTo(16.67, 2);
+    expect(accumulateLowDurationMs(100, 10, THRESHOLD, 50)).toBeCloseTo(150, 2);
+    expect(accumulateLowDurationMs(300, 2, THRESHOLD, 16.67)).toBeCloseTo(316.67, 2);
+  });
+
+  it("(b) at/above threshold — resets to 0", () => {
+    // smoothedValue === threshold → reset
+    expect(accumulateLowDurationMs(300, 41, THRESHOLD, 16.67)).toBe(0);
+    // smoothedValue > threshold → reset
+    expect(accumulateLowDurationMs(500, 80, THRESHOLD, 16.67)).toBe(0);
+    expect(accumulateLowDurationMs(200, 41.1, THRESHOLD, 20)).toBe(0);
+  });
+
+  it("(c) crossing threshold resets accumulator", () => {
+    // Simulate: accumulate → cross above threshold → reset
+    let belowMs = 0;
+    const dt = 16.67;
+    // 20 ticks below threshold (simulating ~333ms of low volume)
+    for (let tick = 0; tick < 20; tick++) {
+      belowMs = accumulateLowDurationMs(belowMs, 30, THRESHOLD, dt);
+    }
+    expect(belowMs).toBeCloseTo(20 * dt, 1);
+    // One tick above threshold → reset
+    belowMs = accumulateLowDurationMs(belowMs, 60, THRESHOLD, dt);
+    expect(belowMs).toBe(0);
+    // Now back below threshold — accumulates from zero again
+    belowMs = accumulateLowDurationMs(belowMs, 20, THRESHOLD, dt);
+    expect(belowMs).toBeCloseTo(dt, 2);
+  });
+
+  it("(d) sequence reaching SUSTAINED_LOW_MS triggers label", () => {
+    // Run enough ticks below threshold to exceed SUSTAINED_LOW_MS
+    // SUSTAINED_LOW_MS = 500ms, at 60fps dt = 16.67ms → 30 ticks = 500ms
+    const dt = 1000 / 60; // 16.67ms
+    let belowMs = 0;
+    const ticksNeeded = Math.ceil(SUSTAINED_LOW_MS / dt);
+
+    // Before reaching the threshold: label should be off
+    for (let tick = 0; tick < ticksNeeded - 1; tick++) {
+      belowMs = accumulateLowDurationMs(belowMs, 20, THRESHOLD, dt);
+    }
+    expect(belowMs).toBeLessThan(SUSTAINED_LOW_MS);
+    // Should not yet trigger
+    expect(belowMs >= SUSTAINED_LOW_MS).toBe(false);
+
+    // One more tick crosses the threshold
+    belowMs = accumulateLowDurationMs(belowMs, 20, THRESHOLD, dt);
+    expect(belowMs).toBeGreaterThanOrEqual(SUSTAINED_LOW_MS);
+    // Now the label would fire: belowMs >= SUSTAINED_LOW_MS
+    expect(belowMs >= SUSTAINED_LOW_MS).toBe(true);
+  });
+});
+
+describe("applyPeakHold", () => {
+  // Pure function: (currentPercent, previousDisplayed, releaseAmount) => number
+  // Attack: instant — currentPercent > previousDisplayed → returns currentPercent
+  // Release: gradual — currentPercent < previousDisplayed → returns previousDisplayed - releaseAmount
+  // Floor clamp: result is always ≥ 0
+
+  it("attack — currentPercent が previousDisplayed を超えるとき currentPercent を返す", () => {
+    // syllable onset: meter jumps immediately to new peak
+    expect(applyPeakHold(75, 50, 5)).toBe(75);
+    expect(applyPeakHold(100, 0, 5)).toBe(100);
+    expect(applyPeakHold(41, 40, 5)).toBe(41);
+  });
+
+  it("hold/decay — currentPercent < previousDisplayed のとき previousDisplayed - releaseAmount を返す", () => {
+    // inter-syllable gap: peak held, decaying by releaseAmount
+    expect(applyPeakHold(10, 80, 5.45)).toBeCloseTo(74.55, 5);
+    expect(applyPeakHold(2, 60, 5)).toBe(55);
+    expect(applyPeakHold(0, 50, 10)).toBe(40);
+  });
+
+  it("floor clamp — 結果は 0 未満にならない", () => {
+    // release would go negative: clamp to 0
+    expect(applyPeakHold(0, 3, 10)).toBe(0);
+    expect(applyPeakHold(0, 0, 5)).toBe(0);
+    expect(applyPeakHold(-5, 0, 0)).toBe(0);
+  });
+
+  it("monotonic release — 連続呼び出しで前回値から単調減衰し currentPercent まで収束する", () => {
+    // Simulate 60fps decay from 80% with currentPercent fixed at 2% (silence floor)
+    // release 5.45 %/frame — after ≥15 frames, displayed should have decreased monotonically
+    const releaseAmount = 5.45;
+    const currentPercent = 2;
+    let displayed = 80;
+    const history: number[] = [displayed];
+
+    for (let frame = 0; frame < 15; frame++) {
+      displayed = applyPeakHold(currentPercent, displayed, releaseAmount);
+      history.push(displayed);
+    }
+
+    // Each step must be ≤ previous (monotonically non-increasing)
+    for (let index = 1; index < history.length; index++) {
+      expect(history[index]).toBeLessThanOrEqual(history[index - 1]!);
+    }
+
+    // After 15 frames: 80 - 15*5.45 = 80 - 81.75 = clamped at currentPercent=2
+    // (floor wins once peak decays below currentPercent)
+    expect(history[history.length - 1]).toBeGreaterThanOrEqual(0);
+    expect(history[history.length - 1]).toBeLessThan(80);
   });
 });

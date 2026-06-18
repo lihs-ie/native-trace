@@ -24,7 +24,21 @@ import { useRouter } from "next/navigation";
 import { apiGet, apiPost, apiPostForm, isApiClientError } from "@/lib/api-client";
 import { nowMs } from "@/lib/now";
 import type { DiagnosticSessionDto, DiagnosticPromptDto, WorkspaceDto } from "@/lib/api-types";
-import { computeRmsLevel, rmsLevelToDisplayPercentage } from "@/components/workspace/volume-meter";
+import {
+  accumulateLowDurationMs,
+  applyPeakHold,
+  computeRmsLevel,
+  PEAK_HOLD_RELEASE_RATE_PER_MS,
+  rmsLevelToDisplayPercentage,
+  SUSTAINED_LOW_MS,
+} from "@/components/workspace/volume-meter";
+
+// dBFS display scale threshold aligned to ADR-015 worker gate (-36 dBFS, S-PH-1 / ADR-016 D2).
+// Derivation: ((-36 - FLOOR_DB) / (CEILING_DB - FLOOR_DB)) * (100 - MIN_DISPLAY_PERCENTAGE) + MIN_DISPLAY_PERCENTAGE
+//           = ((-36 + 60) / 60) * 98 + 2 = (24/60)*98 + 2 ≈ 41.2 → 41
+// Confirmed by simulation (scripts/simulate_meter_peak_hold.py, 2026-06-18):
+//   gate-rejected recordings (speech_active < -36 dBFS) peak at 37.9% < 41% after smoothing.
+const LOW_VOLUME_DISPLAY_THRESHOLD = 41;
 
 // ---- 録音状態 ----
 type RecordingState = "idle" | "recording" | "analyzing" | "done" | "failed";
@@ -156,6 +170,8 @@ export default function DiagnosticSessionPage({ params }: PageProps) {
   const [recordingState, setRecordingState] = useState<RecordingState>("idle");
   const [recSeconds, setRecSeconds] = useState(0);
   const [volumeLevel, setVolumeLevel] = useState(0);
+  // D4: debounced label state — true only after SUSTAINED_LOW_MS of continuous sub-threshold level
+  const [isLowVolume, setIsLowVolume] = useState(false);
   const [completing, setCompleting] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -164,6 +180,10 @@ export default function DiagnosticSessionPage({ params }: PageProps) {
   const recTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const previousVolumeLevelRef = useRef<number>(0);
+  const lastMeterTimestampRef = useRef<number>(0);
+  // D4: accumulated sub-threshold duration for label debounce
+  const lowDurationRef = useRef<number>(0);
 
   // 完了済みセッションを結果ページへリダイレクト（非同期 API 確認）
   useEffect(() => {
@@ -199,7 +219,13 @@ export default function DiagnosticSessionPage({ params }: PageProps) {
       void audioContextRef.current.close();
       audioContextRef.current = null;
     }
+    // WARN-2: reset peak-hold state so a second recording does not inherit a stale held peak.
+    previousVolumeLevelRef.current = 0;
+    lastMeterTimestampRef.current = 0;
     setVolumeLevel(0);
+    // D4: reset label debounce state so a second recording starts with label off.
+    lowDurationRef.current = 0;
+    setIsLowVolume(false);
   }, []);
 
   // workspace API をポーリングして AssessmentResult 識別子を取得
@@ -295,10 +321,25 @@ export default function DiagnosticSessionPage({ params }: PageProps) {
       mediaStreamSource.connect(analyserNode);
 
       const timeDomainBuffer = new Uint8Array(analyserNode.fftSize);
-      const updateVolumeMeter = () => {
+      const updateVolumeMeter = (timestamp: DOMHighResTimeStamp) => {
         analyserNode.getByteTimeDomainData(timeDomainBuffer);
         const rmsLevel = computeRmsLevel(timeDomainBuffer);
-        setVolumeLevel(rmsLevelToDisplayPercentage(rmsLevel));
+        const rawPercent = rmsLevelToDisplayPercentage(rmsLevel);
+        const dtMs =
+          lastMeterTimestampRef.current > 0 ? timestamp - lastMeterTimestampRef.current : 0;
+        lastMeterTimestampRef.current = timestamp;
+        const releaseAmount = PEAK_HOLD_RELEASE_RATE_PER_MS * dtMs;
+        const smoothed = applyPeakHold(rawPercent, previousVolumeLevelRef.current, releaseAmount);
+        previousVolumeLevelRef.current = smoothed;
+        setVolumeLevel(smoothed);
+        // D4: label debounce — accumulate sub-threshold duration; fire label only when sustained.
+        lowDurationRef.current = accumulateLowDurationMs(
+          lowDurationRef.current,
+          smoothed,
+          LOW_VOLUME_DISPLAY_THRESHOLD,
+          dtMs,
+        );
+        setIsLowVolume(lowDurationRef.current >= SUSTAINED_LOW_MS);
         animationFrameRef.current = requestAnimationFrame(updateVolumeMeter);
       };
       animationFrameRef.current = requestAnimationFrame(updateVolumeMeter);
@@ -551,7 +592,7 @@ export default function DiagnosticSessionPage({ params }: PageProps) {
                           style={{
                             height: "100%",
                             width: `${volumeLevel}%`,
-                            background: volumeLevel < 43 ? "var(--sev-minor)" : "var(--positive)",
+                            background: isLowVolume ? "var(--sev-minor)" : "var(--positive)",
                             transition: "width 0.05s",
                           }}
                         />
