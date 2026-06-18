@@ -237,6 +237,9 @@
 .dock-low-quality .failed-message { display: flex; flex-direction: column; gap: 6px; }
 .dock-low-quality .failed-hint { font-size: var(--text-sm); color: var(--text-tertiary); }
 
+/* rerecord group: engine selector + re-record button (failed / low_quality docks) */
+.dock-rerecord-group { display: flex; align-items: center; gap: var(--sp-3); flex-shrink: 0; }
+
 /* errors */
 .ws-error { font-size: var(--text-sm); color: var(--sev-critical-text); padding: var(--sp-2) var(--sp-6); background: var(--sev-critical-soft); border-bottom: 1px solid var(--sev-critical-line); }
 

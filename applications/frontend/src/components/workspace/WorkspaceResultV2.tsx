@@ -16,8 +16,15 @@ type AudioSource = "self" | "model" | "golden";
  * Golden speaker fetch 結果。
  * null = 未取得、"fetching" = 取得中、"unavailable" = worker 503 / 通信失敗。
  * response オブジェクト = 取得済み (qualityGatePassed が分岐を決定)。
+ *
+ * forIdentifier: 取得時に使用した録音試行 identifier。
+ * activeRecordingAttemptIdentifier と異なる場合は null 扱い（録音試行変更時の再取得トリガー）。
  */
-type GoldenAudioState = null | "fetching" | "unavailable" | { response: GoldenConversionResponse };
+type GoldenAudioState =
+  | null
+  | { status: "fetching"; forIdentifier: string }
+  | { status: "unavailable"; forIdentifier: string }
+  | { status: "ready"; forIdentifier: string; response: GoldenConversionResponse };
 
 type WorkspaceResultV2Props = {
   bodyText: string;
@@ -66,6 +73,8 @@ export const WorkspaceResultV2 = ({
   sectionIdentifier,
   latestRecordingAttemptIdentifier,
 }: WorkspaceResultV2Props) => {
+  // self 再生・golden 変換に使う録音試行 identifier（最新 ready）
+  const activeRecordingAttemptIdentifier = latestRecordingAttemptIdentifier;
   const [viewMode, setViewMode] = useState<ViewMode>("highlight");
   const [selectedFinding, setSelectedFinding] = useState<EngineFindingDto | null>(null);
   const [activeAudioSource, setActiveAudioSource] = useState<AudioSource>("self");
@@ -137,7 +146,7 @@ export const WorkspaceResultV2 = ({
 
   /** self ソース: 録音音声を取得・再生 (M-AB-a) */
   const playSelfAudio = useCallback(async () => {
-    if (!latestRecordingAttemptIdentifier) return;
+    if (!activeRecordingAttemptIdentifier) return;
 
     if (audioRef.current) {
       if (isPlaying) {
@@ -152,7 +161,7 @@ export const WorkspaceResultV2 = ({
 
     try {
       const response = await fetch(
-        `/api/v1/recording-attempts/${latestRecordingAttemptIdentifier}/audio`,
+        `/api/v1/recording-attempts/${activeRecordingAttemptIdentifier}/audio`,
       );
       if (!response.ok) return;
       const blob = await response.blob();
@@ -169,7 +178,7 @@ export const WorkspaceResultV2 = ({
     } catch {
       // fetch unavailable — no-op
     }
-  }, [latestRecordingAttemptIdentifier, isPlaying, playSpeed, attachAudioEvents]);
+  }, [activeRecordingAttemptIdentifier, isPlaying, playSpeed, attachAudioEvents]);
 
   /** model ソース: TTS を取得・再生 (M-AB-b) */
   const playModelAudio = useCallback(async () => {
@@ -231,13 +240,18 @@ export const WorkspaceResultV2 = ({
    * qualityGatePassed=true の場合のみ audioBase64 を再生する (M-GRV-7, ORPHAN-4)。
    * qualityGatePassed=false / 503 の場合は .gs-gate フォールバックを表示。
    * UI 文言は API レスポンスの targetVoice 由来 (ORPHAN-7: 「自分の声」と焼かない)。
+   *
+   * activeRecordingAttemptIdentifier が変わった場合は goldenState.forIdentifier との
+   * 不一致を検出し、再取得する（useEffect で setState する代わりに取得時点で判定）。
    */
   const playGoldenAudio = useCallback(async () => {
-    // 取得済みで audioBase64 が存在する場合は再生/一時停止トグル
+    if (!activeRecordingAttemptIdentifier) return;
+
+    // 同じ identifier で取得済みの場合: 再生/一時停止トグル
     if (
       goldenState !== null &&
-      goldenState !== "fetching" &&
-      goldenState !== "unavailable" &&
+      goldenState.status === "ready" &&
+      goldenState.forIdentifier === activeRecordingAttemptIdentifier &&
       goldenState.response.qualityGatePassed &&
       goldenState.response.audioBase64
     ) {
@@ -253,28 +267,37 @@ export const WorkspaceResultV2 = ({
       }
     }
 
-    // qualityGatePassed=false / unavailable 時は再生しない (ORPHAN-4)
+    // 同じ identifier で qualityGatePassed=false の場合は再生しない (ORPHAN-4)
     if (
       goldenState !== null &&
-      goldenState !== "fetching" &&
-      goldenState !== "unavailable" &&
+      goldenState.status === "ready" &&
+      goldenState.forIdentifier === activeRecordingAttemptIdentifier &&
       !goldenState.response.qualityGatePassed
     ) {
       return;
     }
 
-    if (!latestRecordingAttemptIdentifier) return;
-    if (goldenState === "fetching") return;
+    // 同じ identifier で fetching 中は重複リクエストしない
+    if (
+      goldenState !== null &&
+      goldenState.status === "fetching" &&
+      goldenState.forIdentifier === activeRecordingAttemptIdentifier
+    ) {
+      return;
+    }
 
-    setGoldenState("fetching");
+    // identifier が変わった場合、または未取得の場合: 再取得開始
+    // (audioRef はソース切替 effect で既に停止済み)
+    stopCurrentAudio();
+    setGoldenState({ status: "fetching", forIdentifier: activeRecordingAttemptIdentifier });
 
     try {
       // learner_audio を録音試行 API から取得
       const audioResponse = await fetch(
-        `/api/v1/recording-attempts/${latestRecordingAttemptIdentifier}/audio`,
+        `/api/v1/recording-attempts/${activeRecordingAttemptIdentifier}/audio`,
       );
       if (!audioResponse.ok) {
-        setGoldenState("unavailable");
+        setGoldenState({ status: "unavailable", forIdentifier: activeRecordingAttemptIdentifier });
         return;
       }
       const audioBlob = await audioResponse.blob();
@@ -294,7 +317,7 @@ export const WorkspaceResultV2 = ({
 
       if (!convertResponse.ok) {
         // 503 = golden speaker 利用不可 (M-GRV-7d)
-        setGoldenState("unavailable");
+        setGoldenState({ status: "unavailable", forIdentifier: activeRecordingAttemptIdentifier });
         return;
       }
 
@@ -303,7 +326,11 @@ export const WorkspaceResultV2 = ({
       };
       const conversionResult = json.data;
 
-      setGoldenState({ response: conversionResult });
+      setGoldenState({
+        status: "ready",
+        forIdentifier: activeRecordingAttemptIdentifier,
+        response: conversionResult,
+      });
       recordAudioSourceUsage("golden", conversionResult.qualityGatePassed);
 
       // ORPHAN-4: qualityGatePassed=false の場合は audioBase64 を再生しない
@@ -319,17 +346,16 @@ export const WorkspaceResultV2 = ({
       const audio = new Audio(url);
       const cleanup = attachAudioEvents(audio);
       void cleanup;
-      stopCurrentAudio();
       audioRef.current = audio;
       void audio.play();
       setIsPlaying(true);
     } catch {
-      setGoldenState("unavailable");
+      setGoldenState({ status: "unavailable", forIdentifier: activeRecordingAttemptIdentifier });
     }
   }, [
     goldenState,
     isPlaying,
-    latestRecordingAttemptIdentifier,
+    activeRecordingAttemptIdentifier,
     attachAudioEvents,
     stopCurrentAudio,
   ]);
@@ -358,14 +384,20 @@ export const WorkspaceResultV2 = ({
   );
 
   const isGoldenSelected = activeAudioSource === "golden";
+
+  // 現在の identifier に対応する golden state のみ有効とみなす
+  const effectiveGoldenState =
+    goldenState !== null && goldenState.forIdentifier === activeRecordingAttemptIdentifier
+      ? goldenState
+      : null;
+
   const isPlayerDisabled =
-    (activeAudioSource === "self" && !latestRecordingAttemptIdentifier) ||
-    (isGoldenSelected && goldenState === "fetching") ||
+    (activeAudioSource === "self" && !activeRecordingAttemptIdentifier) ||
+    (isGoldenSelected && effectiveGoldenState?.status === "fetching") ||
     (isGoldenSelected &&
-      goldenState !== null &&
-      goldenState !== "fetching" &&
-      goldenState !== "unavailable" &&
-      !goldenState.response.qualityGatePassed);
+      effectiveGoldenState !== null &&
+      effectiveGoldenState.status === "ready" &&
+      !effectiveGoldenState.response.qualityGatePassed);
   const playerTimeText = `${formatPlayerTime(currentTime)} / ${formatPlayerTime(duration)}`;
 
   /**
@@ -376,11 +408,11 @@ export const WorkspaceResultV2 = ({
    */
   const goldenGateMessage = (() => {
     if (!isGoldenSelected) return null;
-    if (goldenState === null) return null;
-    if (goldenState === "fetching") return "Golden speaker 変換中...";
-    if (goldenState === "unavailable") return "Golden speaker 準備中";
-    if (!goldenState.response.qualityGatePassed) {
-      return goldenState.response.withholdReason ?? "Golden speaker 変換品質不足";
+    if (effectiveGoldenState === null) return null;
+    if (effectiveGoldenState.status === "fetching") return "Golden speaker 変換中...";
+    if (effectiveGoldenState.status === "unavailable") return "Golden speaker 準備中";
+    if (!effectiveGoldenState.response.qualityGatePassed) {
+      return effectiveGoldenState.response.withholdReason ?? "Golden speaker 変換品質不足";
     }
     return null;
   })();
@@ -596,10 +628,9 @@ export const WorkspaceResultV2 = ({
 
         {/* golden 再生中: targetVoice 表示 (ORPHAN-7: API 由来、静的文字列を焼かない) */}
         {isGoldenSelected &&
-          goldenState !== null &&
-          goldenState !== "fetching" &&
-          goldenState !== "unavailable" &&
-          goldenState.response.qualityGatePassed && (
+          effectiveGoldenState !== null &&
+          effectiveGoldenState.status === "ready" &&
+          effectiveGoldenState.response.qualityGatePassed && (
             <span
               style={{
                 fontFamily: "var(--font-mono)",
@@ -607,7 +638,7 @@ export const WorkspaceResultV2 = ({
                 color: "var(--text-faint)",
               }}
             >
-              {goldenState.response.targetVoice}
+              {effectiveGoldenState.response.targetVoice}
             </span>
           )}
       </div>

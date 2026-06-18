@@ -1,3 +1,4 @@
+export { EngineSegSelector } from "./EngineSegSelector";
 export { Ribbon } from "./Ribbon";
 export { Gauge, calcGaugeDashOffset } from "./Gauge";
 export { ScoreRows } from "./ScoreRows";

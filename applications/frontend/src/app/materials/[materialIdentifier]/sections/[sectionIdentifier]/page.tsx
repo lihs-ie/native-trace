@@ -12,6 +12,7 @@ import {
 } from "@/lib/api-types";
 import { toSeverityClass, SEVERITY_DISPLAY_LABELS } from "@/lib/severity";
 import {
+  EngineSegSelector,
   Ribbon,
   Gauge,
   ScoreRows,
@@ -21,7 +22,14 @@ import {
   HighlightedWorkspaceText,
   WorkspaceResultV2,
 } from "@/components/workspace";
-import { computeRmsLevel, rmsLevelToDisplayPercentage } from "@/components/workspace/volume-meter";
+import {
+  accumulateLowDurationMs,
+  applyPeakHold,
+  computeRmsLevel,
+  PEAK_HOLD_RELEASE_RATE_PER_MS,
+  rmsLevelToDisplayPercentage,
+  SUSTAINED_LOW_MS,
+} from "@/components/workspace/volume-meter";
 
 type PageProps = {
   params: Promise<{ materialIdentifier: string; sectionIdentifier: string }>;
@@ -29,11 +37,12 @@ type PageProps = {
 
 type WorkspaceState = "idle" | "recording" | "analyzing" | "result" | "failed" | "low_quality";
 
-// dBFS display scale threshold: -35dBFS ≈ 43% in the log scale
-// ((−35 + 60) / 60) * 98 + 2 ≈ 43
-// Aligned with the backend quality-guard lower bound (meanDbfs < −35).
-// Voices below this level are likely to be rejected by the quality guard.
-const LOW_VOLUME_DISPLAY_THRESHOLD = 43;
+// dBFS display scale threshold aligned to ADR-015 worker gate (-36 dBFS, S-PH-1 / ADR-016 D2).
+// Derivation: ((-36 - FLOOR_DB) / (CEILING_DB - FLOOR_DB)) * (100 - MIN_DISPLAY_PERCENTAGE) + MIN_DISPLAY_PERCENTAGE
+//           = ((-36 + 60) / 60) * 98 + 2 = (24/60)*98 + 2 ≈ 41.2 → 41
+// Confirmed by simulation (scripts/simulate_meter_peak_hold.py, 2026-06-18):
+//   gate-rejected recordings (speech_active < -36 dBFS) peak at 37.9% < 41% after smoothing.
+const LOW_VOLUME_DISPLAY_THRESHOLD = 41;
 
 const detectBrowserInfo = () => ({
   browserName: navigator.userAgent.includes("Chrome")
@@ -102,6 +111,8 @@ export default function WorkspacePage({ params }: PageProps) {
   });
 
   const [volumeLevel, setVolumeLevel] = useState(0);
+  // D4: debounced label state — true only after SUSTAINED_LOW_MS of continuous sub-threshold level
+  const [isLowVolume, setIsLowVolume] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -110,6 +121,10 @@ export default function WorkspacePage({ params }: PageProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const previousVolumeLevelRef = useRef<number>(0);
+  const lastMeterTimestampRef = useRef<number>(0);
+  // D4: accumulated sub-threshold duration for label debounce
+  const lowDurationRef = useRef<number>(0);
 
   const state = deriveWorkspaceState(workspace, isRecording, submitting);
 
@@ -193,7 +208,13 @@ export default function WorkspacePage({ params }: PageProps) {
       void audioContextRef.current.close();
       audioContextRef.current = null;
     }
+    // WARN-2: reset peak-hold state so a second recording does not inherit a stale held peak.
+    previousVolumeLevelRef.current = 0;
+    lastMeterTimestampRef.current = 0;
     setVolumeLevel(0);
+    // D4: reset label debounce state so a second recording starts with label off.
+    lowDurationRef.current = 0;
+    setIsLowVolume(false);
   };
 
   const startRecording = async () => {
@@ -218,10 +239,25 @@ export default function WorkspacePage({ params }: PageProps) {
 
       const timeDomainBuffer = new Uint8Array(analyserNode.fftSize);
 
-      const updateVolumeMeter = () => {
+      const updateVolumeMeter = (timestamp: DOMHighResTimeStamp) => {
         analyserNode.getByteTimeDomainData(timeDomainBuffer);
         const rmsLevel = computeRmsLevel(timeDomainBuffer);
-        setVolumeLevel(rmsLevelToDisplayPercentage(rmsLevel));
+        const rawPercent = rmsLevelToDisplayPercentage(rmsLevel);
+        const dtMs =
+          lastMeterTimestampRef.current > 0 ? timestamp - lastMeterTimestampRef.current : 0;
+        lastMeterTimestampRef.current = timestamp;
+        const releaseAmount = PEAK_HOLD_RELEASE_RATE_PER_MS * dtMs;
+        const smoothed = applyPeakHold(rawPercent, previousVolumeLevelRef.current, releaseAmount);
+        previousVolumeLevelRef.current = smoothed;
+        setVolumeLevel(smoothed);
+        // D4: label debounce — accumulate sub-threshold duration; fire label only when sustained.
+        lowDurationRef.current = accumulateLowDurationMs(
+          lowDurationRef.current,
+          smoothed,
+          LOW_VOLUME_DISPLAY_THRESHOLD,
+          dtMs,
+        );
+        setIsLowVolume(lowDurationRef.current >= SUSTAINED_LOW_MS);
         animationFrameRef.current = requestAnimationFrame(updateVolumeMeter);
       };
       animationFrameRef.current = requestAnimationFrame(updateVolumeMeter);
@@ -442,34 +478,7 @@ export default function WorkspacePage({ params }: PageProps) {
         {/* idle */}
         <div className="dock-row dock-idle">
           <div className="left">
-            <div className="seg" id="engineSeg">
-              <button
-                className={`seg-item${analysisMode === "cloudOnly" ? " is-active" : ""}`}
-                type="button"
-                data-eng="openai"
-                onClick={() => setAnalysisMode("cloudOnly")}
-              >
-                <span className="eng-dot" style={{ background: "var(--engine-openai)" }} />
-                OpenAI API
-              </button>
-              <button
-                className={`seg-item${analysisMode === "ossWorkerOnly" ? " is-active" : ""}`}
-                type="button"
-                data-eng="rust"
-                onClick={() => setAnalysisMode("ossWorkerOnly")}
-              >
-                <span className="eng-dot" style={{ background: "var(--engine-rust)" }} />
-                OSS Worker
-              </button>
-              <button
-                className={`seg-item${analysisMode === "comparison" ? " is-active" : ""}`}
-                type="button"
-                data-eng="compare"
-                onClick={() => setAnalysisMode("comparison")}
-              >
-                ⊕ 比較
-              </button>
-            </div>
+            <EngineSegSelector value={analysisMode} onChange={setAnalysisMode} />
             <span className="hint">エンジンを選んで録音 →</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
@@ -489,15 +498,13 @@ export default function WorkspacePage({ params }: PageProps) {
           <span className="rec-time">{formattedRecTime}</span>
           <LiveWave />
           <div
-            className={`volume-meter${volumeLevel < LOW_VOLUME_DISPLAY_THRESHOLD ? " volume-meter--low" : ""}`}
+            className={`volume-meter${isLowVolume ? " volume-meter--low" : ""}`}
             aria-label={`音量レベル ${Math.round(volumeLevel)}%`}
           >
             <div className="volume-meter-track">
               <div className="volume-meter-bar" style={{ width: `${volumeLevel.toFixed(1)}%` }} />
             </div>
-            <span className="volume-meter-label">
-              {volumeLevel < LOW_VOLUME_DISPLAY_THRESHOLD ? "音量小" : "音量OK"}
-            </span>
+            <span className="volume-meter-label">{isLowVolume ? "音量小" : "音量OK"}</span>
           </div>
           <span className="status status--fail" style={{ border: "none", background: "none" }}>
             <span className="sd" />
@@ -631,9 +638,12 @@ export default function WorkspacePage({ params }: PageProps) {
               サーバーとの通信でエラーが発生しました。再度録音してお試しください。
             </span>
           </div>
-          <button className="btn btn--sm btn--primary" type="button" onClick={startRecording}>
-            ● 録音し直す
-          </button>
+          <div className="dock-rerecord-group">
+            <EngineSegSelector value={analysisMode} onChange={setAnalysisMode} />
+            <button className="btn btn--sm btn--primary" type="button" onClick={startRecording}>
+              ● 録音し直す
+            </button>
+          </div>
         </div>
 
         {/* low_quality */}
@@ -647,9 +657,12 @@ export default function WorkspacePage({ params }: PageProps) {
               音量が小さいか、録音時間が短すぎます。マイクに近づいて、はっきりと録音してください。
             </span>
           </div>
-          <button className="btn btn--sm btn--primary" type="button" onClick={startRecording}>
-            ● 録音し直す
-          </button>
+          <div className="dock-rerecord-group">
+            <EngineSegSelector value={analysisMode} onChange={setAnalysisMode} />
+            <button className="btn btn--sm btn--primary" type="button" onClick={startRecording}>
+              ● 録音し直す
+            </button>
+          </div>
         </div>
       </div>
     </div>
