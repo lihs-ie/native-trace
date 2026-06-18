@@ -6,21 +6,23 @@ build-backend = "hatchling.build"
 name = "golden-speaker"
 version = "1.0.0"
 description = "NativeTrace Golden Speaker — 汎用 VCTK ネイティブ声への音色変換 HTTP API（ADR-012）"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
     "pydantic>=2.7.0",
     "python-multipart>=0.0.9",
     # RVC 音色変換（MIT）— CPU 推論パス（M-GRV-2 / REQ-NF-102）
-    "rvc-python>=0.1.8",
+    "rvc-python==0.1.5",
     # torch CPU wheel（BSD-3）— CUDA 肥大回避（Dockerfile で --index-url 指定）
-    "torch>=2.4.0",
-    "torchaudio>=2.4.0",
-    # F0 連続性品質ゲート（M-GRV-3）— license-clean (ISC + BSD-3)
-    # parselmouth (GPL-3.0) は使用しない（ADR-012 license-clean 要件）
+    "torch>=2.2.2",
+    "torchaudio>=2.2.2",
+    # F0 連続性品質ゲート（M-GRV-3）の F0 抽出は parselmouth (GPL-3.0) を使用する。
+    # ADR-012改訂: golden-speaker サービス境界内に GPL を隔離（ADR-006 踏襲）するため直接 import 可。
+    # numpy(BSD-3) autocorrelation フォールバックあり。
+    # librosa は rvc-python の transitive dep として pin（golden 自前コードは直接使用しない）。
     "librosa>=0.10.0",
-    "numpy>=1.24.0",
+    "numpy<=1.23.5",
     "soundfile>=0.12.0",
     # HF Hub から RVC モデル重みを DL する（M-GRV-10 イメージ非焼込）
     "huggingface_hub>=0.24.0",
@@ -47,7 +49,7 @@ asyncio_mode = "auto"
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py310"
 src = ["src"]
 
 [tool.ruff.lint]
@@ -74,7 +76,7 @@ ignore = [
 "**/interface/http_handler.py" = ["B008"]
 
 [tool.pyright]
-pythonVersion = "3.11"
+pythonVersion = "3.10"
 include = ["src"]
 exclude = ["test"]
 strict = ["src/golden_speaker/domain", "src/golden_speaker/usecase"]

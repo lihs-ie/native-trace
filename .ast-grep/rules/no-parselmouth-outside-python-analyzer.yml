@@ -1,12 +1,15 @@
-# Fitness function: parselmouth (GPL-3.0) must not be imported outside python-analyzer
+# Fitness function: parselmouth (GPL-3.0) must not be imported outside GPL-isolated services.
 # ADR-006: parselmouth is confined to the python-analyzer process (HTTP boundary isolation).
-# Importing it in the frontend or any other Python module would breach the GPL-3.0 boundary judgment.
+# ADR-012 (revised): the golden-speaker service is likewise GPL-isolated at its service boundary
+#   (same posture as python-analyzer / ADR-006), so direct parselmouth use inside it is permitted.
+# Importing it in the frontend or any non-isolated Python module would breach the GPL-3.0 boundary judgment.
 id: no-parselmouth-outside-python-analyzer
 language: python
 severity: error
-message: "parselmouth (GPL-3.0) は applications/python-analyzer/ 内部にのみ import 可（ADR-006）。このファイルでの import はライセンス境界違反。"
+message: "parselmouth (GPL-3.0) は GPL 隔離サービス（applications/python-analyzer/ — ADR-006、applications/golden-speaker/ — ADR-012改訂）内部にのみ import 可。このファイルでの import はライセンス境界違反。"
 ignores:
   - applications/python-analyzer/**
+  - applications/golden-speaker/**
 rule:
   any:
     - pattern: import parselmouth

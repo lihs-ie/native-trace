@@ -12,7 +12,7 @@ from golden_speaker.usecase.port.quality_gate import QualityGatePort
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_TARGET_VOICE = "p225"  # VCTK 話者 id（汎用ネイティブ声 — 自己声ではない）
+_DEFAULT_TARGET_VOICE = "p231"  # VCTK 話者 id（汎用ネイティブ声 — 自己声ではない）
 
 
 class ConvertVoiceUseCase:

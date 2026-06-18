@@ -114,8 +114,12 @@ Positive:
   python-analyzer service (ADR-006), not GPL-free** as this ADR originally stated. This is acceptable
   under the ADR-006 precedent (GPL contained in a separate service reached only over HTTP, no GPL
   import leaking into frontend/worker/python-analyzer), but the "no GPL-family encumbrance" framing
-  above was wrong and is corrected here. The golden service's own code uses librosa (ISC) for the F0
-  quality gate and does not import parselmouth directly; parselmouth arrives only via rvc-python.
+  above was wrong and is corrected here. The golden service's own code imports `parselmouth` directly
+  for the F0-continuity quality gate (with a `numpy` BSD-3 autocorrelation fallback); this direct use
+  is permitted because parselmouth is GPL-isolated within the golden-speaker service boundary, the same
+  posture as ADR-006. The fitness rule `no-parselmouth-outside-python-analyzer` is extended to allow
+  `applications/golden-speaker/**` accordingly. (`librosa` remains pinned only as an rvc-python
+  transitive dependency and is not used directly by the golden service code.)
 - CPU inference keeps the local MVP usable without GPU; GPU is needed only to train a learner voice
   model, which is the genuinely optional step.
 - Reusing the existing `.ab-srcs` switch and `--src-golden` token means the feature lands in the model
