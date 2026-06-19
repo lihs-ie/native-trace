@@ -25,11 +25,17 @@ module NativeTrace.Worker.Scoring (
   buildDynamicSummary,
   -- GOP delta 分類 (M-CRL-7 / ADR-022)
   classifyGopDelta,
+  -- ADR-018 音響証拠 (M-APD-10/11 テスト用)
+  hillenbrandGaVowelFormants,
+  deriveAcousticEvidence,
+  severityToScoreImpact,
 )
 where
 
 import Data.Char (isSpace)
-import Data.List (find, foldl', group, nub, sort, sortBy)
+import Data.List (find, nub, sort, sortBy)
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Ord (Down (..), comparing)
 import Data.Text (Text)
@@ -40,6 +46,7 @@ import NativeTrace.Worker.AnalyzerClient (
   InsertedVowelInfo (..),
   InterWordSilence (..),
   NBestEntry (..),
+  PhonemeAcoustic (..),
   PhonemeGop (..),
   Rhythm (..),
   SchwaRealization (..),
@@ -49,14 +56,13 @@ import NativeTrace.Worker.AnalyzerClient (
  )
 import NativeTrace.Worker.Catalog (
   CatalogEntry (..),
-  FunctionalLoad (..),
   catalog,
   flRank,
-  flWeight,
   lookupByConfusion,
   lookupByPhoneme,
  )
 import NativeTrace.Worker.Types (
+  AcousticEvidence (..),
   AssessmentFinding (..),
   AssessmentScores (..),
   AudioRange (..),
@@ -72,7 +78,6 @@ import NativeTrace.Worker.Types (
   PronunciationEvidence (..),
   ProsodyOutput (..),
   TextRange (..),
-  WordPair (..),
   WordStressOutput (..),
  )
 
@@ -427,7 +432,14 @@ generateFindingsFromGop sectionBodyText analyzerResult =
       detectedIpa = analyzedDetectedIpa analyzerResult
       gopFindings =
         concatMap
-          (buildGopFinding tokenCount tokens expectedIpa detectedIpa)
+          ( buildGopFinding
+              tokenCount
+              tokens
+              expectedIpa
+              detectedIpa
+              (analyzedPhonemeAcoustics analyzerResult)
+              (analyzerSpeakerSex analyzerResult)
+          )
           allPhonemeGops
       -- epenthesis findings（M-115）
       epenthesisFindings = buildEpenthesisFindings sectionBodyText (analyzedSyllables analyzerResult) tokenCount tokens
@@ -454,9 +466,11 @@ buildGopFinding ::
   [TokenSegment] ->
   Text ->
   Text ->
+  [PhonemeAcoustic] ->
+  Text ->
   PhonemeGop ->
   [AssessmentFinding]
-buildGopFinding tokenCount tokens expectedIpa detectedIpa phonemeGop =
+buildGopFinding tokenCount tokens expectedIpa detectedIpa phonemeAcoustics speakerSex phonemeGop =
   let gop = gopValue phonemeGop
    in case gopToSeverity gop of
         Nothing -> []
@@ -464,6 +478,9 @@ buildGopFinding tokenCount tokens expectedIpa detectedIpa phonemeGop =
           let phoneme = gopPhoneme phonemeGop
               startMilliseconds = gopStartMs phonemeGop
               endMilliseconds = gopEndMs phonemeGop
+              acousticEvidence =
+                (\m -> deriveAcousticEvidence phoneme m speakerSex phonemeAcoustics)
+                  <$> matchPhonemeAcoustic phoneme startMilliseconds endMilliseconds phonemeAcoustics
               textRange = findTextRangeForTime tokens tokenCount startMilliseconds
               phenomenon = classifyPhenomenon expectedIpa detectedIpa phoneme
               -- NBest 照合（M-103）
@@ -534,9 +551,216 @@ buildGopFinding tokenCount tokens expectedIpa detectedIpa phonemeGop =
                     findingExpectedPronunciation = Nothing,
                     findingInsertedVowel = Nothing,
                     findingInsertionPositionMs = Nothing,
-                    findingWordPositionLabel = gopWordPosition phonemeGop
+                    findingWordPositionLabel = gopWordPosition phonemeGop,
+                    findingAcousticEvidence = acousticEvidence
                   }
               ]
+
+-- ADR-018 D4: Hillenbrand et al. (1995) JASA 97(5):3099-3111 — General American
+-- 母音フォルマント平均 (Hz)。key = (IPA, sex) で sex は "F" | "M"。analyzer は生 Hz のみ返すため、
+-- 偏差判定の目標ノルムは scoring を所有する worker (ADR-004) が保持する。
+hillenbrandGaVowelFormants :: Map (Text, Text) (Double, Double, Double)
+hillenbrandGaVowelFormants =
+  Map.fromList
+    [ (("iː", "M"), (270, 2290, 3010)),
+      (("ɪ", "M"), (430, 2070, 2950)),
+      (("æ", "M"), (660, 1720, 2600)),
+      (("ɑ", "M"), (730, 1090, 2440)),
+      (("uː", "M"), (300, 870, 2240)),
+      (("iː", "F"), (437, 2761, 3372)),
+      (("ɪ", "F"), (483, 2365, 3053)),
+      (("æ", "F"), (669, 2349, 2972)),
+      (("ɑ", "F"), (936, 1551, 2815)),
+      (("uː", "F"), (459, 1105, 2735))
+    ]
+
+-- ADR-018 D5: articulatory-direction 判定の calibratable 定数 (GOP しきい値と同じ policy locus)。
+acousticF1SdThreshold :: Double
+acousticF1SdThreshold = 1.0
+
+acousticF2SdThreshold :: Double
+acousticF2SdThreshold = 1.0
+
+-- M-APD-11: M/F パスで発話内 SD が計算不能 (<2 母音) なとき normHz に対して仮定する相対 SD。
+-- Hillenbrand (1995) の F1 話者間 SD/平均 比は概ね 10-15% の範囲。偽陽性を抑えるため保守寄りの 10% を採用。
+-- ここを大きくするとラベルが立ちにくくなり、小さくすると立ちやすくなる（calibratable）。
+acousticFallbackRelativeSd :: Double
+acousticFallbackRelativeSd = 0.10
+
+rhoticF3MaleHz :: Double
+rhoticF3MaleHz = 2000
+
+rhoticF3FemaleHz :: Double
+rhoticF3FemaleHz = 2300
+
+lateralF3OverretroflexHz :: Double
+lateralF3OverretroflexHz = 2500
+
+sibilantSCentroidHz :: Double
+sibilantSCentroidHz = 4500
+
+sibilantShCentroidHz :: Double
+sibilantShCentroidHz = 3500
+
+tenseLaxDurationRatio :: Double
+tenseLaxDurationRatio = 1.4
+
+-- vowelLength 判定対象の tense (長) 母音。
+tenseVowelPhonemes :: [Text]
+tenseVowelPhonemes = ["iː", "uː"]
+
+-- vowelLength の発話内 baseline に使う lax (短) 母音。
+laxVowelPhonemes :: [Text]
+laxVowelPhonemes = ["ɪ", "ʊ", "ə", "ɛ", "ʌ", "æ", "ɒ"]
+
+acousticMean :: [Double] -> Double
+acousticMean [] = 0
+acousticMean xs = sum xs / fromIntegral (length xs)
+
+acousticStdDev :: [Double] -> Double
+acousticStdDev xs
+  | length xs < 2 = 0
+  | otherwise =
+      let m = acousticMean xs
+       in sqrt (sum [(x - m) * (x - m) | x <- xs] / fromIntegral (length xs))
+
+-- 偏差 (in-utterance SD 単位) から方向ラベルを返す。
+deviationLabel :: Double -> Double -> Double -> Double -> Text -> Text -> Maybe Text
+deviationLabel value target sd threshold posLabel negLabel
+  | sd <= 0 = Nothing
+  | d > threshold = Just posLabel
+  | d < negate threshold = Just negLabel
+  | otherwise = Just "ok"
+ where
+  d = (value - target) / sd
+
+-- | 当該音素 (IPA + 時間境界) に対応する PhonemeAcoustic を突き合わせる。
+-- 同一 IPA が複数あるときは境界中点が最も近いものを選ぶ。
+matchPhonemeAcoustic :: Text -> Int -> Int -> [PhonemeAcoustic] -> Maybe PhonemeAcoustic
+matchPhonemeAcoustic phoneme startMilliseconds endMilliseconds acoustics =
+  case filter ((== phoneme) . acousticPhoneme) acoustics of
+    [] -> Nothing
+    (c : cs) -> Just (foldr closer c cs)
+ where
+  target = fromIntegral (startMilliseconds + endMilliseconds) / 2 :: Double
+  mid a = fromIntegral (acousticStartMs a + acousticEndMs a) / 2 :: Double
+  closer a b = if abs (mid a - target) < abs (mid b - target) then a else b
+
+-- | ADR-018 D5: 計測値と Hillenbrand ノルムの偏差から articulatory-direction ラベルを導出する。
+-- analyzer は生 Hz のみ返す。しきい値判定 (scoring policy, ADR-004) は worker が所有する。
+-- scoreImpact には一切影響しない (D7、二重減点回避)。speakerSex 'unknown' は発話内正規化に倒す。
+--
+-- S-APD-5: runtime では speakerSex は常に 'unknown'（UI 収集は Non-goal、かつ
+-- FE request-mapper と worker AnalyzerMetadata の 2 層で未配線）→ M/F 分岐
+-- （tongueHeight/tongueBackness の | otherwise = ... 節）は runtime 到達不能・unit のみ被覆。
+deriveAcousticEvidence :: Text -> PhonemeAcoustic -> Text -> [PhonemeAcoustic] -> AcousticEvidence
+deriveAcousticEvidence phoneme measured sex allAcoustics =
+  AcousticEvidence
+    { acousticTongueHeight = tongueHeight,
+      acousticTongueBackness = tongueBackness,
+      acousticRhoticity = rhoticity,
+      acousticSibilantPlace = sibilantPlace,
+      acousticVowelLength = vowelLength,
+      acousticMeasuredF1Hz = acousticF1Hz measured,
+      acousticMeasuredF2Hz = acousticF2Hz measured,
+      acousticMeasuredF3Hz = acousticF3Hz measured,
+      acousticTargetF1Hz = targetF1,
+      acousticTargetF2Hz = targetF2,
+      acousticTargetF3Hz = targetF3
+    }
+ where
+  isVowel = phoneme `elem` fullVowelPhonemes
+  normSex = if sex == "F" then "F" else "M"
+  normRow = Map.lookup (phoneme, normSex) hillenbrandGaVowelFormants
+  (targetF1, targetF2, targetF3) = case normRow of
+    Just (a, b, c) -> (Just a, Just b, Just c)
+    Nothing -> (Nothing, Nothing, Nothing)
+
+  -- 発話内母音 (F1 が非 None) を Lobanov 正規化の母集団に使う。
+  -- speakerSex='unknown' のとき発話内 SD で正規化する (Lobanov)。3 母音未満は正規化不能 → guard で弾く。
+  -- speakerSex='M'/'F' のとき hillenbrand ノルム行を直接参照するため発話内 SD は補助的な用途のみ。
+  utteranceVowels =
+    [ a
+    | a <- allAcoustics,
+      acousticPhoneme a `elem` fullVowelPhonemes,
+      Just _ <- [acousticF1Hz a]
+    ]
+  vowelF1s = [f1 | a <- utteranceVowels, Just f1 <- [acousticF1Hz a]]
+  vowelF2s = [f2 | a <- utteranceVowels, Just f2 <- [acousticF2Hz a]]
+  -- enoughVowels ガードは speakerSex='unknown' の Lobanov パスのみに適用する (M-APD-11)。
+  -- M/F パスはノルム行を直接参照するため母音数に依存しない。
+  enoughVowelsForLobanov = length utteranceVowels >= 3
+  sdF1 = acousticStdDev vowelF1s
+  sdF2 = acousticStdDev vowelF2s
+
+  -- tongueHeight: 高 F1 = 開口 = 舌が低い。
+  -- speakerSex='unknown': Lobanov 正規化。3 母音未満は正規化不能 → Nothing (偽陽性回避)。
+  -- speakerSex='M'/'F': sex キーのノルム行を直接参照。発話内 SD が計算可能 (>=2) なら使い、
+  --   不能なら acousticFallbackRelativeSd × normF1 を SD 代替値とする (calibratable)。
+  --   ※ 発話内母音の F1 がほぼ同一のとき SD→0 になる (blowup) ため deviationLabel が Nothing を返す。
+  --     その場合は偽陰性方向に倒れる。acousticF1SdThreshold を下げると感度が上がる (calibratable)。
+  tongueHeight
+    | not isVowel = Nothing
+    | sex == "unknown" =
+        if not enoughVowelsForLobanov
+          then Nothing
+          else case (acousticF1Hz measured, normRow) of
+            (Just f1, Just (nF1, _, _)) -> deviationLabel f1 nF1 sdF1 acousticF1SdThreshold "tooLow" "tooHigh"
+            _ -> Nothing
+    | otherwise = case (acousticF1Hz measured, normRow) of
+        (Just f1, Just (nF1, _, _)) ->
+          let effectiveSdF1 = if sdF1 > 0 then sdF1 else nF1 * acousticFallbackRelativeSd
+           in deviationLabel f1 nF1 effectiveSdF1 acousticF1SdThreshold "tooLow" "tooHigh"
+        _ -> Nothing
+
+  -- tongueBackness: 高 F2 = 舌が前。
+  -- speakerSex='unknown': Lobanov 正規化。3 母音未満は正規化不能 → Nothing (偽陽性回避)。
+  -- speakerSex='M'/'F': sex キーのノルム行を直接参照。SD フォールバックは tongueHeight と同方針。
+  tongueBackness
+    | not isVowel = Nothing
+    | sex == "unknown" =
+        if not enoughVowelsForLobanov
+          then Nothing
+          else case (acousticF2Hz measured, normRow) of
+            (Just f2, Just (_, nF2, _)) -> deviationLabel f2 nF2 sdF2 acousticF2SdThreshold "tooFront" "tooBack"
+            _ -> Nothing
+    | otherwise = case (acousticF2Hz measured, normRow) of
+        (Just f2, Just (_, nF2, _)) ->
+          let effectiveSdF2 = if sdF2 > 0 then sdF2 else nF2 * acousticFallbackRelativeSd
+           in deviationLabel f2 nF2 effectiveSdF2 acousticF2SdThreshold "tooFront" "tooBack"
+        _ -> Nothing
+
+  -- rhoticity: /r/ は F3 が高いと r 音性不足、/l/ は F3 が低すぎると過剰そり舌。期待音素で一意。
+  rhoticity
+    | phoneme == "r" || phoneme == "ɹ" = case acousticF3Hz measured of
+        Just f3 -> Just (if f3 >= rhoticThreshold then "insufficient" else "ok")
+        Nothing -> Nothing
+    | phoneme == "l" = case acousticF3Hz measured of
+        Just f3 -> Just (if f3 < lateralF3OverretroflexHz then "overRetroflex" else "ok")
+        Nothing -> Nothing
+    | otherwise = Nothing
+   where
+    rhoticThreshold = if sex == "F" then rhoticF3FemaleHz else rhoticF3MaleHz
+
+  -- sibilantPlace: /s/ は重心が低いと口蓋化、/ʃ/ は重心が高いと歯茎化。
+  sibilantPlace
+    | phoneme == "s" = case acousticSpectralCentroidHz measured of
+        Just c -> Just (if c < sibilantShCentroidHz then "tooPalatal" else "ok")
+        Nothing -> Nothing
+    | phoneme == "ʃ" = case acousticSpectralCentroidHz measured of
+        Just c -> Just (if c > sibilantSCentroidHz then "tooAlveolar" else "ok")
+        Nothing -> Nothing
+    | otherwise = Nothing
+
+  -- vowelLength: tense 母音が発話内 lax 母音平均長 ×1.4 未満なら短すぎ (ratio-based)。
+  vowelLength
+    | phoneme `elem` tenseVowelPhonemes =
+        let laxDurations = [fromIntegral (acousticDurationMs a) | a <- allAcoustics, acousticPhoneme a `elem` laxVowelPhonemes]
+            measuredDur = fromIntegral (acousticDurationMs measured) :: Double
+         in if null laxDurations
+              then Just "ok"
+              else Just (if measuredDur < acousticMean laxDurations * tenseLaxDurationRatio then "tooShort" else "ok")
+    | otherwise = Nothing
 
 -- | epenthesis finding を音節情報から生成する（M-115）。
 buildEpenthesisFindings ::
@@ -591,7 +815,8 @@ buildEpenthesisFindings _sectionBodyText syllables tokenCount tokens =
                   findingExpectedPronunciation = Nothing,
                   findingInsertedVowel = insertedVowelIpa,
                   findingInsertionPositionMs = insertionMs,
-                  findingWordPositionLabel = Nothing
+                  findingWordPositionLabel = Nothing,
+                  findingAcousticEvidence = Nothing
                 }
             ]
 
@@ -650,7 +875,8 @@ buildLexicalStressFindings _sectionBodyText wordStresses tokenCount tokens =
                   findingExpectedPronunciation = Nothing,
                   findingInsertedVowel = Nothing,
                   findingInsertionPositionMs = Nothing,
-                  findingWordPositionLabel = Nothing
+                  findingWordPositionLabel = Nothing,
+                  findingAcousticEvidence = Nothing
                 }
 
 -- | weakForm finding を弱形実現データから生成する（M-102/M-109）。
@@ -709,7 +935,8 @@ buildWeakFormFindings _sectionBodyText weakForms tokenCount tokens =
                   findingExpectedPronunciation = Nothing,
                   findingInsertedVowel = Nothing,
                   findingInsertionPositionMs = Nothing,
-                  findingWordPositionLabel = Nothing
+                  findingWordPositionLabel = Nothing,
+                  findingAcousticEvidence = Nothing
                 }
 
 -- ---- connected speech 4 現象 producers（M-102R-a） ----
@@ -751,7 +978,8 @@ connectedSpeechFindingBase textRange =
       findingExpectedPronunciation = Nothing,
       findingInsertedVowel = Nothing,
       findingInsertionPositionMs = Nothing,
-      findingWordPositionLabel = Nothing
+      findingWordPositionLabel = Nothing,
+      findingAcousticEvidence = Nothing
     }
 
 -- | linking: 単語末子音終端と次語頭母音開始の gap < 50ms かつ境界で音声が連続している現象。
@@ -898,10 +1126,6 @@ buildAssimilationFindings phonemeGops tokens tokenCount =
                 Data.List.find
                   (\e -> nBestPhoneme e `elem` assimilatedPhonemes)
                   nBestEntries
-
--- | 機能語・無強勢母音の弱化シグナル判定に使う母音セット（シュワー・中央化）。
-schwaPhonemes :: [Text]
-schwaPhonemes = ["ə", "ɪ", "ʊ"]
 
 -- | 機能語の期待フル母音セット。これらが実際にシュワー等に短縮された場合を reduction とする。
 fullVowelPhonemes :: [Text]

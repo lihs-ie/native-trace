@@ -14,6 +14,7 @@ module NativeTrace.Worker.AnalyzerClient (
   WeakFormRealization (..),
   SyllableInfo (..),
   InsertedVowelInfo (..),
+  PhonemeAcoustic (..),
   AnalyzerShadowingLagResult (..),
   analyzeAudio,
   analyzeShadowingLag,
@@ -232,6 +233,46 @@ instance FromJSON InsertedVowelInfo where
     vowel <- o .: "vowel"
     pure InsertedVowelInfo {insertedVowelPositionMs = posMs, insertedVowelPhoneme = vowel}
 
+-- | 音素ごとの音響計測値（ADR-018 D1）。analyzer が返す生 Hz / 母音長 / スペクトル重心。
+-- 偏差判定・方向ラベル導出は worker Scoring.hs が行う（ADR-004 scoring policy 所有）。
+data PhonemeAcoustic = PhonemeAcoustic
+  { acousticPhoneme :: Text,
+    acousticStartMs :: Int,
+    acousticEndMs :: Int,
+    -- | フォルマント F1 Hz。40ms 未満の区間では None（短区間 LPC 不安定ガード）。
+    acousticF1Hz :: Maybe Double,
+    -- | フォルマント F2 Hz。
+    acousticF2Hz :: Maybe Double,
+    -- | フォルマント F3 Hz。
+    acousticF3Hz :: Maybe Double,
+    -- | スペクトル重心 Hz。30ms 未満の区間では None。
+    acousticSpectralCentroidHz :: Maybe Double,
+    acousticDurationMs :: Int
+  }
+  deriving (Show, Eq)
+
+instance FromJSON PhonemeAcoustic where
+  parseJSON = withObject "PhonemeAcoustic" $ \o -> do
+    phoneme <- o .: "phoneme"
+    startMs <- o .: "startMs"
+    endMs <- o .: "endMs"
+    f1Hz <- o .:? "f1Hz"
+    f2Hz <- o .:? "f2Hz"
+    f3Hz <- o .:? "f3Hz"
+    spectralCentroidHz <- o .:? "spectralCentroidHz"
+    durationMs <- o .: "durationMs"
+    pure
+      PhonemeAcoustic
+        { acousticPhoneme = phoneme,
+          acousticStartMs = startMs,
+          acousticEndMs = endMs,
+          acousticF1Hz = f1Hz,
+          acousticF2Hz = f2Hz,
+          acousticF3Hz = f3Hz,
+          acousticSpectralCentroidHz = spectralCentroidHz,
+          acousticDurationMs = durationMs
+        }
+
 -- | 音節情報（C1-f）。
 data SyllableInfo = SyllableInfo
   { syllableInfoWord :: Text,
@@ -284,7 +325,11 @@ data AnalyzerResult = AnalyzerResult
     -- | 弱形実現リスト（C1-e）。analyzer が返さない場合は空リスト。
     analyzedWeakFormRealizations :: [WeakFormRealization],
     -- | 音節情報リスト（C1-f）。analyzer が返さない場合は空リスト。
-    analyzedSyllables :: [SyllableInfo]
+    analyzedSyllables :: [SyllableInfo],
+    -- | 音素ごとの音響計測値リスト（ADR-018 D1）。analyzer が返さない場合は空リスト。
+    analyzedPhonemeAcoustics :: [PhonemeAcoustic],
+    -- | 話者性別（ADR-018 D2）。analyzer が返さない場合は "unknown"。値は "M" / "F" / "unknown"。
+    analyzerSpeakerSex :: Text
   }
   deriving (Show, Eq)
 
@@ -304,6 +349,8 @@ instance FromJSON AnalyzerResult where
     rhythm <- o .:? "rhythm"
     weakFormRealizations <- o .:? "weakFormRealizations" .!= []
     syllables <- o .:? "syllables" .!= []
+    phonemeAcoustics <- o .:? "phonemeAcoustics" .!= []
+    speakerSex <- o .:? "speakerSex" .!= "unknown"
     pure
       AnalyzerResult
         { analyzedExpectedIpa = expectedIpa,
@@ -319,7 +366,9 @@ instance FromJSON AnalyzerResult where
           analyzedWordStress = wordStress,
           analyzedRhythm = rhythm,
           analyzedWeakFormRealizations = weakFormRealizations,
-          analyzedSyllables = syllables
+          analyzedSyllables = syllables,
+          analyzedPhonemeAcoustics = phonemeAcoustics,
+          analyzerSpeakerSex = speakerSex
         }
 
 -- | python-analyzer の POST /v1/shadowing-lag レスポンス（M-SHL-3 / ADR-013）。
@@ -352,6 +401,10 @@ instance FromJSON AnalyzerShadowingLagResult where
 -- ---- リクエスト型（multipart 組み立て用） ----
 
 -- | analyzer に渡す metadata JSON。
+-- S-APD-5: speakerSex は wire に乗せていない（AnalyzerMetadata に speakerSex フィールドを追加していない）。
+-- M/F 活性化は UI 収集動線 + FE request-mapper + ここの Haskell 側 metadata 3 層の product 判断。
+-- 現状は AnalyzerResult.analyzerSpeakerSex が analyzeAudio 応答の speakerSex echo から取得されるが、
+-- リクエスト metadata 側には speakerSex を送っていないため analyzer 側は常に default "unknown" を返す。
 data AnalyzerMetadata = AnalyzerMetadata
   { analyzerReferenceText :: Text,
     analyzerTargetAccent :: Text,

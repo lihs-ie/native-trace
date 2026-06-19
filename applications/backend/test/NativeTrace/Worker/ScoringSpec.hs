@@ -1,12 +1,14 @@
 module NativeTrace.Worker.ScoringSpec (spec) where
 
-import Data.Maybe (isNothing)
+import Data.Map.Strict qualified as Map
+import Data.Maybe (isJust, isNothing)
 import Data.Text qualified as Text
 import NativeTrace.Worker.AnalyzerClient (
   AnalyzerResult (..),
   InsertedVowelInfo (..),
   InterWordSilence (..),
   NBestEntry (..),
+  PhonemeAcoustic (..),
   PhonemeGop (..),
   SchwaRealization (..),
   SyllableInfo (..),
@@ -17,11 +19,15 @@ import NativeTrace.Worker.Scoring (
   buildAssessmentScores,
   checkAudioQuality,
   classifyGopDelta,
+  deriveAcousticEvidence,
   generateFindingsFromGop,
+  hillenbrandGaVowelFormants,
   scoreAssessment,
   scoreFromGop,
+  severityToScoreImpact,
  )
 import NativeTrace.Worker.Types (
+  AcousticEvidence (..),
   AssessmentFinding (..),
   AssessmentScores (..),
   BoundarySignal (..),
@@ -69,7 +75,9 @@ fixtureAnalyzerResult =
       analyzedWordStress = [],
       analyzedRhythm = Nothing,
       analyzedWeakFormRealizations = [],
-      analyzedSyllables = []
+      analyzedSyllables = [],
+      analyzedPhonemeAcoustics = [],
+      analyzerSpeakerSex = "unknown"
     }
 
 -- | NBest 付き高 FL finding を持つフィクスチャ（M-111 intelligibility テスト用）。
@@ -787,3 +795,260 @@ spec = do
       it "major→none (original=-15, retry=-7) → BoundarySignalCrossedMajor" $ do
         let result = classifyGopDelta (-15) (-7)
         gopDeltaResponseBoundarySignal result `shouldBe` BoundarySignalCrossedMajor
+
+  -- ADR-018 音響証拠 unit tests
+  -- M-APD-10: hillenbrandGaVowelFormants ノルム map のキー検証
+  describe "hillenbrandGaVowelFormants (M-APD-10)" $ do
+    it "contains key (\"iː\", \"M\") for male /iː/ vowel" $ do
+      Map.member ("iː", "M") hillenbrandGaVowelFormants `shouldBe` True
+
+    it "contains key (\"iː\", \"F\") for female /iː/ vowel" $ do
+      Map.member ("iː", "F") hillenbrandGaVowelFormants `shouldBe` True
+
+  -- M-APD-11: deriveAcousticEvidence 方向ラベル + Lobanov ガード
+  describe "deriveAcousticEvidence (M-APD-11)" $ do
+    -- rhoticity label test: F3=2200Hz は /r/ → insufficient, /l/ → overRetroflex (dead zone なし)
+    it "F3=2200Hz at /r/ → rhoticity=insufficient; at /l/ → overRetroflex (no dead zone)" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "r",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Nothing,
+                acousticF2Hz = Nothing,
+                acousticF3Hz = Just 2200,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      -- /r/ with F3=2200 >= rhoticF3MaleHz(2000) → insufficient
+      let rResult = deriveAcousticEvidence "r" measured "M" [measured]
+      acousticRhoticity rResult `shouldBe` Just "insufficient"
+      -- /l/ with same F3=2200 < lateralF3OverretroflexHz(2500) → overRetroflex
+      let lMeasured = measured {acousticPhoneme = "l"}
+      let lResult = deriveAcousticEvidence "l" lMeasured "M" [lMeasured]
+      acousticRhoticity lResult `shouldBe` Just "overRetroflex"
+
+    -- Lobanov ガード: speakerSex="unknown" で母音 ≥3 → tongueHeight が Just
+    it "speakerSex=unknown with >=3 vowels → tongueHeight is Just (Lobanov normalisation runs)" $ do
+      -- fullVowelPhonemes に含まれる母音を 3 つ用意。F1 に分散がある値を設定。
+      let makeVowel p f1 =
+            PhonemeAcoustic
+              { acousticPhoneme = p,
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Just f1,
+                acousticF2Hz = Just 2000,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let vowel1 = makeVowel "iː" 270
+      let vowel2 = makeVowel "ɪ" 430
+      let vowel3 = makeVowel "æ" 660
+      let allVowels = [vowel1, vowel2, vowel3]
+      let result = deriveAcousticEvidence "iː" vowel1 "unknown" allVowels
+      isJust (acousticTongueHeight result) `shouldBe` True
+
+    -- Lobanov ガード: speakerSex="unknown" で母音 <3 → tongueHeight が Nothing
+    it "speakerSex=unknown with <3 vowels → tongueHeight is Nothing (false-positive guard)" $ do
+      let makeVowel p f1 =
+            PhonemeAcoustic
+              { acousticPhoneme = p,
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Just f1,
+                acousticF2Hz = Just 2000,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let vowel1 = makeVowel "iː" 270
+      let vowel2 = makeVowel "ɪ" 430
+      let twoVowels = [vowel1, vowel2]
+      let result = deriveAcousticEvidence "iː" vowel1 "unknown" twoVowels
+      acousticTongueHeight result `shouldBe` Nothing
+
+    -- M-APD-11: M/F パスは sex ノルム行を直接参照する
+    -- hillenbrand norm: iː M=(270,2290,3010), iː F=(437,2761,3372)
+    -- 計測 F1=600 は M ノルム(270)の高い側 → "tooLow"(高 F1=低舌位)
+    --                   F ノルム(437)の高い側 → "tooLow"
+    -- 計測 F2=2500 は M ノルム(2290)の高い側 → "tooFront"
+    --               F ノルム(2761)の低い側    → "tooBack" (2500 < 2761)
+    -- → M/F で tongueBackness が異なることを確認。target も各 sex ノルムに一致。
+    it "speakerSex=M vs F yields different tongueBackness (sex norm row differs) for iː F2=2500" $ do
+      let makeSingleVowel p f1 f2 =
+            PhonemeAcoustic
+              { acousticPhoneme = p,
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Just f1,
+                acousticF2Hz = Just f2,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      -- F2=3000 を使う: M norm 2290 → (3000-2290)/(2290*0.10)=710/229=3.1 → "tooFront"
+      --                  F norm 2761 → (3000-2761)/(2761*0.10)=239/276.1=0.87 → "ok"
+      let measuredHighF2 = makeSingleVowel "iː" 600 3000
+      let resultMaleHighF2 = deriveAcousticEvidence "iː" measuredHighF2 "M" [measuredHighF2]
+      let resultFemaleHighF2 = deriveAcousticEvidence "iː" measuredHighF2 "F" [measuredHighF2]
+      -- M → tooFront (F2 far above M norm 2290)
+      acousticTongueBackness resultMaleHighF2 `shouldBe` Just "tooFront"
+      -- F → ok (F2=3000 is within 1 SD of F norm 2761)
+      acousticTongueBackness resultFemaleHighF2 `shouldBe` Just "ok"
+      -- また M/F の tongueBackness が異なることを確認
+      acousticTongueBackness resultMaleHighF2 `shouldNotBe` acousticTongueBackness resultFemaleHighF2
+
+    it "speakerSex=M acousticTargetF1Hz equals hillenbrand M norm for iː" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "iː",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Just 600,
+                acousticF2Hz = Just 2500,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "iː" measured "M" [measured]
+      -- hillenbrand iː M norm: F1=270, F2=2290, F3=3010
+      acousticTargetF1Hz result `shouldBe` Just 270
+      acousticTargetF2Hz result `shouldBe` Just 2290
+
+    it "speakerSex=F acousticTargetF1Hz equals hillenbrand F norm for iː" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "iː",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Just 600,
+                acousticF2Hz = Just 2500,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "iː" measured "F" [measured]
+      -- hillenbrand iː F norm: F1=437, F2=2761, F3=3372
+      acousticTargetF1Hz result `shouldBe` Just 437
+      acousticTargetF2Hz result `shouldBe` Just 2761
+
+    -- M-APD-11: M/F パスは >=3 母音ガードを適用しない
+    it "speakerSex=M with only 1 vowel still returns Just for tongueHeight (not over-guarded)" $ do
+      let singleVowel =
+            PhonemeAcoustic
+              { acousticPhoneme = "iː",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                -- F1=600Hz は M ノルム(270)より大幅に高い → fallback SD=270*0.10=27 → (600-270)/27=12.2 → "tooLow"
+                acousticF1Hz = Just 600,
+                acousticF2Hz = Just 2500,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "iː" singleVowel "M" [singleVowel]
+      -- M/F パスは母音数によらず Just を返す (>=3 ガードは unknown のみ)
+      isJust (acousticTongueHeight result) `shouldBe` True
+
+    it "speakerSex=F with only 1 vowel still returns Just for tongueHeight (not over-guarded)" $ do
+      let singleVowel =
+            PhonemeAcoustic
+              { acousticPhoneme = "iː",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                -- F1=600Hz は F ノルム(437)より大幅に高い → fallback SD=437*0.10=43.7 → (600-437)/43.7=3.7 → "tooLow"
+                acousticF1Hz = Just 600,
+                acousticF2Hz = Just 2500,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "iː" singleVowel "F" [singleVowel]
+      isJust (acousticTongueHeight result) `shouldBe` True
+
+  -- M-APD-17: scoreImpact 不変 — acousticEvidence の有無で findingScoreImpact が変わらないこと
+  describe "scoreImpact invariant (M-APD-17)" $ do
+    it "severityToScoreImpact FindingSeverityMajor == -5.0 (unchanged)" $ do
+      severityToScoreImpact FindingSeverityMajor `shouldBe` (-5.0)
+
+    it "severityToScoreImpact FindingSeverityMinor == -2.0 (unchanged)" $ do
+      severityToScoreImpact FindingSeverityMinor `shouldBe` (-2.0)
+
+    it "major GOP finding has same scoreImpact with or without acoustic match" $ do
+      -- GOP -15 (major) で PhonemeAcoustic 有無を切り替える
+      let majorGop =
+            PhonemeGop
+              { gopPhoneme = "r",
+                gopValue = -15.0,
+                gopStartMs = 0,
+                gopEndMs = 100,
+                gopNBest = [],
+                gopWordPosition = Nothing
+              }
+      let matchingAcoustic =
+            PhonemeAcoustic
+              { acousticPhoneme = "r",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Nothing,
+                acousticF2Hz = Nothing,
+                acousticF3Hz = Just 2200,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      -- with acoustic match
+      let withAcousticResult =
+            fixtureAnalyzerResult
+              { analyzedPerPhonemeGop = [majorGop],
+                analyzedPhonemeAcoustics = [matchingAcoustic],
+                analyzedInterWordSilences = []
+              }
+      -- without acoustic match
+      let withoutAcousticResult =
+            fixtureAnalyzerResult
+              { analyzedPerPhonemeGop = [majorGop],
+                analyzedPhonemeAcoustics = [],
+                analyzedInterWordSilences = []
+              }
+      let withFindings = generateFindingsFromGop bodyText withAcousticResult
+      let withoutFindings = generateFindingsFromGop bodyText withoutAcousticResult
+      -- scoreImpact は等しいこと
+      map findingScoreImpact withFindings `shouldBe` map findingScoreImpact withoutFindings
+
+    it "minor GOP finding has same scoreImpact with or without acoustic match" $ do
+      let minorGop =
+            PhonemeGop
+              { gopPhoneme = "r",
+                gopValue = -10.0,
+                gopStartMs = 0,
+                gopEndMs = 100,
+                gopNBest = [],
+                gopWordPosition = Nothing
+              }
+      let matchingAcoustic =
+            PhonemeAcoustic
+              { acousticPhoneme = "r",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Nothing,
+                acousticF2Hz = Nothing,
+                acousticF3Hz = Just 2200,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let withAcousticResult =
+            fixtureAnalyzerResult
+              { analyzedPerPhonemeGop = [minorGop],
+                analyzedPhonemeAcoustics = [matchingAcoustic],
+                analyzedInterWordSilences = []
+              }
+      let withoutAcousticResult =
+            fixtureAnalyzerResult
+              { analyzedPerPhonemeGop = [minorGop],
+                analyzedPhonemeAcoustics = [],
+                analyzedInterWordSilences = []
+              }
+      let withFindings = generateFindingsFromGop bodyText withAcousticResult
+      let withoutFindings = generateFindingsFromGop bodyText withoutAcousticResult
+      map findingScoreImpact withFindings `shouldBe` map findingScoreImpact withoutFindings

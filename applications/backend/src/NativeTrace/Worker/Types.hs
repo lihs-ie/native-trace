@@ -27,6 +27,8 @@ module NativeTrace.Worker.Types (
   PerSegmentLagEntry (..),
   ShadowingLagDto (..),
   GoldenSpeakerConversionDto (..),
+  -- Acoustic evidence (M-APD-9/10/11 / ADR-018)
+  AcousticEvidence (..),
   -- GOP delta classification (M-CRL-7 / ADR-022)
   GopDeltaRequest (..),
   DeltaSignal (..),
@@ -270,6 +272,41 @@ instance ToJSON FindingSeverity where
   toJSON FindingSeverityMinor = "minor"
   toJSON FindingSeveritySuggestion = "suggestion"
 
+-- | 音響証拠（M-APD-9/10/11 / ADR-018）。GOP finding に付随する formant / rhoticity 等の診断情報。
+data AcousticEvidence = AcousticEvidence
+  { acousticTongueHeight :: Maybe Text,
+    acousticTongueBackness :: Maybe Text,
+    acousticRhoticity :: Maybe Text,
+    acousticSibilantPlace :: Maybe Text,
+    acousticVowelLength :: Maybe Text,
+    acousticMeasuredF1Hz :: Maybe Double,
+    acousticMeasuredF2Hz :: Maybe Double,
+    acousticMeasuredF3Hz :: Maybe Double,
+    acousticTargetF1Hz :: Maybe Double,
+    acousticTargetF2Hz :: Maybe Double,
+    acousticTargetF3Hz :: Maybe Double
+  }
+  deriving (Show, Eq)
+
+-- S-APD-4 (D9 拡張点): targetF1Hz/targetF2Hz とノルム行の差分 (re-record delta) を将来的に
+-- "formantDeltaF1Hz"/"formantDeltaF2Hz" として追加することで、再録音後にフォーマントがノルムへ
+-- どれだけ近づいたかを定量化できる。現 MVP では acousticEvidence のフィールドとして reserved。
+instance ToJSON AcousticEvidence where
+  toJSON evidence =
+    object
+      [ "tongueHeight" .= acousticTongueHeight evidence,
+        "tongueBackness" .= acousticTongueBackness evidence,
+        "rhoticity" .= acousticRhoticity evidence,
+        "sibilantPlace" .= acousticSibilantPlace evidence,
+        "vowelLength" .= acousticVowelLength evidence,
+        "measuredF1Hz" .= acousticMeasuredF1Hz evidence,
+        "measuredF2Hz" .= acousticMeasuredF2Hz evidence,
+        "measuredF3Hz" .= acousticMeasuredF3Hz evidence,
+        "targetF1Hz" .= acousticTargetF1Hz evidence,
+        "targetF2Hz" .= acousticTargetF2Hz evidence,
+        "targetF3Hz" .= acousticTargetF3Hz evidence
+      ]
+
 data AssessmentFinding = AssessmentFinding
   { findingCategory :: FindingCategory,
     findingSeverity :: FindingSeverity,
@@ -306,7 +343,9 @@ data AssessmentFinding = AssessmentFinding
     -- | Epenthesis 挿入位置 ms（C3-a, M-115）。
     findingInsertionPositionMs :: Maybe Int,
     -- | 音素の単語内位置ラベル（M-104R）。値は "initial" | "medial" | "final" | null。
-    findingWordPositionLabel :: Maybe Text
+    findingWordPositionLabel :: Maybe Text,
+    -- | 音響証拠（M-APD-9/10/11 / ADR-018）。GOP finding のみ付与、それ以外は Nothing。
+    findingAcousticEvidence :: Maybe AcousticEvidence
   }
 
 instance ToJSON AssessmentFinding where
@@ -333,7 +372,8 @@ instance ToJSON AssessmentFinding where
         "expectedPronunciation" .= findingExpectedPronunciation finding,
         "insertedVowel" .= findingInsertedVowel finding,
         "insertionPositionMs" .= findingInsertionPositionMs finding,
-        "wordPositionLabel" .= findingWordPositionLabel finding
+        "wordPositionLabel" .= findingWordPositionLabel finding,
+        "acousticEvidence" .= findingAcousticEvidence finding
       ]
 
 -- | 全音素 GOP ヒートマップエントリ（C3-c, M-107c）。
