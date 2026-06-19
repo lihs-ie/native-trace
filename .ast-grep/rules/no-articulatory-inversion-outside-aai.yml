@@ -1,0 +1,16 @@
+# Fitness function: articulatory (Apache-2.0) must not be imported outside aai
+# ADR-019: articulatory engine is confined to the aai service (HTTP boundary isolation).
+# ADR-006 pattern: same as no-parselmouth-outside-python-analyzer / no-rvc-outside-golden-speaker.
+# Importing articulatory in python-analyzer / frontend / backend / golden-speaker violates the
+# service boundary. All use must go through the HTTP API POST /v1/articulatory-inversion.
+id: no-articulatory-inversion-outside-aai
+language: python
+severity: error
+message: "articulatory は applications/aai/ 内部にのみ import 可（ADR-019）。このファイルでの import はサービス境界違反。"
+ignores:
+  - applications/aai/**
+rule:
+  any:
+    - pattern: import articulatory
+    - pattern: from articulatory import $$$
+    - pattern: from articulatory.$$ import $$$

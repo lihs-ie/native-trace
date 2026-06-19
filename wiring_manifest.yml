@@ -89,3 +89,37 @@ rules:
       - "compose.yaml"
     reason: "GoldenConversionResponse スキーマ変更は compose.yaml の golden サービス定義と一致させる（worker/frontend が HTTP contract に合わせる）"
     smoke: "grep 'GoldenConversionResponse' applications/golden-speaker/src/golden_speaker/interface/schema.py"
+
+  # aai service 配線エッジ（ADR-019 / M-AAI-1 / M-AAI-2 / M-AAI-16）
+  # aai service は applications/frontend / applications/backend の内部型を import しない（HTTP 契約のみ）
+  - id: aai-entrypoint-needs-app-wiring
+    when: "applications/aai/src/aai/interface/http_handler.py"
+    require_one_of:
+      - "applications/aai/src/aai/app.py"
+    reason: "http_handler.py の router を app.py の FastAPI Composition Root で include_router しなければ /v1/articulatory-inversion が到達不能になる（ORPHAN-E）"
+    smoke: "docker compose --profile aai up -d aai && curl -fsS localhost:8790/health"
+
+  - id: aai-compose-edge
+    when: "applications/aai/**"
+    require_one_of:
+      - "compose.yaml"
+      - "wiring_manifest.yml"
+    reason: "aai の変更は compose.yaml または wiring_manifest.yml も共変更して配線を明示する（ADR-019 / M-AAI-1）"
+    smoke: "docker compose --profile aai up -d aai && curl -fsS localhost:8790/health"
+
+  - id: aai-pyproject-needs-dockerfile
+    when: "applications/aai/pyproject.toml"
+    require_one_of:
+      - "applications/aai/Dockerfile"
+    reason: "pyproject.toml に依存を追加しただけではコンテナに反映されない。Dockerfile は pip インストール行のため共変更する"
+    smoke: "docker compose --profile aai up -d --build aai && curl -fsS localhost:8790/health"
+
+  # worker → aai HTTP エッジ（M-AAI-16）
+  # aai service は applications/frontend / applications/backend の内部型を import しない（HTTP 契約のみ）
+  # このエッジ記述は: worker POST /aai/articulatory-inversion → aai POST /v1/articulatory-inversion → ArticulatoryInversionResponse
+  - id: worker-aai-http-edge
+    when: "applications/aai/src/aai/interface/schema.py"
+    require_one_of:
+      - "compose.yaml"
+    reason: "ArticulatoryInversionResponse スキーマ変更は compose.yaml の aai サービス定義と一致させる（worker が HTTP contract に合わせる）"
+    smoke: "grep 'ArticulatoryInversionResponse' applications/aai/src/aai/interface/schema.py"

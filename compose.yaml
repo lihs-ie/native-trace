@@ -20,6 +20,12 @@ services:
       # golden RVC は CPU 推論（F0 変換 + retrieval index、初回 HF DL）で 30s 超になるため、
       # http-client の default 30s ではなく明示する（ANALYZER_TIMEOUT_SECONDS と同じ timeout class）
       GOLDEN_SPEAKER_TIMEOUT_SECONDS: "120"
+      # aai サービス URL（profiles: [aai] 有効時のみ aai が起動、ADR-019 / M-AAI-1）
+      # worker は aai を depends_on しない（golden M-GRV-9 と同型）
+      AAI_URL: "http://aai:8790"
+      # aai 呼び出しタイムアウト秒数（articulatory/articulatory CPU 推論 + HF DL で 30s 超になりうる）
+      # golden と同値 120s（incident 2026-06-14-worker-http-client-default-30s-timeout 整合）
+      AAI_TIMEOUT_SECONDS: "120"
     depends_on:
       analyzer:
         condition: service_healthy
@@ -88,7 +94,37 @@ services:
       retries: 5
       start_period: 60s
 
+  # aai サービス（ADR-019 / M-AAI-1）
+  # profiles: [aai] で有効化 → docker compose --profile aai up aai
+  # 未起動でも worker / analyzer / golden は正常動作する（M-AAI-1 / golden M-GRV-9 と同型）
+  # worker は AAI_URL を持つが aai 起動を depends_on しない（M-AAI-1）
+  aai:
+    build:
+      context: applications/aai
+      dockerfile: Dockerfile
+    container_name: native-trace-aai
+    profiles:
+      - aai
+    ports:
+      - "8790:8790"
+    environment:
+      AAI_PORT: "8790"
+      # HF_HOME (hf-cache-aai volume) にモデルをキャッシュ（イメージ非焼込, M-GRV-10 前例と同型）
+      HF_HOME: "/root/.cache/huggingface"
+    volumes:
+      # articulatory/articulatory EMA checkpoint を volume で供給（Docker 非焼込 — M-GRV-10）
+      - hf-cache-aai:/root/.cache/huggingface
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8790/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      # articulatory モデルロード + HF DL で初回起動が重いため余裕をとる（golden と同型）
+      start_period: 120s
+
 volumes:
   hf-cache:
   # golden サービス用 HF キャッシュ volume（RVC モデル重みの永続化 — M-GRV-10）
   hf-cache-golden:
+  # aai サービス用 HF キャッシュ volume（EMA checkpoint の永続化 — M-GRV-10 前例と同型）
+  hf-cache-aai:
