@@ -158,7 +158,8 @@ Alternatives considered:
 - Author: lihs
 - Approval date: 2026-06-13
 - Approver:
-- Last updated: 2026-06-13
+- Last updated: 2026-06-18 (amended)
+- Amended 2026-06-18 (pronunciation-remediation batch): ADR-022 (closed remediation loop) maintains this ADR's `progress_snapshots.task_kind` invariant (controlled tasks only — rereading / drill). Retry-recording `AssessmentResult` rows are explicitly NOT written to `progress_snapshots`; the retry is persisted under a per-finding synthetic single-word section (the `FINDING_RETRY_MATERIAL_SINGLETON` isolation mechanism, same shape as the drill-section fixture), which is outside this ADR's `progress_snapshots` constraint. No schema change to the six training tables.
 - Changes: Initial entry. Related: ADR-007 (introduces the Training Context bounded context),
   ADR-004 (scoring policy and the six score dimensions consumed by progress snapshots),
   pronunciation-feedback-v2 spec (the JSON BLOB policy this ADR branches from for time-series data).

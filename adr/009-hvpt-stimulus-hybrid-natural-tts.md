@@ -164,7 +164,8 @@ Alternatives considered:
 - Author: lihs
 - Approval date: 2026-06-13
 - Approver:
-- Last updated: 2026-06-13
+- Last updated: 2026-06-18 (amended)
+- Amended 2026-06-18 (pronunciation-remediation batch): ADR-018 (acoustic-phonetic diagnosis) adds an analysis-request `AnalysisMetadata.speakerSex` field that reuses this ADR's HVPT-stimulus `StimulusMetadata.speakerSex` value set (`Literal['F','M','unknown']`) to avoid a second convention in the codebase. This ADR's stimulus fields and their meaning are unchanged.
 - Changes: Initial entry. **Amended 2026-06-13** after a feasibility investigation: carve-out corpus
   narrowed from "VCTK / LibriTTS" to **LibriTTS** (VCTK's common text lacks the minimal-pair words and its
   per-speaker text gives ≤1 talker per word); word boundaries sourced from `cdminix/libritts-aligned`

@@ -110,3 +110,4 @@ emit 済み、現状 frontend 境界で落ちている）。
 - Last updated: 2026-06-18
 - Related: ADR-004（worker が scoring を所有・structured-diff・減点 allow-list。本 ADR が allow-list を
   拡張）、ADR-001（GOP / detected IPA の供給元）、ADR-002（espeak / IPA）。
+- Amended 2026-06-18（pronunciation-remediation batch）: ADR-020（決定論 How バックボーン）が substitution / omission / insertion 系の How バリアント分岐を補完する。本 ADR の epenthesis 位置文契約とは衝突しない（本 ADR は epenthesis 単体の What / 位置、ADR-020 は How 層全体のバリアント分岐）。本 ADR で発生した response-mapper の `insertionPositionMs` 取りこぼしの教訓として、新フィールドは必ず mapper に配線する方針を ADR-018 / 019 / 020 / 022 が踏襲する。

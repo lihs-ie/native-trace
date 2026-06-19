@@ -176,7 +176,8 @@ Alternatives considered:
 - Author: lihs
 - Approval date: 2026-06-13
 - Approver:
-- Last updated: 2026-06-14
+- Last updated: 2026-06-18 (amended)
+- Amended 2026-06-18 (pronunciation-remediation batch): ADR-019 (acoustic-to-articulatory inversion) adds an `aai` service that follows this ADR's GPU-optional isolated-service precedent: a compose `profiles` gate, a dedicated `AAI_URL` boundary env var, no `depends_on`, the same-PR fitness-function rule, a Hugging Face cache volume, model weights not baked into the image, an explicit 120s timeout, verification-phase treatment, and a multipart request contract.
 - Changes: Initial entry (2026-06-13). Amended 2026-06-14: corrected the license posture — the CPU
   RVC stack (rvc-python) transitively pulls praat-parselmouth (GPL-3.0), so the golden speaker service
   is GPL-isolated at its service boundary (ADR-006 pattern), not GPL-free; the CPU MVP converts to a

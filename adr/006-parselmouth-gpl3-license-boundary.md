@@ -100,7 +100,8 @@ Alternatives considered:
 - Author: lihs
 - Approval date: 2026-06-13
 - Approver:
-- Last updated: 2026-06-13
+- Last updated: 2026-06-18 (amended)
+- Amended 2026-06-18 (pronunciation-remediation batch): ADR-018 extends parselmouth use to the new `infrastructure/parselmouth_formant.py`; the GPL-3.0 boundary (python-analyzer only, re-evaluate on a distribution-model change) is unchanged, and the new file stays inside the `no-parselmouth-outside-python-analyzer` ast-grep scope, so no boundary re-evaluation is required. ADR-019 introduces an isolated `aai` service that aims to stay GPL-free (articulatory inversion under Apache-2.0) but applies this ADR's service-boundary isolation pattern — extending the ast-grep allow-list to `applications/aai/` — if a transitive GPL dependency is pulled in, mirroring ADR-012's rvc-python → parselmouth correction.
 - Changes: Initial entry. Related: ADR-001 (introduces python-analyzer), ADR-002 (espeak g2p),
   ADR-005 (Python service onion architecture and fitness functions).
   REQ-NF-101 (OSS license constraint) is the originating requirement.
