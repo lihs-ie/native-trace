@@ -121,6 +121,21 @@ AAI enrichment を**表示する**のは次を全て満たすときに限る。1
 
 **Non-goal**: AAI 自前 fine-tune、日本語 L2 EMA データ収集、3D avatar、下顎/舌体チャネルの wire 露出、stop/fricative の調音アニメ、formant/VOT 等の音響特徴計測（別 ADR の範囲）、AAI を score(scoreImpact)に反映すること（AAI は presentation-only。減点は ADR-004 の allow-list = substitution/omission/insertion/epenthesis のまま不変）。
 
+## D6 — AAI-conditioned 天井偏差 step と targetArticulation の契約化（2026-06-19 追補）
+
+D3–D5 は AAI を「矢状断面 SVG 上の EMA 座標オーバーレイ + L2 disclaimer」に限定し、推定舌先と目標調音の偏差を文章 step として提示する経路を定義していなかった。v3 デザイン権威（`applications/frontend/design-reference/screens/articulation-card.html` 99 行: 「天井: 破線 = 目標、塗り = あなたの推定舌先。舌先が目標より後退・下降しています。」）はこの偏差方向 step を `.artic-steps` リスト内に置くことを要求する。本追補はこれを D6 として確定し、併せて実装が先行導入した `targetArticulation` フィールドを ADR-019 の正式契約として遡及定義する。
+
+- **targetArticulation を ADR-019 contract フィールドとして正式化**: `applications/frontend/src/lib/articulation-data.ts` の `ArticulationEntry.targetArticulation?: { x: number; y: number; label: string }`（型定義 35–42 行、ARTICULATION_DATA の各音素エントリ 76 行以降）は、矢状断面 SVG（右向き断面・前歯/唇が左・咽頭が右）における目標調音の `sagittal-wrap` ボックス内パーセント座標（x,y は 0–100、前→後 / 上→下）と日本語ラベルを持つ**決定論的な静的 floor データ**である。ML 推定ではない。各 SVG の解剖学ラベル/アーティキュレータ経路座標から導出した目安値で、S-AAI-5(b)（spec acoustic-articulatory-inversion.md S-AAI-5 の EMA→矢状断面 SVG 写像校正項）で精緻化する。これは D2 の floor の一部（静的 SVG に付随する目標位置メタデータ）であり、AAI の有無に依存せず常に存在する。破線目標丸（`.ema-target` クラス、ArticulationCard.tsx 247–256 行で描画）の描画にのみ用い、scoreImpact に一切反映しない（presentation-only、ADR-004 不変）。
+
+- **D6 偏差 step（天井）**: AAI enrichment が D4 ガードレールを全て満たして表示される（`articulatoryEstimate != null` かつ `displayEligibility >= DISPLAY_ELIGIBILITY_THRESHOLD`（= 0.55、ArticulationCard.tsx 50 行/212 行））ときに限り、推定舌先座標と `targetArticulation` の差から偏差方向（前後 = 後退/前進、上下 = 下降/上昇）を**決定論的に worker 非依存の frontend presentation で導出**し、floor 手順 step の末尾に「天井」step として 1 行追記する（design HTML:99 の文言体裁: 「破線 = 目標、塗り = あなたの推定舌先。舌先が目標より{方向}しています。」）。この導出は表示用の方向ラベル生成のみで、score/severity/ScoreSet には触れない。`articulatoryEstimate == null` または `displayEligibility < 0.55` のときは天井 step を出さず floor の `steps` のみを描く（D2/D4 の degrade と整合）。`targetArticulation` 未設定の音素は天井 step を生成しない。
+
+- **デザイン chrome の確定**: 同一カードに次を併置する（design HTML 79, 101, 105 行準拠）。いずれも presentation-only:
+  - **ADR ステータスバッジ**: AAI カード見出しに `adr-badge adr-badge--proposed`（「ADR-019 · Proposed」、design HTML:79）を表示し、Status が Proposed である事実を UI 上で開示する。Accepted 昇格時にバッジ文言を更新する。
+  - **disclaimer 句の補完**: enrichment 表示時の `.disclaimer` 文言（現状 ArticulationCard.tsx 382–388 行）に、design HTML:101 が持ち frontend で落ちている句を補う: 「生 mm・舌体・下顎は出さず、発話内 z 正規化座標のみ。aai 無効時は床のみ。」これは D3-b/D3-c の wire 非露出契約（生 mm・話者非正規化値・下顎/舌体チャネルを出さない）と D2 の degrade を UI 文言で明示するもの。
+  - **ミニマルペアボタン**: `.artic-audio`（ArticulationCard.tsx 398 行以降、現状 reference TTS + 速度切替 + 録音ボタンのみ）に、reference TTS お手本ボタンと並んで「ミニマルペア」再生ボタン（design HTML:105「▸ light · ミニマルペア」）を併置する。reference TTS と同一カード内併置の Kocjancic 2025 義務（D4 音響併置義務）の一部であり、新規スコアリング経路を一切足さない。
+
+- **適用範囲外（Non-goal 追加）**: D6 の天井 step は方向ラベルの**表示**のみで、偏差量を score/severity に変換しない。AAI を score に反映しない D5 Non-goal はそのまま不変。再録音後の「EMA が目標へ動いたか」delta 表示は S-AAI-4 の将来拡張点のままで本追補の範囲外。
+
 # Contract changes
 
 - **applications/aai/src/.../interface/http_handler.py + interface/schema.py（新 service）**: POST /v1/articulatory-inversion を multipart/form-data で受ける（golden の http_handler.py と同型: learner_audio: UploadFile = File(...), metadata: str = Form(...)）。metadata JSON = { mimeType: str, sampleRate: int, boundaries: List[BoundaryInput{phoneme:str, startMs:int, endMs:int}] }。Response 型 ArticulatoryInversionResponse = { perPhoneme: List[ArticulatoryEstimateResponse{ phoneme:str, startMs:int, endMs:int, tongueTipX:float, tongueTipY:float, tongueDorsumX:float, tongueDorsumY:float, lipApertureX:float, lipApertureY:float, displayEligibility:float }] }。全 camelCase（C1/C2 wire 契約準拠）。座標は [-1.0,1.0] 発話内 z 正規化（service が算出）。displayEligibility は EMA 軌跡の validFrameRatio×voicingRatio×durationAdequacy（モデル予測分散ではない）。
@@ -134,6 +149,11 @@ AAI enrichment を**表示する**のは次を全て満たすときに限る。1
 - **compose.yaml**: service aai 追加（build context applications/aai, container_name native-trace-aai, profiles:[aai], expose 8790, HF cache volume hf-cache-aai — golden の 57–94 行と同型）。worker service の environment に AAI_URL: http://aai:8790 と AAI_TIMEOUT_SECONDS: "120" を追加。worker は aai を depends_on しない（golden M-GRV-9 と同型）。
 - **.ast-grep/rules/no-articulatory-inversion-outside-aai.yml（新 fitness rule）**: import articulatory / from articulatory import が applications/aai/ 以外に現れないことを静的強制（no-parselmouth-outside-python-analyzer.yml / no-rvc-outside-golden-speaker.yml と同型）。同 PR で追加（ADR-005 same-PR 規則）。
 
+## D6 contract surface（2026-06-19 追補）
+
+- **applications/frontend/src/lib/articulation-data.ts — ArticulationEntry 型**: 既に存在する `targetArticulation?: { x: number; y: number; label: string }`（型定義 35–42 行、ARTICULATION_DATA の各音素エントリ 76 行以降、例 /r/ `{x:62,y:50}` 行・/l/ `{x:55,y:41}` 行）を ADR-019 の floor 契約フィールドとして正式定義する。x,y は `sagittal-wrap` ボックス内パーセント座標（0–100、前→後 / 上→下）、label は目標調音の日本語説明。決定論的静的データであり ML 推定でない（S-AAI-5(b) 校正で精緻化）。
+- **applications/frontend/src/components/workspace/ArticulationCard.tsx — D6 天井 step + chrome**: `articulatoryEstimate != null && displayEligibility >= DISPLAY_ELIGIBILITY_THRESHOLD`（= 0.55、50 行/212 行）のとき、推定舌先座標と `entry.targetArticulation` の差から偏差方向ラベルを frontend presentation で導出し `.artic-steps`（371 行 `<ol className="artic-steps">`）末尾に「天井」step を 1 行追記する（design HTML:99 文言体裁）。`articulatoryEstimate == null`・`displayEligibility < 0.55`・`targetArticulation` 未設定のいずれかでは天井 step を出さない。併せて AAI カード見出しに `adr-badge adr-badge--proposed`（design HTML:79）、enrichment 時 `.disclaimer`（382–388 行）に落ちている句「生 mm・舌体・下顎は出さず、発話内 z 正規化座標のみ。aai 無効時は床のみ。」（design HTML:101）、`.artic-audio`（398 行以降）にミニマルペア再生ボタン（design HTML:105）を併置する。すべて presentation-only で worker 由来 scoreImpact に触れない。既存 `.ema-target` クラス（247–256 行）のみを使い新クラスを命名しない（spec acoustic-articulatory-inversion.md「Design authority」節: 既存クラスのみ）。
+
 # Alternatives considered
 
 - **SPARC (Berkeley-Speech-Group/Speech-Articulatory-Coding) を AAI エンジンに採る** — Pros: 14ch EMA @50Hz で全 6 調音器（舌先/blade/dorsum, 唇, 下顎）を覆い vowel と consonant（/r/-/l/ 含む）両対応。multilingual モデルが日本語(JVS)acoustics を見ている。PCC 0.878 で最高精度。RT-VC で CPU real-time 実証（61.4ms, Apple M3）。Cons: LICENSE ファイル無し（gh API license:null）。model weights checkpoint の provenance 不明。日本語 L2 精度データ無し。EMA→sagittal animation の browser component が無く UI が別プロジェクト規模(2–4週)。不採用理由: REQ-NF-101 の hard stop。LICENSE 無しの repo を production 同梱できない。UC Berkeley から permissive license の書面許諾が得られるまで採用不可。将来許諾されれば articulatory/articulatory を置換する候補として再評価する（本 ADR の HOLD 項）。
@@ -142,6 +162,7 @@ AAI enrichment を**表示する**のは次を全て満たすときに限る。1
 - **AAI を runAssessmentJob のブロッキング同期経路に組み込み、所見ごとに必ず推定を表示** — Pros: 全所見に調音推定が常に付く。Cons: L2 精度劣化(16% RMSE 増)を表示適格性ゲートなしに晒す。CPU 推論 latency(低性能機で 0.5–2s/3s 発話)を同期経路に足す。誤った調音を最も feedback が必要な場面で見せる(pedagogically harmful)。不採用理由: ガードレール(プロキシ・L2 ゲート)無しの常時表示は調査 risk の通り有害。AAI は enrichment であり floor ではない。表示適格性未達時は suppress し floor へ degrade する設計に反する。
 - **信頼度ゲートをモデルの per-frame 予測分散の逆数で構成する** — Pros: 概念上は「モデルが自信のある区間だけ出す」が綺麗。Cons: articulatory/articulatory が per-frame 予測分散/不確実度を出力するという根拠が調査 evidence に無い（Speech-to-EMA 回帰 checkpoint としか確認されていない）。存在しない出力に表示契約全体を吊るすことになる。不採用理由: verifier 指摘 #1。モデルが実際に出さないシグナルを前提にできない。D4 はモデルが実際に出す EMA 軌跡から導けるプロキシ（NaN/不正フレーム率・voicing 比率・セグメント長）+ 決定論ゲートで構成し直す。
 - **日本語 L2 English EMA データで HuBERT ベース AAI を自前 fine-tune** — Pros: L2 精度劣化を原理的に解消しうる。Cons: 日本語 L2 English EMA 公開データが存在しない。データ収集 or phonetics lab 連携が前提で MVP scope 外。不採用理由: 前提データが無く本 ADR の scope で実行不能。将来 verification phase の選択肢として risks に残す。
+- **D6 偏差方向を文章「天井」step ではなく矢印 SVG のみ（コピー無し）で示す / 偏差方向を worker 側で導出する** — Pros: 矢印は言語非依存で多言語化が不要、worker 側導出なら frontend が表示専念で薄くなる。Cons: design 権威（HTML:99）が文章 step（「舌先が目標より後退・下降しています。」）を `.artic-steps` 内に要求しており矢印のみでは v3 デザインと乖離する。worker 側導出は `targetArticulation` が frontend floor データ（articulation-data.ts）であり worker に存在しないため、worker→wire に新フィールドを足す必要が生じ D3-c の wire 最小化と矛盾する。**採用**: 文章「天井」step を `.artic-steps` 末尾に置き、偏差方向は frontend で `articulatoryEstimate`（wire 既存）と `targetArticulation`（frontend floor）から決定論導出する。**不採用**: 矢印のみ表示（design 文言要件を満たさない）／worker 側導出（floor データを wire に漏らし D3-c に反する）。いずれも presentation-only で scoreImpact 不変は両案共通（ADR-004）。
 
 # Consequences
 
@@ -176,6 +197,17 @@ AAI enrichment を**表示する**のは次を全て満たすときに限る。1
 - ランタイム検証: AAI 有効時に実録音を live worker→aai に通し、(a) vowel/approximant の高適格性セグメントで articulatoryEstimate が非 null かつ ArticulationCard に EMA オーバーレイ + disclaimer が出る、(b) stop/fricative・短セグメント・低適格性で null かつ floor(静的 SVG + steps)のみ描く、(c) aai 停止時に同じ floor に degrade することを観測 assert。
 - code-review rubric: AAI 出力が scoreImpact に反映されない(presentation-only)こと、生 mm/話者非正規化値/下顎・舌体チャネルが wire に出ないこと、displayEligibility がモデル予測分散でなく EMA 軌跡プロキシで算出されること、調音図解が必ず reference TTS と同一カード併置であること(Kocjancic 2025)を検証。
 - ライセンス確認: articulatory/articulatory の Apache-2.0 と EMA checkpoint/コーパス(MNGU0)条項を実装時に確認。transitive GPL 混入時は本 ADR を amend し ast-grep allow を aai に拡張(ADR-012 の rvc-python→parselmouth 訂正手順)。weights は条項が再配布を許さなければ image 非焼込・HF cache volume(golden M-GRV-10)。
+
+## D6 compliance（2026-06-19 追補）
+
+- 単体テスト（M-AAI-19）: `ArticulationCard` が `articulatoryEstimate != null && displayEligibility >= 0.55` かつ `targetArticulation` 設定済みの音素で天井偏差 step（design HTML:99 体裁の偏差方向文）を `.artic-steps` に 1 行追加して描くことを assert（実 component を render し DOM の step テキストを観測）。
+- 単体テスト（M-AAI-20）: `articulatoryEstimate == null` または `displayEligibility < 0.55` または `targetArticulation` 未設定のとき天井 step を描かず floor の `steps` のみを描くことを assert（D2/D4 degrade。実 component render + DOM 観測）。
+- 単体テスト（M-AAI-21a — バッジ）: AAI カード見出しに `adr-badge--proposed`（「ADR-019 · Proposed」）が描かれることを assert（実 component render + DOM 観測）。
+- 単体テスト（M-AAI-21b — disclaimer 句）: enrichment 表示時 `.disclaimer` に「生 mm・舌体・下顎は出さず…aai 無効時は床のみ。」句が含まれることを assert（実 component render + DOM テキスト観測）。
+- 単体テスト（M-AAI-21c — ミニマルペアボタン）: `.artic-audio` にミニマルペア再生ボタンが reference TTS お手本ボタンと同一カード内に併置されること（Kocjancic 2025）を assert（実 component render + DOM 観測）。
+- policy テスト（M-AAI-22）: M-AAI-17（`findingArticulatoryEstimate` Just/Nothing で同一 GOP の scoreImpact が同値、`grep -n "substitution\|omission\|insertion\|epenthesis" applications/backend/src/NativeTrace/Worker/Scoring.hs` で減点 allow-list 不変）の不変アサート対象を D6 presentation 経路へ拡張し、D6 天井 step / `targetArticulation` / chrome のいずれも scoreImpact・severity・ScoreSet に波及しないことを assert（並行した別個の不変テストではなく M-AAI-17 のカバレッジ拡張。presentation-only、ADR-004 allow-list 不変）。
+- ランタイム検証（M-AAI-23）: AAI 有効・高適格性 vowel/approximant の実録音で、live worker→aai→frontend を通し ArticulationCard に EMA オーバーレイ + 破線目標（`.ema-target`）+ 天井偏差 step + Proposed バッジ + 補完済 disclaimer + ミニマルペアボタンが出ること、低適格性/null/aai 停止で天井 step が消え floor のみへ degrade することを観測 assert（.agent-evidence の commands.txt に実値）。
+- production に mock/stub/placeholder を入れない: 偏差方向導出は実 `articulatoryEstimate` と実 `targetArticulation` から計算し、固定文言のダミーを返さない（AGENTS.md no-prod-doubles）。
 
 # Notes
 
