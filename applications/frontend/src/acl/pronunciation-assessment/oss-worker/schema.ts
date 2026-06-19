@@ -108,6 +108,24 @@ const findingSchema = z.object({
     .nullable()
     .optional()
     .transform((v) => v ?? null),
+  /** M-APD-12 (ADR-018): 音響音声学的証拠。worker が導出した方向ラベル + 実測/目標フォルマント。*/
+  acousticEvidence: z
+    .object({
+      tongueHeight: z.enum(["tooHigh", "tooLow", "ok"]).nullable().optional(),
+      tongueBackness: z.enum(["tooFront", "tooBack", "ok"]).nullable().optional(),
+      rhoticity: z.enum(["insufficient", "overRetroflex", "ok"]).nullable().optional(),
+      sibilantPlace: z.enum(["tooPalatal", "tooAlveolar", "ok"]).nullable().optional(),
+      vowelLength: z.enum(["tooShort", "ok"]).nullable().optional(),
+      measuredF1Hz: z.number().nullable().optional(),
+      measuredF2Hz: z.number().nullable().optional(),
+      measuredF3Hz: z.number().nullable().optional(),
+      targetF1Hz: z.number().nullable().optional(),
+      targetF2Hz: z.number().nullable().optional(),
+      targetF3Hz: z.number().nullable().optional(),
+    })
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
 });
 
 const segmentSchema = z.object({

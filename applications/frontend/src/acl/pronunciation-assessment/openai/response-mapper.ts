@@ -148,6 +148,8 @@ const mapValidatedResponse = (
       dismissed: false,
       // OpenAI は語内位置ラベルを返さない
       wordPositionLabel: null,
+      // OpenAI は音響証拠を返さない (ADR-018: acousticEvidence は worker のみ)
+      acousticEvidence: null,
     })),
     segments: response.segments.map((segment) => ({
       textRange: {

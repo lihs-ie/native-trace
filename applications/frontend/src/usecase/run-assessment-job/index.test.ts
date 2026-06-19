@@ -466,6 +466,7 @@ describe("runAssessmentJob", () => {
           feedbackLayers: null,
           dismissed: false,
           wordPositionLabel: null,
+          acousticEvidence: null,
         },
       ],
     };
@@ -586,6 +587,7 @@ describe("runAssessmentJob", () => {
             feedbackLayers: null,
             dismissed: false,
             wordPositionLabel,
+            acousticEvidence: null,
           },
         ],
       };
@@ -650,6 +652,7 @@ describe("runAssessmentJob", () => {
           feedbackLayers: null,
           dismissed: false,
           wordPositionLabel: null,
+          acousticEvidence: null,
         },
       ],
     };
@@ -683,6 +686,99 @@ describe("runAssessmentJob", () => {
     if (resultCreatedEvent?.type === "assessmentResultCreated") {
       expect(resultCreatedEvent.assessmentResult.findings[0]?.messageJa).toBe(existingMessage);
     }
+  });
+
+  // M-APD-15 (ADR-018): acousticEvidence が両 generator 入力点に届くこと
+  it("(M-APD-15) acousticEvidence on findingDraft reaches both precompute-batch and inline generateInput", async () => {
+    ulidCounter = 0;
+
+    const capturedInputs: Array<{ acousticEvidence: unknown }> = [];
+
+    const acousticEvidenceFixture = {
+      tongueHeight: "tooLow" as const,
+      tongueBackness: "ok" as const,
+      rhoticity: "ok" as const,
+      sibilantPlace: "ok" as const,
+      vowelLength: "ok" as const,
+      measuredF1Hz: 450,
+      measuredF2Hz: 2100,
+      measuredF3Hz: 3000,
+      targetF1Hz: 270,
+      targetF2Hz: 2290,
+      targetF3Hz: 3010,
+    };
+
+    const draftWithAcoustic: AssessmentResultDraft = {
+      ...makeDraft(),
+      engine: {
+        type: "oss_worker" as const,
+        identifier: "oss-worker-1" as never,
+        displayName: "OSS Worker" as never,
+        workerVersion: "1.0.0",
+        modelName: "v1",
+        rulesetVersion: "v1",
+        enabled: true,
+        configuration: {},
+      },
+      findings: [
+        {
+          phenomenon: "substitution",
+          gop: -15.0,
+          category: "accuracy" as const,
+          severity: "major" as const,
+          textRange: { startChar: 0, endChar: 5 },
+          audioRange: null,
+          expected: { text: null, ipa: "iː" },
+          detected: { text: null, ipa: "ɪ" },
+          messageJa: null,
+          messageEn: null,
+          scoreImpact: -5,
+          confidence: 0.9,
+          detectedTopCandidate: null,
+          nBest: null,
+          matchesL1Pattern: false,
+          functionalLoad: "high",
+          catalogId: null,
+          wordPair: null,
+          expectedPronunciation: null,
+          insertedVowel: null,
+          insertionPositionMs: null,
+          feedbackLayers: null,
+          dismissed: false,
+          wordPositionLabel: null,
+          acousticEvidence: acousticEvidenceFixture,
+        },
+      ],
+    };
+
+    const deps = makeDependencies({
+      engineRegistry: {
+        find: () => ok({ assess: () => okAsync(draftWithAcoustic) }),
+      },
+      improvementMessageGenerator: {
+        generate: (input) => {
+          capturedInputs.push({ acousticEvidence: input.acousticEvidence });
+          return "captured-message";
+        },
+        generateFeedbackLayers: (input) => {
+          capturedInputs.push({ acousticEvidence: input.acousticEvidence });
+          return { whatJa: "what", whyJa: "why", howJa: "how" };
+        },
+        generateFeedbackLayersAsync: async (input) => {
+          capturedInputs.push({ acousticEvidence: input.acousticEvidence });
+          return { whatJa: "what-llm", whyJa: "why-llm", howJa: "how-llm" };
+        },
+      },
+    });
+
+    const execute = createRunAssessmentJob(deps);
+    const result = await execute({ leaseOwner: "runner-1", leaseDurationSeconds: 60 });
+    expect(result.isOk()).toBe(true);
+
+    // At least one captured input must carry acousticEvidence (inline or precompute path)
+    const withAcoustic = capturedInputs.filter((c) => c.acousticEvidence !== null);
+    expect(withAcoustic.length).toBeGreaterThan(0);
+    expect(withAcoustic[0]?.acousticEvidence).toEqual(acousticEvidenceFixture);
   });
 
   // M-LLM-4 tests
@@ -726,6 +822,7 @@ describe("runAssessmentJob", () => {
         feedbackLayers: null,
         dismissed: false,
         wordPositionLabel: null,
+        acousticEvidence: null,
       })),
     });
 
@@ -908,6 +1005,7 @@ describe("runAssessmentJob", () => {
             feedbackLayers: null,
             dismissed: false,
             wordPositionLabel: null,
+            acousticEvidence: null,
           },
         ],
       };
@@ -976,6 +1074,7 @@ describe("runAssessmentJob", () => {
       feedbackLayers: null,
       dismissed: false,
       wordPositionLabel: null,
+      acousticEvidence: null,
     });
 
     // Helper: make a draft with specific findings array

@@ -137,6 +137,27 @@ export type PerPhonemeGopDraft = Readonly<{
   heat: number;
 }>;
 
+// ---- AcousticEvidence ----
+
+/**
+ * M-APD-15 (ADR-018): 音響音声学的証拠の Draft 型。
+ * AcousticEvidenceDto (lib/api-types) と同形。UseCase 層自己完結のためここに定義。
+ * worker の acousticEvidence JSON フィールドをそのまま通す（偏差判定・方向ラベル導出は worker 側）。
+ */
+export type AcousticEvidenceDraft = Readonly<{
+  tongueHeight: "tooHigh" | "tooLow" | "ok" | null;
+  tongueBackness: "tooFront" | "tooBack" | "ok" | null;
+  rhoticity: "insufficient" | "overRetroflex" | "ok" | null;
+  sibilantPlace: "tooPalatal" | "tooAlveolar" | "ok" | null;
+  vowelLength: "tooShort" | "ok" | null;
+  measuredF1Hz: number | null;
+  measuredF2Hz: number | null;
+  measuredF3Hz: number | null;
+  targetF1Hz: number | null;
+  targetF2Hz: number | null;
+  targetF3Hz: number | null;
+}>;
+
 // ---- Finding / Segment ----
 
 export type PronunciationEvidenceDraft = Readonly<{
@@ -188,6 +209,8 @@ export type AssessmentFindingDraft = Readonly<{
   dismissed: boolean;
   /** M-104R-b: 語内位置ラベル ("initial"|"medial"|"final"|null) */
   wordPositionLabel: string | null;
+  /** M-APD-15 (ADR-018): 音響音声学的証拠。worker が導出した方向ラベル + 実測/目標フォルマント。null は未取得。*/
+  acousticEvidence: AcousticEvidenceDraft | null;
 }>;
 
 export type AssessmentSegmentDraft = Readonly<{

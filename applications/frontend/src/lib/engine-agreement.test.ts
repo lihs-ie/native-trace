@@ -47,6 +47,7 @@ function buildFinding(
     insertionPositionMs: null,
     feedbackLayers: null,
     dismissed: false,
+    acousticEvidence: null,
   };
 }
 

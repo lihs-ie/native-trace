@@ -302,6 +302,93 @@ describe("oss-worker response-mapper", () => {
     }
   });
 
+  // M-APD-12: acousticEvidence が存在するとき draft に正しく転写されること
+  it("(M-APD-12) maps acousticEvidence.rhoticity=insufficient from worker finding into draft", () => {
+    const engine = makeEngine();
+    const fixtureWithAcousticEvidence = {
+      ...workerFixture,
+      findings: [
+        {
+          ...workerFixture.findings[0],
+          acousticEvidence: {
+            rhoticity: "insufficient",
+            tongueHeight: "ok",
+            tongueBackness: "ok",
+            sibilantPlace: "ok",
+            vowelLength: "ok",
+            measuredF1Hz: 300.0,
+            measuredF2Hz: 900.0,
+            measuredF3Hz: 2100.0,
+            targetF1Hz: 270.0,
+            targetF2Hz: 870.0,
+            targetF3Hz: 2900.0,
+          },
+        },
+      ],
+    };
+    const result = mapOssWorkerResponse({
+      status: 200,
+      rawBody: fixtureWithAcousticEvidence,
+      capturedAt: new Date("2026-01-01T00:00:00Z"),
+      engine,
+      assessmentSchemaVersion: "1",
+      tokenizerVersion: "v1",
+    });
+
+    expect(result.isOk()).toBe(true);
+    if (result.isOk()) {
+      const finding = result.value.findings[0];
+      expect(finding?.acousticEvidence).not.toBeNull();
+      expect(finding?.acousticEvidence?.rhoticity).toBe("insufficient");
+      expect(finding?.acousticEvidence?.measuredF3Hz).toBeCloseTo(2100.0);
+    }
+  });
+
+  // M-APD-12: acousticEvidence キーが absent な旧フォーマット JSON も正常にパースできること（後方互換）
+  it("(M-APD-12) maps acousticEvidence to null when absent from worker finding (backward compat)", () => {
+    const engine = makeEngine();
+    const result = mapOssWorkerResponse({
+      status: 200,
+      rawBody: workerFixture, // acousticEvidence キーなし
+      capturedAt: new Date("2026-01-01T00:00:00Z"),
+      engine,
+      assessmentSchemaVersion: "1",
+      tokenizerVersion: "v1",
+    });
+
+    expect(result.isOk()).toBe(true);
+    if (result.isOk()) {
+      expect(result.value.findings[0]?.acousticEvidence).toBeNull();
+    }
+  });
+
+  // M-APD-12: findingSchema.parse が acousticEvidence を含む JSON を直接受け付けること
+  it("(M-APD-12) findingSchema.parse accepts acousticEvidence with rhoticity=insufficient", () => {
+    const findingJson = {
+      ...workerFixture.findings[0],
+      acousticEvidence: { rhoticity: "insufficient" },
+    };
+    // ossWorkerSuccessResponseSchema 全体を通す
+    const result = ossWorkerSuccessResponseSchema.safeParse({
+      ...workerFixture,
+      findings: [findingJson],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.findings[0]?.acousticEvidence?.rhoticity).toBe("insufficient");
+    }
+  });
+
+  // M-APD-12: acousticEvidence キーが absent な旧フォーマットでも schema.parse が成功すること
+  it("(M-APD-12) findingSchema.parse succeeds with no acousticEvidence key (legacy format)", () => {
+    const result = ossWorkerSuccessResponseSchema.safeParse(workerFixture);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      // transform(v => v ?? null) により undefined → null になること
+      expect(result.data.findings[0]?.acousticEvidence).toBeNull();
+    }
+  });
+
   // normal パステスト: status フィールドがない場合は "normal" にデフォルトされること
   it("defaults draft.status to normal when status field is absent", () => {
     const engine = makeEngine();

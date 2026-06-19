@@ -175,6 +175,131 @@ describe("createRuleBasedImprovementMessageGenerator", () => {
     });
   });
 
+  // M-APD-16 (ADR-018 D6): acousticEvidence → howJa articulatory テキスト分岐
+  describe("(M-APD-16) acousticEvidence direction labels → howJa articulatory text", () => {
+    it("(M-APD-16) tongueHeight=tooLow yields howJa different from bare template", () => {
+      const layers = generator.generateFeedbackLayers({
+        phenomenon: "substitution",
+        expected: { text: null, ipa: "iː" },
+        detected: { text: null, ipa: "ɪ" },
+        acousticEvidence: {
+          tongueHeight: "tooLow",
+          tongueBackness: "ok",
+          rhoticity: "ok",
+          sibilantPlace: "ok",
+          vowelLength: "ok",
+          measuredF1Hz: 450,
+          measuredF2Hz: 2100,
+          measuredF3Hz: 3000,
+          targetF1Hz: 270,
+          targetF2Hz: 2290,
+          targetF3Hz: 3010,
+        },
+      });
+      const bareTemplateLayers = generator.generateFeedbackLayers({
+        phenomenon: "substitution",
+        expected: { text: null, ipa: "iː" },
+        detected: { text: null, ipa: "ɪ" },
+        acousticEvidence: null,
+      });
+      // acousticEvidence あり → howJa が変わること
+      expect(layers.howJa).not.toBe(bareTemplateLayers.howJa);
+      // 舌高 articulatory テキストを含むこと
+      expect(layers.howJa).toContain("舌をもっと高く");
+    });
+
+    it("(M-APD-16) rhoticity=insufficient yields articulatory howJa mentioning F3/rhoticity", () => {
+      const layers = generator.generateFeedbackLayers({
+        phenomenon: "substitution",
+        expected: { text: null, ipa: "r" },
+        detected: { text: null, ipa: "ɾ" },
+        acousticEvidence: {
+          tongueHeight: "ok",
+          tongueBackness: "ok",
+          rhoticity: "insufficient",
+          sibilantPlace: "ok",
+          vowelLength: "ok",
+          measuredF1Hz: null,
+          measuredF2Hz: null,
+          measuredF3Hz: 2200,
+          targetF1Hz: null,
+          targetF2Hz: null,
+          targetF3Hz: null,
+        },
+      });
+      expect(layers.howJa).toContain("rhoticity");
+    });
+
+    it("(M-APD-16) vowelLength=tooShort yields howJa about vowel duration", () => {
+      const layers = generator.generateFeedbackLayers({
+        phenomenon: "substitution",
+        expected: { text: null, ipa: "iː" },
+        detected: { text: null, ipa: "ɪ" },
+        acousticEvidence: {
+          tongueHeight: "ok",
+          tongueBackness: "ok",
+          rhoticity: "ok",
+          sibilantPlace: "ok",
+          vowelLength: "tooShort",
+          measuredF1Hz: null,
+          measuredF2Hz: null,
+          measuredF3Hz: null,
+          targetF1Hz: null,
+          targetF2Hz: null,
+          targetF3Hz: null,
+        },
+      });
+      expect(layers.howJa).toContain("母音をもっと長く");
+    });
+
+    it("(M-APD-16) acousticEvidence=null keeps legacy howJa unchanged (backward compat)", () => {
+      const withNull = generator.generateFeedbackLayers({
+        phenomenon: "substitution",
+        expected: { text: "hello", ipa: null },
+        detected: { text: "helo", ipa: null },
+        acousticEvidence: null,
+      });
+      const withUndefined = generator.generateFeedbackLayers({
+        phenomenon: "substitution",
+        expected: { text: "hello", ipa: null },
+        detected: { text: "helo", ipa: null },
+      });
+      // null と undefined いずれも従来 howJa を返す（後方互換）
+      expect(withNull.howJa).toBe(withUndefined.howJa);
+      // 空ではないこと
+      expect(withNull.howJa.length).toBeGreaterThan(0);
+    });
+
+    it("(M-APD-16) all-ok acousticEvidence keeps legacy howJa unchanged", () => {
+      const withAllOk = generator.generateFeedbackLayers({
+        phenomenon: "substitution",
+        expected: { text: "hello", ipa: null },
+        detected: { text: "helo", ipa: null },
+        acousticEvidence: {
+          tongueHeight: "ok",
+          tongueBackness: "ok",
+          rhoticity: "ok",
+          sibilantPlace: "ok",
+          vowelLength: "ok",
+          measuredF1Hz: null,
+          measuredF2Hz: null,
+          measuredF3Hz: null,
+          targetF1Hz: null,
+          targetF2Hz: null,
+          targetF3Hz: null,
+        },
+      });
+      const withNull = generator.generateFeedbackLayers({
+        phenomenon: "substitution",
+        expected: { text: "hello", ipa: null },
+        detected: { text: "helo", ipa: null },
+        acousticEvidence: null,
+      });
+      // 全ラベル "ok" → howJa は変わらない
+      expect(withAllOk.howJa).toBe(withNull.howJa);
+    });
+  });
+
   // ADR-017 D2: epenthesis — word-as-vowel pattern must never appear
   it("(ADR-017 D2) epenthesis never produces 「<word>」という母音 for any input", () => {
     const word = "strike";

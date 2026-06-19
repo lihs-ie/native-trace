@@ -656,6 +656,9 @@ export const createRunAssessmentJob =
                                                 // M-LLM-3 (ADR-021): gop / functionalLoad を配線
                                                 gop: findingDraft.gop ?? null,
                                                 functionalLoad: findingDraft.functionalLoad ?? null,
+                                                // M-APD-15 (ADR-018): acousticEvidence を配線
+                                                acousticEvidence:
+                                                  findingDraft.acousticEvidence ?? null,
                                               },
                                             }))
                                             // Filter to only selected (top-N) original indices
@@ -782,6 +785,8 @@ export const createRunAssessmentJob =
                                             nBest: findingDraft.nBest ?? null,
                                             gop: findingDraft.gop ?? null,
                                             functionalLoad: findingDraft.functionalLoad ?? null,
+                                            // M-APD-15 (ADR-018): acousticEvidence を配線
+                                            acousticEvidence: findingDraft.acousticEvidence ?? null,
                                           };
 
                                           // M-LLM-4 (ADR-021): feedbackLayers 解決順序

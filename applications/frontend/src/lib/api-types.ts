@@ -231,6 +231,24 @@ export type CefrSubscaleDto = {
   band: string;
 };
 
+/**
+ * M-APD-13 (ADR-018): worker acousticEvidence の方向ラベル + 実測/目標フォルマント。
+ * 全ラベルは string literal union | null（optional なし — DTO スタイルに統一）。
+ */
+export type AcousticEvidenceDto = {
+  tongueHeight: "tooHigh" | "tooLow" | "ok" | null;
+  tongueBackness: "tooFront" | "tooBack" | "ok" | null;
+  rhoticity: "insufficient" | "overRetroflex" | "ok" | null;
+  sibilantPlace: "tooPalatal" | "tooAlveolar" | "ok" | null;
+  vowelLength: "tooShort" | "ok" | null;
+  measuredF1Hz: number | null;
+  measuredF2Hz: number | null;
+  measuredF3Hz: number | null;
+  targetF1Hz: number | null;
+  targetF2Hz: number | null;
+  targetF3Hz: number | null;
+};
+
 export type EngineFindingDto = {
   finding: string;
   phenomenon: FindingPhenomenon | null;
@@ -258,6 +276,8 @@ export type EngineFindingDto = {
   insertionPositionMs: number | null;
   feedbackLayers: FeedbackLayersDto | null;
   dismissed: boolean;
+  /** M-APD-13 (ADR-018): 音響音声学的証拠。worker が導出した方向ラベル + 実測/目標フォルマント。*/
+  acousticEvidence: AcousticEvidenceDto | null;
 };
 
 export type EngineResultDto = {

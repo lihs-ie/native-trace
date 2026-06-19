@@ -56,6 +56,7 @@ const buildFinding = (overrides: Partial<EngineFindingDto> = {}): EngineFindingD
   insertionPositionMs: null,
   feedbackLayers: null,
   dismissed: false,
+  acousticEvidence: null,
   ...overrides,
 });
 

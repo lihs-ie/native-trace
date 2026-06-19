@@ -10,6 +10,7 @@ import {
   type ImprovementMessageGeneratorInput,
   type FeedbackLayersOutput,
 } from "../../../usecase/port/improvement-message-generator";
+import { type AcousticEvidenceDto } from "../../../lib/api-types";
 import {
   findCatalogEntryById,
   findCatalogEntry,
@@ -38,6 +39,79 @@ const resolvePositionLabel = (wordPositionLabel: string | null): string => {
     default:
       return "";
   }
+};
+
+/**
+ * M-APD-16 (ADR-018 D6): acousticEvidence の方向ラベル → 日本語 articulatory 文。
+ * 9 ラベル全てに対応。null / 全ラベル "ok" のとき null を返す（既存 howJa を維持）。
+ * ADR D6 例: tongueHeight="tooLow" + /iː/ →「舌をもっと高く、口蓋に近づけてください…」
+ */
+const resolveAcousticHowJa = (
+  acousticEvidence: AcousticEvidenceDto | null | undefined,
+): string | null => {
+  if (acousticEvidence == null) return null;
+
+  const parts: string[] = [];
+
+  // tongueHeight: F1 偏差 → 舌の高低方向
+  if (acousticEvidence.tongueHeight === "tooLow") {
+    parts.push(
+      "舌をもっと高く、口蓋に近づけてください（英語の前舌高母音は日本語のイより舌が高い位置にあります）",
+    );
+  } else if (acousticEvidence.tongueHeight === "tooHigh") {
+    parts.push(
+      "舌を少し下げて口を開き気味にしてください（舌が高すぎて目標母音より閉じた音になっています）",
+    );
+  }
+
+  // tongueBackness: F2 偏差 → 舌の前後方向
+  if (acousticEvidence.tongueBackness === "tooFront") {
+    parts.push(
+      "舌をやや後方に引いてください（舌が前に出すぎており、より後ろ寄りの母音になる必要があります）",
+    );
+  } else if (acousticEvidence.tongueBackness === "tooBack") {
+    parts.push(
+      "舌を前方に押し出してください（舌が奥に引きすぎており、より前寄りの母音になる必要があります）",
+    );
+  }
+
+  // rhoticity: F3 偏差 → /r/ 音性・後退性
+  if (acousticEvidence.rhoticity === "insufficient") {
+    parts.push(
+      "舌先を口蓋に触れさせずに後退させ、/r/ の巻き舌性（rhoticity）を出してください" +
+        "（F3 が高く、日本語のラ行に近い弾き音（tap）になっている可能性があります）",
+    );
+  } else if (acousticEvidence.rhoticity === "overRetroflex") {
+    parts.push(
+      "舌先を後ろに引きすぎています。/l/ の発音では舌先を上前歯の裏に軽く当て、" +
+        "巻き舌にならないようにしてください（F3 が低くなりすぎています）",
+    );
+  }
+
+  // sibilantPlace: スペクトル重心 → /s/ vs /ʃ/ 調音位置
+  if (acousticEvidence.sibilantPlace === "tooPalatal") {
+    parts.push(
+      "舌先を歯茎（上前歯の裏）に近づけ、/s/ の調音位置を前に出してください" +
+        "（現在は /ɕ/（シュ）寄りの口蓋音になっています）",
+    );
+  } else if (acousticEvidence.sibilantPlace === "tooAlveolar") {
+    parts.push(
+      "舌を少し後ろに引いて口唇を丸めてください（/ʃ/ は歯茎より後ろの口蓋歯茎音で、" +
+        "現在は /s/ 寄りの前寄り調音になっています）",
+    );
+  }
+
+  // vowelLength: 母音長 → 長短
+  if (acousticEvidence.vowelLength === "tooShort") {
+    parts.push(
+      "母音をもっと長く伸ばしてください（tense 母音 /iː/・/uː/ は対応する lax 母音より" +
+        "明確に長く発音する必要があります）",
+    );
+  }
+
+  if (parts.length === 0) return null;
+
+  return parts.join("。また、");
 };
 
 /**
@@ -202,6 +276,13 @@ const generateFeedbackLayersFromInput = (
         howJa = "ネイティブ音声を繰り返し聞いて、音のパターンを模倣してください";
         break;
     }
+  }
+
+  // M-APD-16 (ADR-018 D6): acousticEvidence 方向ラベルがある場合は howJa を articulatory テキストで上書き。
+  // null / 全ラベル "ok" のとき既存 howJa を維持（後方互換）。
+  const acousticHowJa = resolveAcousticHowJa(input.acousticEvidence);
+  if (acousticHowJa !== null) {
+    howJa = acousticHowJa;
   }
 
   return { whatJa, whyJa, howJa };

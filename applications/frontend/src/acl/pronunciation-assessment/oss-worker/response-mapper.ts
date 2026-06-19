@@ -166,6 +166,22 @@ const mapSuccessResponse = (
       feedbackLayers: null,
       dismissed: false,
       wordPositionLabel: finding.wordPositionLabel,
+      acousticEvidence:
+        finding.acousticEvidence != null
+          ? {
+              tongueHeight: finding.acousticEvidence.tongueHeight ?? null,
+              tongueBackness: finding.acousticEvidence.tongueBackness ?? null,
+              rhoticity: finding.acousticEvidence.rhoticity ?? null,
+              sibilantPlace: finding.acousticEvidence.sibilantPlace ?? null,
+              vowelLength: finding.acousticEvidence.vowelLength ?? null,
+              measuredF1Hz: finding.acousticEvidence.measuredF1Hz ?? null,
+              measuredF2Hz: finding.acousticEvidence.measuredF2Hz ?? null,
+              measuredF3Hz: finding.acousticEvidence.measuredF3Hz ?? null,
+              targetF1Hz: finding.acousticEvidence.targetF1Hz ?? null,
+              targetF2Hz: finding.acousticEvidence.targetF2Hz ?? null,
+              targetF3Hz: finding.acousticEvidence.targetF3Hz ?? null,
+            }
+          : null,
     })),
     segments: response.segments.map((segment) => ({
       textRange: {

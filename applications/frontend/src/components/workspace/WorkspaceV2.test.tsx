@@ -59,6 +59,7 @@ const buildFinding = (overrides: Partial<EngineFindingDto> = {}): EngineFindingD
     howJa: "語末は母音を足さずに、舌先を歯茎に当てて止めるだけで終えます。",
   },
   dismissed: false,
+  acousticEvidence: null,
   ...overrides,
 });
 
