@@ -16,6 +16,7 @@ import NativeTrace.Worker.Scoring (
   ScoringInput (..),
   buildAssessmentScores,
   checkAudioQuality,
+  classifyGopDelta,
   generateFindingsFromGop,
   scoreAssessment,
   scoreFromGop,
@@ -23,8 +24,11 @@ import NativeTrace.Worker.Scoring (
 import NativeTrace.Worker.Types (
   AssessmentFinding (..),
   AssessmentScores (..),
+  BoundarySignal (..),
   CefrScore (..),
+  DeltaSignal (..),
   FindingSeverity (..),
+  GopDeltaResponse (..),
   TextRange (..),
  )
 import Test.Hspec
@@ -721,3 +725,65 @@ spec = do
                 generateFindingsFromGop bodyText reductionResult
         all (isSuggestion . findingSeverity) reductionFindings `shouldBe` True
         all (\f -> findingScoreImpact f == 0.0) reductionFindings `shouldBe` True
+
+  -- M-CRL-7 / ADR-022: GOP delta classification
+  describe "classifyGopDelta (M-CRL-7 / ADR-022)" $ do
+    describe "deltaSignal" $ do
+      it "gopDelta > 5.0 → DeltaSignalImproved (original=-15, retry=-8, delta=7.0)" $ do
+        let result = classifyGopDelta (-15) (-8)
+        gopDeltaResponseGopDelta result `shouldBe` 7.0
+        gopDeltaResponseDeltaSignal result `shouldBe` DeltaSignalImproved
+
+      it "gopDelta < -2.0 → DeltaSignalRegressed (original=-8, retry=-12, delta=-4.0)" $ do
+        let result = classifyGopDelta (-8) (-12)
+        gopDeltaResponseGopDelta result `shouldBe` (-4.0)
+        gopDeltaResponseDeltaSignal result `shouldBe` DeltaSignalRegressed
+
+      it "gopDelta in (-2.0, 5.0] → DeltaSignalUnchanged (original=-10, retry=-8, delta=2.0)" $ do
+        let result = classifyGopDelta (-10) (-8)
+        gopDeltaResponseGopDelta result `shouldBe` 2.0
+        gopDeltaResponseDeltaSignal result `shouldBe` DeltaSignalUnchanged
+
+      it "gopDelta exactly 5.0 → DeltaSignalUnchanged (strict >, not >=)" $ do
+        -- delta = retryGop - originalGop = (-5) - (-10) = 5.0
+        -- improvement threshold is strict >; exactly 5.0 must be unchanged
+        let result = classifyGopDelta (-10) (-5)
+        gopDeltaResponseGopDelta result `shouldBe` 5.0
+        gopDeltaResponseDeltaSignal result `shouldBe` DeltaSignalUnchanged
+
+      it "gopDelta exactly -2.0 → DeltaSignalUnchanged (strict <, not <=)" $ do
+        -- delta = (-12) - (-10) = -2.0
+        -- regression threshold is strict <; exactly -2.0 must be unchanged
+        let result = classifyGopDelta (-10) (-12)
+        gopDeltaResponseGopDelta result `shouldBe` (-2.0)
+        gopDeltaResponseDeltaSignal result `shouldBe` DeltaSignalUnchanged
+
+    describe "boundarySignal strict severity thresholds" $ do
+      it "gop exactly -8.0 → none severity (strict <; == is not minor)" $ do
+        -- originalGop=-10 (minor), retryGop=-8.0 (none, because not < -8)
+        -- minor→none = BoundarySignalCrossedMinor
+        let result = classifyGopDelta (-10) (-8)
+        gopDeltaResponseBoundarySignal result `shouldBe` BoundarySignalCrossedMinor
+
+      it "gop exactly -12.0 → minor severity (strict <; == is not major)" $ do
+        -- originalGop=-15 (major), retryGop=-12.0 (minor, because not < -12)
+        -- major→minor = BoundarySignalCrossedMajor
+        let result = classifyGopDelta (-15) (-12)
+        gopDeltaResponseBoundarySignal result `shouldBe` BoundarySignalCrossedMajor
+
+    describe "boundarySignal classification" $ do
+      it "major→minor (original=-15, retry=-10) → BoundarySignalCrossedMajor" $ do
+        let result = classifyGopDelta (-15) (-10)
+        gopDeltaResponseBoundarySignal result `shouldBe` BoundarySignalCrossedMajor
+
+      it "minor→none (original=-10, retry=-6) → BoundarySignalCrossedMinor" $ do
+        let result = classifyGopDelta (-10) (-6)
+        gopDeltaResponseBoundarySignal result `shouldBe` BoundarySignalCrossedMinor
+
+      it "major→major (original=-15, retry=-13) → BoundarySignalNone" $ do
+        let result = classifyGopDelta (-15) (-13)
+        gopDeltaResponseBoundarySignal result `shouldBe` BoundarySignalNone
+
+      it "major→none (original=-15, retry=-7) → BoundarySignalCrossedMajor" $ do
+        let result = classifyGopDelta (-15) (-7)
+        gopDeltaResponseBoundarySignal result `shouldBe` BoundarySignalCrossedMajor

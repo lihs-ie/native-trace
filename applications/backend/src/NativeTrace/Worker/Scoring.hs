@@ -23,6 +23,8 @@ module NativeTrace.Worker.Scoring (
   buildFocusSounds,
   buildProsodyOutput,
   buildDynamicSummary,
+  -- GOP delta 分類 (M-CRL-7 / ADR-022)
+  classifyGopDelta,
 )
 where
 
@@ -58,10 +60,13 @@ import NativeTrace.Worker.Types (
   AssessmentFinding (..),
   AssessmentScores (..),
   AudioRange (..),
+  BoundarySignal (..),
   CefrScore (..),
+  DeltaSignal (..),
   FindingCategory (..),
   FindingSeverity (..),
   FocusSound (..),
+  GopDeltaResponse (..),
   NBestOutputEntry (..),
   PhonemeHeatEntry (..),
   PronunciationEvidence (..),
@@ -1258,3 +1263,47 @@ generateFindings ::
   AssessmentScores ->
   [AssessmentFinding]
 generateFindings _ _ _ = []
+
+-- ---- GOP Delta 分類 (M-CRL-7 / ADR-022) ----
+
+-- | deltaSignal の改善閾値（calibratable）。この値より大きければ improved。
+gopDeltaImprovementThreshold :: Double
+gopDeltaImprovementThreshold = 5.0
+
+-- | deltaSignal の退行閾値（calibratable）。この値より小さければ regressed。
+gopDeltaRegressionThreshold :: Double
+gopDeltaRegressionThreshold = -2.0
+
+-- | GOP 値から severity を判定する。strict < を使う（== は境界を跨がない）。
+-- gop == -8 は minor ではなく none、gop == -12 は major ではなく minor。
+gopSeverity :: Double -> Maybe FindingSeverity
+gopSeverity gop
+  | gop < gopMajorThreshold = Just FindingSeverityMajor
+  | gop < gopMinorThreshold = Just FindingSeverityMinor
+  | otherwise = Nothing
+
+-- | (originalGop, retryGop) から boundarySignal を計算する。
+-- major→(minor|none) = crossedMajor、(major|minor)→none = crossedMinor、それ以外 = none。
+classifyBoundarySignal :: Double -> Double -> BoundarySignal
+classifyBoundarySignal originalGop retryGop =
+  case (gopSeverity originalGop, gopSeverity retryGop) of
+    (Just FindingSeverityMajor, Just FindingSeverityMinor) -> BoundarySignalCrossedMajor
+    (Just FindingSeverityMajor, Nothing) -> BoundarySignalCrossedMajor
+    (Just FindingSeverityMinor, Nothing) -> BoundarySignalCrossedMinor
+    _ -> BoundarySignalNone
+
+-- | GOP delta 分類の純粋関数（M-CRL-7 / ADR-022）。
+-- originalGop と retryGop を受け取り gopDelta / deltaSignal / boundarySignal を返す。
+classifyGopDelta :: Double -> Double -> GopDeltaResponse
+classifyGopDelta originalGop retryGop =
+  let gopDelta = retryGop - originalGop
+      deltaSignal
+        | gopDelta > gopDeltaImprovementThreshold = DeltaSignalImproved
+        | gopDelta < gopDeltaRegressionThreshold = DeltaSignalRegressed
+        | otherwise = DeltaSignalUnchanged
+      boundarySignal = classifyBoundarySignal originalGop retryGop
+   in GopDeltaResponse
+        { gopDeltaResponseGopDelta = gopDelta,
+          gopDeltaResponseDeltaSignal = deltaSignal,
+          gopDeltaResponseBoundarySignal = boundarySignal
+        }

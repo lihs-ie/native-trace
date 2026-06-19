@@ -20,11 +20,14 @@ import NativeTrace.Worker.Assessment (
  )
 import NativeTrace.Worker.Assessment qualified as Assessment
 import NativeTrace.Worker.GoldenSpeakerClient (convertGoldenSpeaker)
+import NativeTrace.Worker.Scoring (classifyGopDelta)
 import NativeTrace.Worker.Types (
   AssessmentRequest (..),
   AssessmentResponse,
   AudioMetadata (..),
   GoldenSpeakerConversionDto,
+  GopDeltaRequest (..),
+  GopDeltaResponse,
   HealthResponse (..),
   ShadowingLagDto (..),
   VersionResponse (..),
@@ -51,7 +54,7 @@ application :: Application
 application = serve workerApi server
 
 server :: Server WorkerApi
-server = health :<|> version :<|> assessPronunciation :<|> shadowingLag :<|> goldenSpeakerConvert
+server = health :<|> version :<|> assessPronunciation :<|> shadowingLag :<|> goldenSpeakerConvert :<|> gopDeltaClassify
 
 health :: Handler HealthResponse
 health = pure (HealthResponse "ok")
@@ -101,6 +104,16 @@ shadowingLag multipart = do
       (shadowingMetaDurationMs meta)
   threshold <- liftIO readShadowingThresholdMs
   pure (buildShadowingLagDto result threshold)
+
+-- | GOP delta 分類（M-CRL-7 / ADR-022）。originalGop と retryGop を受け取り
+-- gopDelta / deltaSignal / boundarySignal を返す。分類ロジックは Scoring.hs の純粋関数に委譲。
+gopDeltaClassify :: GopDeltaRequest -> Handler GopDeltaResponse
+gopDeltaClassify request =
+  pure
+    ( classifyGopDelta
+        (gopDeltaRequestOriginalGop request)
+        (gopDeltaRequestRetryGop request)
+    )
 
 -- | golden speaker 音色変換（M-GRV-6 / ADR-012）。learner_audio を golden サービスへ渡し
 -- 変換結果（or 品質ゲート withhold）を返す。GOLDEN_SPEAKER_URL 未設定時は 503（M-GRV-9 軟無効化）。

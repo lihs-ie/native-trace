@@ -27,6 +27,11 @@ module NativeTrace.Worker.Types (
   PerSegmentLagEntry (..),
   ShadowingLagDto (..),
   GoldenSpeakerConversionDto (..),
+  -- GOP delta classification (M-CRL-7 / ADR-022)
+  GopDeltaRequest (..),
+  DeltaSignal (..),
+  BoundarySignal (..),
+  GopDeltaResponse (..),
 )
 where
 
@@ -609,3 +614,60 @@ instance FromJSON GoldenSpeakerConversionDto where
       <*> o .: "qualityGatePassed"
       <*> o .:? "withholdReason"
       <*> o .: "targetVoice"
+
+-- ---- GOP Delta Classification (M-CRL-7 / ADR-022) ----
+
+-- | POST /v1/gop-delta リクエスト。
+-- originalGop: 元の所見の GOP 値（worker 内部スケール、負の浮動小数）。
+-- retryGop: 再録音の GOP 値（worker 内部スケール、負の浮動小数）。
+data GopDeltaRequest = GopDeltaRequest
+  { gopDeltaRequestOriginalGop :: Double,
+    gopDeltaRequestRetryGop :: Double
+  }
+  deriving (Show, Eq)
+
+instance FromJSON GopDeltaRequest where
+  parseJSON = withObject "GopDeltaRequest" $ \o ->
+    GopDeltaRequest
+      <$> o .: "originalGop"
+      <*> o .: "retryGop"
+
+-- | delta の改善方向。calibratable 閾値（+5/-2）で分類。
+data DeltaSignal
+  = DeltaSignalImproved
+  | DeltaSignalUnchanged
+  | DeltaSignalRegressed
+  deriving (Show, Eq)
+
+instance ToJSON DeltaSignal where
+  toJSON DeltaSignalImproved = "improved"
+  toJSON DeltaSignalUnchanged = "unchanged"
+  toJSON DeltaSignalRegressed = "regressed"
+
+-- | severity 境界の横断有無。major/minor 境界（strict <）を使う。
+data BoundarySignal
+  = BoundarySignalCrossedMajor
+  | BoundarySignalCrossedMinor
+  | BoundarySignalNone
+  deriving (Show, Eq)
+
+instance ToJSON BoundarySignal where
+  toJSON BoundarySignalCrossedMajor = "crossedMajor"
+  toJSON BoundarySignalCrossedMinor = "crossedMinor"
+  toJSON BoundarySignalNone = "none"
+
+-- | POST /v1/gop-delta レスポンス。
+data GopDeltaResponse = GopDeltaResponse
+  { gopDeltaResponseGopDelta :: Double,
+    gopDeltaResponseDeltaSignal :: DeltaSignal,
+    gopDeltaResponseBoundarySignal :: BoundarySignal
+  }
+  deriving (Show, Eq)
+
+instance ToJSON GopDeltaResponse where
+  toJSON response =
+    object
+      [ "gopDelta" .= gopDeltaResponseGopDelta response,
+        "deltaSignal" .= gopDeltaResponseDeltaSignal response,
+        "boundarySignal" .= gopDeltaResponseBoundarySignal response
+      ]
