@@ -48,3 +48,14 @@ runtime-verifier が使う。「コードが存在する」ではなく「入口
 - 終了メッセージを信用せず、**grep / build で実際に landed した結線点を確認する**。Servant なら
   `scripts/verify-servant-route-handler-parity.sh` の route 数 ↔ handler 数一致、または `cabal build`
   の成否で配線到達を yes/no 判定する。差分が残っていれば「未配線・continue」とし、残件だけ implementer に再投する。
+
+## orchestrator の keyboard-grab は orphan 束縛を grep で確認する
+- proven-done 実行中に orchestrator が implementer に dispatch せず **本番コードを直接編集** した場合、
+  static-verifier は変更された本番ソース (`.hs`/`.ts`) を明示的に grep し、**orphan 化した let/where 束縛**
+  — 束縛で値を計算したのに record-construction / call site の **すべて**で消費されていないもの
+  (例: `acousticEvidence` 束縛を計算しながら `findingAcousticEvidence = Nothing` のまま) — が無いことを
+  確認する。
+- cabal `-Werror=unused-local-binds` ゲート (CAND-b2 / `haskell_unused_local_binding_dead_wiring`) が
+  **PRIMARY** ライン。この Step 3.5 grep は、同等の compiler-flag による検査を持たない言語
+  (例: `run-assessment-job/index.ts` に literal placeholder を残した TypeScript) 向けの **SECONDARY**
+  ライン (incident 2026-06-19 ADR-018 event 1 GOP-site dead-`Nothing` / 2026-06-12 ORPHAN-1/2)。

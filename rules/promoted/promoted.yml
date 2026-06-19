@@ -301,5 +301,33 @@ evidence_required:
   - grep_output
 rollback_condition: "false_positive_rate > 0.15"   # 超過時 (legit unused が test-suite 等に出る場合) は library stanza のみに scope を縮小。現状 common warnings (全 stanza 共有) で build all 緑なので FP リスク極小
 verified_fires: true               # flag 追加後 cabal build all 緑 (exit 0、unused warning ゼロ)。synthetic violation (tokenize where に unused let unusedProbe=(42::Int) を挿入): fitness hook の cabal test が GHC-40910 [-Wunused-local-binds, Werror=unused-local-binds] Defined but not used で build error → 編集ブロック。除去 → 緑。verify-haskell-warnings.sh: flag 有り exit 0、flag 一時削除 exit 1、restore exit 0 を実コマンドで確認
-residual: "pre-existing (本タスク外・ADR-018 uncommitted 作業由来): Scoring.hs L1136 schwaPhonemes が -Wunused-top-binds (top-level、本昇格の対象外 class)、L83 WordPair が -Wunused-imports。test-suite に -Wmissing-home-modules (GoldenSpeakerSpec/ShadowingLagSpec が other-modules 未登録)。いずれも build を壊さず本 flag の対象外"
+residual: "resolved 2026-06-19 (f32e2ec): Scoring.hs L1136 schwaPhonemes (-Wunused-top-binds) + L83 WordPair (-Wunused-imports) を除去、加えて dead な foldl'/group/FunctionalLoad/flWeight import と dead な resultMale/let measured ブロックを除去。GoldenSpeakerSpec + ShadowingLagSpec を test-suite の other-modules に登録 (-Wmissing-home-modules 解消)。worker は warning-clean で build (73 examples, 0 failures, warning 無しを確認)"
+owner: "@lihs-ie"
+---
+# CAND-b3: proven-done 実行中に orchestrator が implementer に dispatch せず本番コードを直接編集 (keyboard-grab) し、
+# その un-delegated edit が束縛を orphan 化する (let/where で計算したが construction site が literal default のまま)
+# = dead-wiring。symptom の静的検出は CAND-b2 (-Werror=unused-local-binds) が Haskell で PRIMARY。behavioral 正本は
+# §3 + memory agent-dev-follow-pipeline-faithfully で 2× tier 済。本エントリは Haskell 以外の construction site
+# (例: run-assessment-job/index.ts の TS literal placeholder) 向けの doc-only rubric secondary net のみを追加する。
+id: orchestrator_hand_edit_dead_wiring
+failure_class: dataflow_unwired      # un-delegated hand-edit が束縛を orphan 化し機能が build 緑で死ぬ
+trigger:
+  repeated_count: 2                  # FULL incident 2026-06-19 ADR-018 event 1 (GOP-site dead-Nothing) + PARTIAL incident 2026-06-12 ORPHAN-1/2。いずれも dead-wiring を pre-merge で捕捉
+  sources: ["incident", "code_review"]
+  note: "2026-06-13 は misattributed (implementer の partial-record bug = haskell_werror_missing_fields の対象) のため本 class には数えない。2× = 1 full (2026-06-19) + 1 partial (2026-06-12)"
+rule:
+  summary: "proven-done 中に orchestrator が implementer に dispatch せず本番コードを hand-edit した場合、static-verifier は変更された本番ソース (.hs/.ts) を grep して orphan let/where 束縛 (計算したが全 construction/call site で消費されない) が無いことを確認する"
+  enforcement:
+    - type: rubric_item
+      detail: "rubric/core/wiring.md に『orchestrator の keyboard-grab は orphan 束縛を grep で確認する』節を追加 (Step 3.5 grep = compiler-flag 検査を持たない言語向けの SECONDARY ライン)"
+overlap:
+  - "CAND-b2 (haskell_unused_local_binding_dead_wiring): 同一 symptom (orphan let 束縛) の static gate。Haskell では -Werror=unused-local-binds が PRIMARY ライン。本エントリは duplicate ではなく Haskell 以外の construction site 向け SECONDARY net"
+  - "agent-policy §3 + memory agent-dev-follow-pipeline-faithfully: behavioral 正本/short_rule (orchestrator が implementer の代わりに配線を肩代わりしない)。2× tier で昇格済。本エントリは rubric-layer の augmentation のみで behavioral rule を再昇格しない"
+eval_deferred:
+  reason: "§6 eval しきい値は本 class で 3×。現在 2× (1 full 2026-06-19 + 1 partial 2026-06-12)。eval (evals/wiring/) は 3 回目の substantiated recurrence で作成、それ以前には作らない。static SYMPTOM は CAND-b2 で既にカバー済"
+evidence_required:
+  - changed_files
+  - grep_output
+rollback_condition: "n/a (doc-only rubric。exit-code firing が無いため FP exit-code も無い)"
+verified_fires: false              # doc-only 昇格 (exit-code firing は無し)、他の rubric-only エントリと同様
 owner: "@lihs-ie"
