@@ -126,6 +126,24 @@ const findingSchema = z.object({
     .nullable()
     .optional()
     .transform((v) => v ?? null),
+  /**
+   * M-AAI-13 (ADR-019): EMA 調音推定座標 + 表示適格性スコア。
+   * ORPHAN-C: Zod はデフォルトで unknown keys を strip するため、
+   * このフィールドを schema に明示しないと mapper に届く前に null になる。
+   */
+  articulatoryEstimate: z
+    .object({
+      tongueTipX: z.number(),
+      tongueTipY: z.number(),
+      tongueDorsumX: z.number(),
+      tongueDorsumY: z.number(),
+      lipApertureX: z.number(),
+      lipApertureY: z.number(),
+      displayEligibility: z.number(),
+    })
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
 });
 
 const segmentSchema = z.object({

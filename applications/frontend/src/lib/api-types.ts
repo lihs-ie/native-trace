@@ -249,6 +249,22 @@ export type AcousticEvidenceDto = {
   targetF3Hz: number | null;
 };
 
+/**
+ * M-AAI-12 (ADR-019): EMA 調音推定座標 + 表示適格性スコア。
+ * 座標は発話内 z-score 正規化後 [-1,1] クランプ済み（生 mm ではない）。
+ * displayEligibility = validFrameRatio × voicingRatio × durationAdequacy ([0,1])。
+ * null は AAI 不在 / ガードレール未達 = floor のみ描画。
+ */
+export type ArticulatoryEstimateDto = {
+  tongueTipX: number;
+  tongueTipY: number;
+  tongueDorsumX: number;
+  tongueDorsumY: number;
+  lipApertureX: number;
+  lipApertureY: number;
+  displayEligibility: number;
+};
+
 export type EngineFindingDto = {
   finding: string;
   phenomenon: FindingPhenomenon | null;
@@ -278,6 +294,8 @@ export type EngineFindingDto = {
   dismissed: boolean;
   /** M-APD-13 (ADR-018): 音響音声学的証拠。worker が導出した方向ラベル + 実測/目標フォルマント。*/
   acousticEvidence: AcousticEvidenceDto | null;
+  /** M-AAI-12 (ADR-019): EMA 調音推定座標。null は AAI 不在/ガードレール未達 = floor のみ描画。*/
+  articulatoryEstimate: ArticulatoryEstimateDto | null;
 };
 
 export type EngineResultDto = {

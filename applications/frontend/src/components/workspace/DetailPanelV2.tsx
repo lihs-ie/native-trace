@@ -476,7 +476,11 @@ export const DetailPanelV2 = ({
       {/* 調音図解カード展開 (M-ARTIC-c) — M-CRL-3: finding prop を追加 (W-3) */}
       {showArticulation && articulationEntry && (
         <div style={{ padding: "var(--sp-4) var(--sp-5)" }}>
-          <ArticulationCard entry={articulationEntry} finding={finding} />
+          <ArticulationCard
+            entry={articulationEntry}
+            finding={finding}
+            articulatoryEstimate={finding.articulatoryEstimate ?? null}
+          />
         </div>
       )}
 

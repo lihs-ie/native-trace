@@ -158,6 +158,24 @@ export type AcousticEvidenceDraft = Readonly<{
   targetF3Hz: number | null;
 }>;
 
+// ---- ArticulatoryEstimate ----
+
+/**
+ * M-AAI-12 (ADR-019): EMA 調音推定座標 + 表示適格性スコアの Draft 型。
+ * ArticulatoryEstimateDto (lib/api-types) と同形。UseCase 層自己完結のためここに定義。
+ * 座標は発話内 z-score 正規化後 [-1,1] クランプ済み（生 mm ではない）。
+ * displayEligibility = validFrameRatio × voicingRatio × durationAdequacy ([0,1])。
+ */
+export type ArticulatoryEstimateDraft = Readonly<{
+  tongueTipX: number;
+  tongueTipY: number;
+  tongueDorsumX: number;
+  tongueDorsumY: number;
+  lipApertureX: number;
+  lipApertureY: number;
+  displayEligibility: number;
+}>;
+
 // ---- Finding / Segment ----
 
 export type PronunciationEvidenceDraft = Readonly<{
@@ -211,6 +229,8 @@ export type AssessmentFindingDraft = Readonly<{
   wordPositionLabel: string | null;
   /** M-APD-15 (ADR-018): 音響音声学的証拠。worker が導出した方向ラベル + 実測/目標フォルマント。null は未取得。*/
   acousticEvidence: AcousticEvidenceDraft | null;
+  /** M-AAI-12 (ADR-019): EMA 調音推定座標。null は AAI 不在/ガードレール未達 = floor のみ描画。*/
+  articulatoryEstimate: ArticulatoryEstimateDraft | null;
 }>;
 
 export type AssessmentSegmentDraft = Readonly<{

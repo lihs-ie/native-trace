@@ -115,6 +115,21 @@ export type FeedbackLayers = Readonly<{
   howJa: string;
 }>;
 
+/**
+ * M-AAI-12 (ADR-019): EMA 調音推定座標 + 表示適格性スコアのドメイン型。
+ * 座標は発話内 z-score 正規化後 [-1,1] クランプ済み（生 mm ではない）。
+ * displayEligibility = validFrameRatio × voicingRatio × durationAdequacy ([0,1])。
+ */
+export type ArticulatoryEstimate = Readonly<{
+  tongueTipX: number;
+  tongueTipY: number;
+  tongueDorsumX: number;
+  tongueDorsumY: number;
+  lipApertureX: number;
+  lipApertureY: number;
+  displayEligibility: number;
+}>;
+
 export type AssessmentFinding = Readonly<{
   identifier: AssessmentFindingIdentifier;
   phenomenon: FindingPhenomenon | null;
@@ -153,6 +168,8 @@ export type AssessmentFinding = Readonly<{
   dismissed: boolean;
   /** M-104R-b: 語内位置ラベル ("initial"|"medial"|"final"|null) */
   wordPositionLabel: string | null;
+  /** M-AAI-12 (ADR-019): EMA 調音推定座標。null は AAI 不在/ガードレール未達 = floor のみ描画。*/
+  articulatoryEstimate: ArticulatoryEstimate | null;
 }>;
 
 export type AssessmentSegment = Readonly<{

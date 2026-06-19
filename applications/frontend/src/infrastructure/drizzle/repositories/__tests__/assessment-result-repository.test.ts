@@ -177,6 +177,7 @@ describe("DrizzleAssessmentResultRepository", () => {
           feedbackLayers: { whatJa: "観測", whyJa: "原因", howJa: "修正" },
           dismissed: false,
           wordPositionLabel: "initial" as const,
+          articulatoryEstimate: null,
         },
       ],
       segments: [{ textRange, audioRange: null, transcript: "hello", confidence: 0.9 }],

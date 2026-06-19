@@ -74,6 +74,7 @@ const makeRealWorkerFinding = (
   feedbackLayers: null,
   dismissed: false,
   wordPositionLabel: null,
+  articulatoryEstimate: null,
   ...overrides,
 });
 
@@ -150,6 +151,7 @@ const makeAssessmentResultSynthetic = (): AssessmentResult =>
       feedbackLayers: null,
       dismissed: false,
       wordPositionLabel: null,
+      articulatoryEstimate: null,
     },
   ]);
 

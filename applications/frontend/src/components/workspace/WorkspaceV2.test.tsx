@@ -60,6 +60,7 @@ const buildFinding = (overrides: Partial<EngineFindingDto> = {}): EngineFindingD
   },
   dismissed: false,
   acousticEvidence: null,
+  articulatoryEstimate: null,
   ...overrides,
 });
 

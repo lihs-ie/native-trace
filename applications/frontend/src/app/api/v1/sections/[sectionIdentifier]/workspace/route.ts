@@ -116,6 +116,8 @@ export async function GET(_request: NextRequest, context: RouteContext): Promise
         insertionPositionMs: f.insertionPositionMs,
         feedbackLayers: f.feedbackLayers,
         dismissed: f.dismissed,
+        // M-AAI-12 (ADR-019): ORPHAN-D 防止 — explicit field map なので明示的に写像する
+        articulatoryEstimate: f.articulatoryEstimate ?? null,
       })),
       // v2 (M-107b/c, M-112, M-114): 全音素 GOP ヒートマップ / focus sounds / 韻律 / 動的サマリー
       engineSummaryMessageJa: r.engineSummaryMessageJa,

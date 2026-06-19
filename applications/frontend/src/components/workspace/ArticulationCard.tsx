@@ -2,15 +2,22 @@
 
 import { useState, useRef } from "react";
 import type { ArticulationEntry } from "@/lib/articulation-data";
-import type { EngineFindingDto, RetryRecordingResponse } from "@/lib/api-types";
+import type {
+  ArticulatoryEstimateDto,
+  EngineFindingDto,
+  RetryRecordingResponse,
+} from "@/lib/api-types";
 
 /**
  * M-CRL-3 (ADR-022): Props を entry+finding に拡張（W-4）。
  * finding は MediaRecorder → retry-recordings POST に必要。
+ * M-AAI-14 (ADR-019): articulatoryEstimate — EMA オーバーレイ描画に使用。
  */
 type ArticulationCardProps = {
   entry: ArticulationEntry;
   finding: EngineFindingDto;
+  /** M-AAI-14 (ADR-019): EMA 調音推定座標。null または displayEligibility < 0.55 のとき floor のみ描画。*/
+  articulatoryEstimate?: ArticulatoryEstimateDto | null;
 };
 
 type TtsSpeed = 0.5 | 0.85 | 1.0;
@@ -28,7 +35,25 @@ type TtsSpeed = 0.5 | 0.85 | 1.0;
  * M-CRL-3: MediaRecorder 配線 + POST /api/v1/findings/{id}/retry-recordings
  * M-CRL-9: retryState 表示（GOP delta + signal 色分け + boundary メッセージ）
  */
-export const ArticulationCard = ({ entry, finding }: ArticulationCardProps) => {
+/**
+ * 正規化座標 c∈[-1,1] → sagittal-wrap ボックス内の CSS パーセント位置へ変換。
+ * 変換式: pos = (c * 0.5 + 0.5) * 100 [%]
+ * c=-1 → 0%, c=0 → 50%, c=1 → 100%。
+ * 校正注意: EMA→SVG のオフセット校正は未成熟（ADR-019 S-AAI-1 / Risk）。
+ * 線形写像は MVP として妥当だが、EMA z-score 正規化と SVG 解剖学的座標系の
+ * アライメントは実機検証フェーズで調整が必要。
+ */
+const normalizedCoordToPercent = (coordinate: number): string =>
+  `${(coordinate * 0.5 + 0.5) * 100}%`;
+
+/** D4 ガードレール: displayEligibility ≥ 0.55 かつ非 null のとき EMA オーバーレイを表示 */
+const DISPLAY_ELIGIBILITY_THRESHOLD = 0.55;
+
+export const ArticulationCard = ({
+  entry,
+  finding,
+  articulatoryEstimate,
+}: ArticulationCardProps) => {
   const [ttsSpeed, setTtsSpeed] = useState<TtsSpeed>(0.85);
   const [ttsPlaying, setTtsPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -177,30 +202,125 @@ export const ArticulationCard = ({ entry, finding }: ArticulationCardProps) => {
     }
   };
 
-  return (
-    <div className="artic">
-      {/* 調音断面図 — design §06 仕様合致 (M-HOW-10) */}
-      <div className="artic-fig">
-        <span className="sym">{entry.ipaDisplay}</span>
-        {entry.sagittalSvgPath ? (
-          // eslint-disable-next-line @next/next/no-img-element -- ADR-020 M-HOW-10: static sagittal SVG asset, not a Next-optimized remote image
-          <img
-            src={entry.sagittalSvgPath}
-            alt={`/${entry.phoneme}/ の調音断面図`}
-            style={{ maxWidth: "100%", maxHeight: "100%" }}
-          />
-        ) : (
-          <span className="ph">
-            sagittal-diagram
-            <br />
-            placeholder
-            <br />
-            320×320 · SVG
-          </span>
-        )}
-      </div>
+  /**
+   * M-AAI-14 (ADR-019) D4 ガードレール:
+   * articulatoryEstimate が非 null かつ displayEligibility >= 0.55 のときのみ EMA オーバーレイを表示。
+   * 1 つでも欠ければ floor (静的 SVG + steps) のみ描く。
+   */
+  const showEmaOverlay =
+    articulatoryEstimate != null &&
+    articulatoryEstimate.displayEligibility >= DISPLAY_ELIGIBILITY_THRESHOLD;
 
-      {/* 右カラム: 見出し + 調音手順 */}
+  /**
+   * Plan B (ADR-019): targetArticulation が存在するか EMA オーバーレイが有効なとき
+   * .artic--aai + .sagittal-wrap ブランチを使う。
+   * targetArticulation だけの場合（learner 推定なし）でも dashed 目標丸を描画できる。
+   */
+  const showSagittal = entry.targetArticulation != null || showEmaOverlay;
+
+  return (
+    <div className={showSagittal ? "artic artic--aai" : "artic"}>
+      {showSagittal ? (
+        /* Plan B + M-AAI-14: .sagittal-wrap に floor <img> + .ema-layer オーバーレイを重ねる */
+        <div className="sagittal-wrap">
+          {entry.sagittalSvgPath ? (
+            // eslint-disable-next-line @next/next/no-img-element -- ADR-020 M-HOW-10: static sagittal SVG asset, not a Next-optimized remote image
+            <img
+              src={entry.sagittalSvgPath}
+              alt={`/${entry.phoneme}/ の調音断面図`}
+              style={{ width: "100%", height: "100%", objectFit: "contain" }}
+            />
+          ) : (
+            <div className="sag-ph">
+              <span className="sym">{entry.ipaDisplay}</span>
+              <span>
+                sagittal-diagram
+                <br />
+                placeholder
+              </span>
+            </div>
+          )}
+
+          {/* EMA オーバーレイ — 既存 CSS クラスのみ使用 */}
+          <div className="ema-layer">
+            {/* Plan B: 目標調音の目安（破線丸）— targetArticulation があれば常時描画（ML 不要）*/}
+            {entry.targetArticulation && (
+              <div
+                className="ema-target"
+                style={{
+                  left: `${entry.targetArticulation.x}%`,
+                  top: `${entry.targetArticulation.y}%`,
+                }}
+                title={entry.targetArticulation.label}
+              >
+                <span className="ema-lbl">{entry.targetArticulation.label}</span>
+              </div>
+            )}
+
+            {/* M-AAI-14: 学習者推定（塗り潰し丸）— showEmaOverlay かつ estimate 有効時のみ */}
+            {showEmaOverlay && articulatoryEstimate && (
+              <>
+                {/* 舌先 (tongue tip) */}
+                <div
+                  className="ema-pt ema-pt--tip"
+                  style={{
+                    left: normalizedCoordToPercent(articulatoryEstimate.tongueTipX),
+                    top: normalizedCoordToPercent(-articulatoryEstimate.tongueTipY),
+                  }}
+                >
+                  <i />
+                  <span className="ema-lbl">舌先（推定）</span>
+                </div>
+
+                {/* 舌背 (tongue dorsum) */}
+                <div
+                  className="ema-pt ema-pt--dorsum"
+                  style={{
+                    left: normalizedCoordToPercent(articulatoryEstimate.tongueDorsumX),
+                    top: normalizedCoordToPercent(-articulatoryEstimate.tongueDorsumY),
+                  }}
+                >
+                  <i />
+                </div>
+
+                {/* 唇開き (lip aperture) */}
+                <div
+                  className="ema-pt ema-pt--lip"
+                  style={{
+                    left: normalizedCoordToPercent(articulatoryEstimate.lipApertureX),
+                    top: normalizedCoordToPercent(-articulatoryEstimate.lipApertureY),
+                  }}
+                >
+                  <i />
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* floor のみ — 既存 .artic-fig 描画（回帰させない） */
+        <div className="artic-fig">
+          <span className="sym">{entry.ipaDisplay}</span>
+          {entry.sagittalSvgPath ? (
+            // eslint-disable-next-line @next/next/no-img-element -- ADR-020 M-HOW-10: static sagittal SVG asset, not a Next-optimized remote image
+            <img
+              src={entry.sagittalSvgPath}
+              alt={`/${entry.phoneme}/ の調音断面図`}
+              style={{ maxWidth: "100%", maxHeight: "100%" }}
+            />
+          ) : (
+            <span className="ph">
+              sagittal-diagram
+              <br />
+              placeholder
+              <br />
+              320×320 · SVG
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* 右カラム: 見出し + 調音手順 + AAI enrichment メタ情報 */}
       <div>
         <div
           style={{
@@ -219,11 +339,59 @@ export const ArticulationCard = ({ entry, finding }: ArticulationCardProps) => {
           </span>
         </div>
 
+        {/* v3 二層タグ + 適格性メーター行 — design-reference/screens/articulation-card.html:92-96 準拠。
+            確定(floor) は常時、推定(enrich) と elig は AAI 有効時に追加（floor を置換しない）。*/}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            marginBottom: "12px",
+            flexWrap: "wrap",
+          }}
+        >
+          <span className="layer-tag layer-tag--floor">確定 · floor</span>
+          {showEmaOverlay && (
+            <span className="layer-tag layer-tag--enrich">
+              <span className="lt-ico">~</span>推定 · EMA 重畳
+            </span>
+          )}
+          {showEmaOverlay && articulatoryEstimate && (
+            <span className="elig" style={{ marginLeft: "auto" }}>
+              elig
+              <div className="elig-track">
+                <i style={{ width: `${articulatoryEstimate.displayEligibility * 100}%` }} />
+                <div className="elig-gate" />
+              </div>
+              {articulatoryEstimate.displayEligibility.toFixed(2)}
+            </span>
+          )}
+        </div>
+
         <ol className="artic-steps">
           {entry.steps.map((step, index) => (
             <li key={index}>{step}</li>
           ))}
         </ol>
+
+        {/* M-AAI-14 (ADR-019 D4): L2 disclaimer — AAI 有効時のみ表示。Kocjancic 2025 音響併置。
+            断定的表現を避ける: 「あなたの舌はここ」とは書かない。articulation-card.html:101 準拠。
+            Plan B: target-only（showSagittal && !showEmaOverlay）は軽量 floor ノートを表示。
+            「推定で外れる」免責は target-only カードには付けない（目標調音は決定論的）。*/}
+        {showEmaOverlay ? (
+          <div className="disclaimer" style={{ marginTop: "var(--sp-3)" }}>
+            <span className="dc-ico">~</span>
+            <span>
+              推定です（native 話者データ由来。/r/→[ɾ]
+              など訛りでは外れることがあります）。あなたの舌位置を断定するものではありません。
+            </span>
+          </div>
+        ) : showSagittal ? (
+          <div className="disclaimer" style={{ marginTop: "var(--sp-3)" }}>
+            <span className="dc-ico">◌</span>
+            <span>破線（◌）= 目標調音の目安です。あなたの発話からの推定ではありません。</span>
+          </div>
+        ) : null}
       </div>
 
       {/* 調音音声エリア — design §06 `.artic-audio` 全幅 */}

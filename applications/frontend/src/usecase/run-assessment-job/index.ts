@@ -854,6 +854,9 @@ export const createRunAssessmentJob =
                                             dismissed: findingDraft.dismissed,
                                             wordPositionLabel:
                                               findingDraft.wordPositionLabel ?? null,
+                                            // M-AAI-12 (ADR-019): ORPHAN-B 防止 — DB persist 前に drop しない
+                                            articulatoryEstimate:
+                                              findingDraft.articulatoryEstimate ?? null,
                                           });
                                         }
 

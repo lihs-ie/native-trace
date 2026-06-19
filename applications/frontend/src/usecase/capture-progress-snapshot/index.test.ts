@@ -103,6 +103,7 @@ const makeAssessmentResult = (): AssessmentResult => ({
       feedbackLayers: null,
       dismissed: false,
       wordPositionLabel: null,
+      articulatoryEstimate: null,
     },
   ],
   segments: [] as never,

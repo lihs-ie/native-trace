@@ -31,6 +31,12 @@ const buildEntry = (): ArticulationEntry => ({
   steps: ["舌先を歯茎に当てる", "側面から息を流す"],
 });
 
+const buildEntryWithTarget = (): ArticulationEntry => ({
+  ...buildEntry(),
+  sagittalSvgPath: "/assets/sagittal/l.svg",
+  targetArticulation: { x: 55, y: 41, label: "舌先を歯茎に接触" },
+});
+
 const buildFinding = (overrides: Partial<EngineFindingDto> = {}): EngineFindingDto => ({
   finding: "finding-test-01",
   phenomenon: "substitution",
@@ -57,6 +63,7 @@ const buildFinding = (overrides: Partial<EngineFindingDto> = {}): EngineFindingD
   feedbackLayers: null,
   dismissed: false,
   acousticEvidence: null,
+  articulatoryEstimate: null,
   ...overrides,
 });
 
@@ -233,5 +240,207 @@ describe("ArticulationCard sagittalSvgPath 条件描画 (M-HOW-10)", () => {
     // img と ttsButton が card の子孫であることを確認
     expect(card?.contains(img)).toBe(true);
     expect(card?.contains(ttsButton)).toBe(true);
+  });
+});
+
+// ---- M-AAI-14: EMA オーバーレイ + disclaimer テスト (ADR-019) ----
+
+const buildArticulatoryEstimate = (
+  displayEligibility: number,
+): import("@/lib/api-types").ArticulatoryEstimateDto => ({
+  tongueTipX: 0.12,
+  tongueTipY: -0.34,
+  tongueDorsumX: -0.21,
+  tongueDorsumY: 0.45,
+  lipApertureX: 0.01,
+  lipApertureY: 0.67,
+  displayEligibility,
+});
+
+describe("ArticulationCard EMA オーバーレイ (M-AAI-14)", () => {
+  it("articulatoryEstimate=null のとき floor のみ描画され、.ema-layer が存在しない", () => {
+    const { container } = render(
+      <ArticulationCard
+        entry={buildEntryWithSvgPath()}
+        finding={buildFinding()}
+        articulatoryEstimate={null}
+      />,
+    );
+    // floor SVG は描画されること
+    const img = container.querySelector("img");
+    expect(img).toBeInTheDocument();
+    // EMA オーバーレイが存在しないこと
+    expect(container.querySelector(".ema-layer")).not.toBeInTheDocument();
+    // disclaimer が存在しないこと
+    expect(container.querySelector(".disclaimer")).not.toBeInTheDocument();
+  });
+
+  it("articulatoryEstimate=null のとき floor の .artic-fig が描画される（回帰しない）", () => {
+    const { container } = render(
+      <ArticulationCard
+        entry={buildEntry()}
+        finding={buildFinding()}
+        articulatoryEstimate={null}
+      />,
+    );
+    expect(container.querySelector(".artic-fig")).toBeInTheDocument();
+  });
+
+  it("displayEligibility=0.6 (>=0.55) の非 null estimate のとき .ema-layer + .disclaimer が描画される", () => {
+    const { container } = render(
+      <ArticulationCard
+        entry={buildEntryWithSvgPath()}
+        finding={buildFinding()}
+        articulatoryEstimate={buildArticulatoryEstimate(0.6)}
+      />,
+    );
+    expect(container.querySelector(".ema-layer")).toBeInTheDocument();
+    expect(container.querySelector(".disclaimer")).toBeInTheDocument();
+    // .ema-pt--tip / --dorsum / --lip も存在すること
+    expect(container.querySelector(".ema-pt--tip")).toBeInTheDocument();
+    expect(container.querySelector(".ema-pt--dorsum")).toBeInTheDocument();
+    expect(container.querySelector(".ema-pt--lip")).toBeInTheDocument();
+  });
+
+  it("displayEligibility=0.5 (<0.55) のとき EMA オーバーレイが描画されない（D4 ガードレール）", () => {
+    const { container } = render(
+      <ArticulationCard
+        entry={buildEntryWithSvgPath()}
+        finding={buildFinding()}
+        articulatoryEstimate={buildArticulatoryEstimate(0.5)}
+      />,
+    );
+    expect(container.querySelector(".ema-layer")).not.toBeInTheDocument();
+    expect(container.querySelector(".disclaimer")).not.toBeInTheDocument();
+  });
+
+  it("EMA オーバーレイ表示時も reference TTS ボタンが同一カード内に存在する（Kocjancic 2025 音響併置）", () => {
+    const { container } = render(
+      <ArticulationCard
+        entry={buildEntryWithSvgPath()}
+        finding={buildFinding()}
+        articulatoryEstimate={buildArticulatoryEstimate(0.7)}
+      />,
+    );
+    const card = container.querySelector(".artic");
+    const ttsButton = container.querySelector(".artic-audio button");
+    expect(card).toBeInTheDocument();
+    expect(ttsButton).toBeInTheDocument();
+    expect(card?.contains(ttsButton)).toBe(true);
+  });
+
+  it("EMA オーバーレイ表示時 .artic--aai クラスが付与される", () => {
+    const { container } = render(
+      <ArticulationCard
+        entry={buildEntryWithSvgPath()}
+        finding={buildFinding()}
+        articulatoryEstimate={buildArticulatoryEstimate(0.65)}
+      />,
+    );
+    expect(container.querySelector(".artic--aai")).toBeInTheDocument();
+  });
+
+  it("floor のみ表示時は .artic--aai クラスが付与されない", () => {
+    const { container } = render(
+      <ArticulationCard
+        entry={buildEntry()}
+        finding={buildFinding()}
+        articulatoryEstimate={null}
+      />,
+    );
+    expect(container.querySelector(".artic--aai")).not.toBeInTheDocument();
+  });
+});
+
+// ---- Plan B (ADR-019): .ema-target 目標調音オーバーレイ テスト ----
+
+describe("ArticulationCard Plan B 目標調音オーバーレイ (ADR-019)", () => {
+  it("targetArticulation あり + articulatoryEstimate=null => .ema-target が存在し .artic--aai が付く", () => {
+    const { container } = render(
+      <ArticulationCard
+        entry={buildEntryWithTarget()}
+        finding={buildFinding()}
+        articulatoryEstimate={null}
+      />,
+    );
+    expect(container.querySelector(".ema-target")).toBeInTheDocument();
+    expect(container.querySelector(".artic--aai")).toBeInTheDocument();
+  });
+
+  it("targetArticulation あり + articulatoryEstimate=null => .ema-pt--tip が存在しない（learner 推定ドットなし）", () => {
+    const { container } = render(
+      <ArticulationCard
+        entry={buildEntryWithTarget()}
+        finding={buildFinding()}
+        articulatoryEstimate={null}
+      />,
+    );
+    expect(container.querySelector(".ema-pt--tip")).not.toBeInTheDocument();
+  });
+
+  it("targetArticulation あり + articulatoryEstimate=null => .ema-layer が存在する", () => {
+    const { container } = render(
+      <ArticulationCard
+        entry={buildEntryWithTarget()}
+        finding={buildFinding()}
+        articulatoryEstimate={null}
+      />,
+    );
+    expect(container.querySelector(".ema-layer")).toBeInTheDocument();
+  });
+
+  it("targetArticulation あり + articulatoryEstimate=null => 軽量 floor ノート（破線◌）が表示され L2 推定免責は表示されない", () => {
+    const { container } = render(
+      <ArticulationCard
+        entry={buildEntryWithTarget()}
+        finding={buildFinding()}
+        articulatoryEstimate={null}
+      />,
+    );
+    // 軽量ノートが存在すること
+    expect(container.querySelector(".disclaimer")).toBeInTheDocument();
+    expect(container.innerHTML).toContain("目標調音の目安");
+    expect(container.innerHTML).toContain("あなたの発話からの推定ではありません");
+    // L2 推定免責（「訛り」文言）は存在しないこと
+    expect(container.innerHTML).not.toContain("訛り");
+    expect(container.innerHTML).not.toContain("native 話者データ由来");
+  });
+
+  it("targetArticulation あり + displayEligibility=0.6 => .ema-target と .ema-pt--tip の両方が存在する", () => {
+    const { container } = render(
+      <ArticulationCard
+        entry={buildEntryWithTarget()}
+        finding={buildFinding()}
+        articulatoryEstimate={buildArticulatoryEstimate(0.6)}
+      />,
+    );
+    expect(container.querySelector(".ema-target")).toBeInTheDocument();
+    expect(container.querySelector(".ema-pt--tip")).toBeInTheDocument();
+  });
+
+  it("targetArticulation あり + displayEligibility=0.6 => L2 推定免責（full）が表示される", () => {
+    const { container } = render(
+      <ArticulationCard
+        entry={buildEntryWithTarget()}
+        finding={buildFinding()}
+        articulatoryEstimate={buildArticulatoryEstimate(0.6)}
+      />,
+    );
+    expect(container.querySelector(".disclaimer")).toBeInTheDocument();
+    expect(container.innerHTML).toContain("native 話者データ由来");
+    expect(container.innerHTML).toContain("訛り");
+  });
+
+  it("targetArticulation なし + articulatoryEstimate=null => legacy .artic-fig が描画され .ema-layer と .ema-target が存在しない", () => {
+    const { container } = render(
+      <ArticulationCard
+        entry={buildEntry()}
+        finding={buildFinding()}
+        articulatoryEstimate={null}
+      />,
+    );
+    expect(container.querySelector(".artic-fig")).toBeInTheDocument();
+    expect(container.querySelector(".ema-layer")).not.toBeInTheDocument();
+    expect(container.querySelector(".ema-target")).not.toBeInTheDocument();
   });
 });

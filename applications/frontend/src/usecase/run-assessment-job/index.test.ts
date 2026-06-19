@@ -467,6 +467,7 @@ describe("runAssessmentJob", () => {
           dismissed: false,
           wordPositionLabel: null,
           acousticEvidence: null,
+          articulatoryEstimate: null,
         },
       ],
     };
@@ -588,6 +589,7 @@ describe("runAssessmentJob", () => {
             dismissed: false,
             wordPositionLabel,
             acousticEvidence: null,
+            articulatoryEstimate: null,
           },
         ],
       };
@@ -653,6 +655,7 @@ describe("runAssessmentJob", () => {
           dismissed: false,
           wordPositionLabel: null,
           acousticEvidence: null,
+          articulatoryEstimate: null,
         },
       ],
     };
@@ -747,6 +750,7 @@ describe("runAssessmentJob", () => {
           dismissed: false,
           wordPositionLabel: null,
           acousticEvidence: acousticEvidenceFixture,
+          articulatoryEstimate: null,
         },
       ],
     };
@@ -823,6 +827,7 @@ describe("runAssessmentJob", () => {
         dismissed: false,
         wordPositionLabel: null,
         acousticEvidence: null,
+        articulatoryEstimate: null,
       })),
     });
 
@@ -1006,6 +1011,7 @@ describe("runAssessmentJob", () => {
             dismissed: false,
             wordPositionLabel: null,
             acousticEvidence: null,
+            articulatoryEstimate: null,
           },
         ],
       };
@@ -1075,6 +1081,7 @@ describe("runAssessmentJob", () => {
       dismissed: false,
       wordPositionLabel: null,
       acousticEvidence: null,
+      articulatoryEstimate: null,
     });
 
     // Helper: make a draft with specific findings array

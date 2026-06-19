@@ -99,6 +99,7 @@ const buildFinding = (overrides: Partial<AssessmentFinding>): AssessmentFinding 
   feedbackLayers: null,
   dismissed: false,
   wordPositionLabel: "initial",
+  articulatoryEstimate: null,
   ...overrides,
 });
 

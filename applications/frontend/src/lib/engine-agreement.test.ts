@@ -48,6 +48,7 @@ function buildFinding(
     feedbackLayers: null,
     dismissed: false,
     acousticEvidence: null,
+    articulatoryEstimate: null,
   };
 }
 

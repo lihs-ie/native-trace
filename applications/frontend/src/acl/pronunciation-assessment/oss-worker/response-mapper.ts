@@ -182,6 +182,8 @@ const mapSuccessResponse = (
               targetF3Hz: finding.acousticEvidence.targetF3Hz ?? null,
             }
           : null,
+      // M-AAI-13 (ADR-019): articulatoryEstimate を mapper で転写。欠落時は null（ADR-017 再発防止）。
+      articulatoryEstimate: finding.articulatoryEstimate ?? null,
     })),
     segments: response.segments.map((segment) => ({
       textRange: {

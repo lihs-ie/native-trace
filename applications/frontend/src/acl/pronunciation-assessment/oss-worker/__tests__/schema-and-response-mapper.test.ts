@@ -389,6 +389,99 @@ describe("oss-worker response-mapper", () => {
     }
   });
 
+  // M-AAI-13 (ADR-019): articulatoryEstimate 存在時の round-trip テスト (ORPHAN-C 防止)
+  it("(M-AAI-13) findingSchema.parse accepts articulatoryEstimate with all 6 coords + eligibility", () => {
+    const findingWithEma = {
+      ...workerFixture.findings[0],
+      articulatoryEstimate: {
+        tongueTipX: 0.12,
+        tongueTipY: -0.34,
+        tongueDorsumX: -0.21,
+        tongueDorsumY: 0.45,
+        lipApertureX: 0.01,
+        lipApertureY: 0.67,
+        displayEligibility: 0.72,
+      },
+    };
+    const result = ossWorkerSuccessResponseSchema.safeParse({
+      ...workerFixture,
+      findings: [findingWithEma],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const ae = result.data.findings[0]?.articulatoryEstimate;
+      expect(ae).not.toBeNull();
+      expect(ae?.tongueTipX).toBeCloseTo(0.12);
+      expect(ae?.displayEligibility).toBeCloseTo(0.72);
+    }
+  });
+
+  // M-AAI-13: articulatoryEstimate キーが absent な旧フォーマット JSON でも schema.parse が成功すること（後方互換）
+  it("(M-AAI-13) findingSchema.parse succeeds with no articulatoryEstimate key (backward compat)", () => {
+    const result = ossWorkerSuccessResponseSchema.safeParse(workerFixture);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      // transform(v => v ?? null) により undefined → null になること (ORPHAN-C 防止)
+      expect(result.data.findings[0]?.articulatoryEstimate).toBeNull();
+    }
+  });
+
+  // M-AAI-13: response-mapper が articulatoryEstimate を EngineFindingDto へ転写すること
+  it("(M-AAI-13) response-mapper passes through articulatoryEstimate from worker finding into draft", () => {
+    const engine = makeEngine();
+    const fixtureWithEma = {
+      ...workerFixture,
+      findings: [
+        {
+          ...workerFixture.findings[0],
+          articulatoryEstimate: {
+            tongueTipX: 0.3,
+            tongueTipY: -0.5,
+            tongueDorsumX: -0.1,
+            tongueDorsumY: 0.6,
+            lipApertureX: 0.05,
+            lipApertureY: 0.8,
+            displayEligibility: 0.65,
+          },
+        },
+      ],
+    };
+    const result = mapOssWorkerResponse({
+      status: 200,
+      rawBody: fixtureWithEma,
+      capturedAt: new Date("2026-01-01T00:00:00Z"),
+      engine,
+      assessmentSchemaVersion: "1",
+      tokenizerVersion: "v1",
+    });
+
+    expect(result.isOk()).toBe(true);
+    if (result.isOk()) {
+      const ae = result.value.findings[0]?.articulatoryEstimate;
+      expect(ae).not.toBeNull();
+      expect(ae?.tongueTipX).toBeCloseTo(0.3);
+      expect(ae?.displayEligibility).toBeCloseTo(0.65);
+    }
+  });
+
+  // M-AAI-13: articulatoryEstimate キーが absent なとき mapper が null を返すこと（ADR-017 再発防止）
+  it("(M-AAI-13) response-mapper maps articulatoryEstimate to null when absent (ADR-017 regression guard)", () => {
+    const engine = makeEngine();
+    const result = mapOssWorkerResponse({
+      status: 200,
+      rawBody: workerFixture, // articulatoryEstimate キーなし
+      capturedAt: new Date("2026-01-01T00:00:00Z"),
+      engine,
+      assessmentSchemaVersion: "1",
+      tokenizerVersion: "v1",
+    });
+
+    expect(result.isOk()).toBe(true);
+    if (result.isOk()) {
+      expect(result.value.findings[0]?.articulatoryEstimate).toBeNull();
+    }
+  });
+
   // normal パステスト: status フィールドがない場合は "normal" にデフォルトされること
   it("defaults draft.status to normal when status field is absent", () => {
     const engine = makeEngine();

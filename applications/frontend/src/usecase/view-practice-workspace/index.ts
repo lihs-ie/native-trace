@@ -100,6 +100,16 @@ export type EngineFindingOutput = Readonly<{
   insertionPositionMs: number | null;
   feedbackLayers: Readonly<{ whatJa: string; whyJa: string; howJa: string }> | null;
   dismissed: boolean;
+  /** M-AAI-12 (ADR-019): EMA 調音推定座標。null は AAI 不在/ガードレール未達 = floor のみ描画。*/
+  articulatoryEstimate: Readonly<{
+    tongueTipX: number;
+    tongueTipY: number;
+    tongueDorsumX: number;
+    tongueDorsumY: number;
+    lipApertureX: number;
+    lipApertureY: number;
+    displayEligibility: number;
+  }> | null;
 }>;
 
 export type CefrSubscaleOutput = Readonly<{ score: number; band: string }>;
@@ -478,6 +488,8 @@ export const createViewPracticeWorkspace =
                                 dismissedByResult
                                   .get(result.identifier as string)
                                   ?.has(finding.identifier as string) ?? false,
+                              // M-AAI-12 (ADR-019): ORPHAN-D 防止 — workspace/route.ts に届ける
+                              articulatoryEstimate: finding.articulatoryEstimate ?? null,
                             })),
                             // v2 (C3-c): 全音素 GOP ヒートマップ / focus sounds / 韻律 / 動的サマリー
                             perPhonemeGop: result.perPhonemeGop,
