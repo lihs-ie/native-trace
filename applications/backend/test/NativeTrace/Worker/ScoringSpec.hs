@@ -3,6 +3,7 @@ module NativeTrace.Worker.ScoringSpec (spec) where
 import Data.Map.Strict qualified as Map
 import Data.Maybe (isJust, isNothing)
 import Data.Text qualified as Text
+import NativeTrace.Worker.AaiClient (callAai)
 import NativeTrace.Worker.AnalyzerClient (
   AnalyzerResult (..),
   InsertedVowelInfo (..),
@@ -16,6 +17,8 @@ import NativeTrace.Worker.AnalyzerClient (
  )
 import NativeTrace.Worker.Scoring (
   ScoringInput (..),
+  aaiDisplayEligibilityThreshold,
+  articulatoryDisplayGuardrail,
   buildAssessmentScores,
   checkAudioQuality,
   classifyGopDelta,
@@ -28,6 +31,7 @@ import NativeTrace.Worker.Scoring (
  )
 import NativeTrace.Worker.Types (
   AcousticEvidence (..),
+  ArticulatoryEstimate (..),
   AssessmentFinding (..),
   AssessmentScores (..),
   BoundarySignal (..),
@@ -37,6 +41,8 @@ import NativeTrace.Worker.Types (
   GopDeltaResponse (..),
   TextRange (..),
  )
+import Servant (runHandler)
+import System.Environment (unsetEnv)
 import Test.Hspec
 
 -- | FindingSeverity はテスト層で Eq インスタンスがないため、
@@ -127,6 +133,43 @@ defaultQualityParams = (-20.0, 10000, 9, 10, [-5.0])
 
 spec :: Spec
 spec = do
+  describe "articulatoryDisplayGuardrail (ADR-019 D4 / M-AAI-11)" $ do
+    let coords6 = (0.10, 0.20, 0.30, 0.40, 0.50, 0.60)
+    it "(a) vowel + displayEligibility 0.6 + 60ms => Just (display)" $
+      articulatoryDisplayGuardrail "iː" 0 60 0.6 coords6 `shouldSatisfy` isJust
+    it "(a') approximant /r/ + displayEligibility 0.6 + 60ms => Just" $
+      articulatoryDisplayGuardrail "r" 100 160 0.6 coords6 `shouldSatisfy` isJust
+    it "(b) displayEligibility 0.5 (< 0.55 threshold) => Nothing (suppress)" $
+      articulatoryDisplayGuardrail "iː" 0 60 0.5 coords6 `shouldSatisfy` isNothing
+    it "(c) stop/fricative phoneme => Nothing (suppress to floor)" $ do
+      articulatoryDisplayGuardrail "t" 0 60 0.9 coords6 `shouldSatisfy` isNothing
+      articulatoryDisplayGuardrail "s" 0 60 0.9 coords6 `shouldSatisfy` isNothing
+    it "(d) segment < 50ms (40ms) => Nothing (suppress)" $
+      articulatoryDisplayGuardrail "iː" 0 40 0.9 coords6 `shouldSatisfy` isNothing
+    it "displayEligibility threshold constant is 0.55 (calibratable, S-AAI-1)" $
+      aaiDisplayEligibilityThreshold `shouldBe` (0.55 :: Double)
+
+  describe "callAai soft-disable (ADR-019 / M-AAI-9)" $
+    it "returns Nothing when AAI_URL is unset (must not fail the assessment)" $ do
+      unsetEnv "AAI_URL"
+      result <- runHandler (callAai "audio-bytes" "audio/wav" [])
+      case result of
+        Right Nothing -> pure ()
+        Right (Just _) -> expectationFailure "expected Nothing when AAI_URL unset"
+        Left _ -> expectationFailure "callAai must not throwError (soft-disable)"
+
+  describe "AAI finding integration (ADR-019 / M-AAI-10 / M-AAI-17)" $ do
+    it "M-AAI-10: all findings default findingArticulatoryEstimate = Nothing (AAI off / pre-enrichment)" $
+      all (isNothing . findingArticulatoryEstimate) (generateFindingsFromGop bodyText fixtureAnalyzerResult)
+        `shouldBe` True
+    it "M-AAI-17: attaching articulatoryEstimate does NOT change findingScoreImpact (presentation-only)" $
+      case generateFindingsFromGop bodyText fixtureAnalyzerResult of
+        (finding : _) ->
+          let est = ArticulatoryEstimate 0.10 0.20 0.30 0.40 0.50 0.60 0.70
+              enriched = finding {findingArticulatoryEstimate = Just est}
+           in findingScoreImpact enriched `shouldBe` findingScoreImpact finding
+        [] -> expectationFailure "expected >=1 finding in fixture"
+
   describe "checkAudioQuality" $ do
     it "returns False (normal) when all criteria are satisfied" $ do
       let (meanDbfs, durationMs, detected, expected, gopValues) = defaultQualityParams

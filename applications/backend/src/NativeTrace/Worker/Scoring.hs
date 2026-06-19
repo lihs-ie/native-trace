@@ -29,6 +29,9 @@ module NativeTrace.Worker.Scoring (
   hillenbrandGaVowelFormants,
   deriveAcousticEvidence,
   severityToScoreImpact,
+  -- ADR-019 D4 AAI ガードレール
+  aaiDisplayEligibilityThreshold,
+  articulatoryDisplayGuardrail,
 )
 where
 
@@ -63,6 +66,7 @@ import NativeTrace.Worker.Catalog (
  )
 import NativeTrace.Worker.Types (
   AcousticEvidence (..),
+  ArticulatoryEstimate (..),
   AssessmentFinding (..),
   AssessmentScores (..),
   AudioRange (..),
@@ -80,6 +84,88 @@ import NativeTrace.Worker.Types (
   TextRange (..),
   WordStressOutput (..),
  )
+
+-- ---- ADR-019 D4 AAI ガードレール ----
+
+-- | D4 displayEligibility 閾値（calibratable）。
+-- S-AAI-1: キャリブレーション未成熟のため 0.55 を採用。
+-- 十分な実録音コーパスで再較正後は 0.7 への引き上げを推奨（one-line edit）。
+aaiDisplayEligibilityThreshold :: Double
+aaiDisplayEligibilityThreshold = 0.55
+
+-- | AAI 表示ガードレール（D4-2: Scoring 層が所有）。
+-- 以下の条件を全て満たす場合のみ Just ArticulatoryEstimate を返す（満たさなければ Nothing = suppress/floor）:
+--   1. displayEligibility >= aaiDisplayEligibilityThreshold (0.55)
+--   2. 音素クラスが母音または approximant /r/,/l/ のみ（stop/fricative は抑制）
+--   3. セグメント長 (endMs - startMs) >= 50 ms
+articulatoryDisplayGuardrail ::
+  -- | 音素シンボル（IPA）
+  Text ->
+  -- | セグメント開始 ms
+  Int ->
+  -- | セグメント終了 ms
+  Int ->
+  -- | displayEligibility スコア
+  Double ->
+  -- | 6 座標 (tongueTipX,tongueTipY,tongueDorsumX,tongueDorsumY,lipApertureX,lipApertureY)
+  (Double, Double, Double, Double, Double, Double) ->
+  Maybe ArticulatoryEstimate
+articulatoryDisplayGuardrail phoneme startMs endMs displayEligibility (ttx, tty, tdx, tdy, lax, lay)
+  | displayEligibility < aaiDisplayEligibilityThreshold = Nothing
+  | not (isVowelOrApproximant phoneme) = Nothing
+  | (endMs - startMs) < 50 = Nothing
+  | otherwise =
+      Just
+        ArticulatoryEstimate
+          { aeTongueTipX = ttx,
+            aeTongueTipY = tty,
+            aeTongueDorsumX = tdx,
+            aeTongueDorsumY = tdy,
+            aeLipApertureX = lax,
+            aeLipApertureY = lay,
+            aeDisplayEligibility = displayEligibility
+          }
+
+-- | 母音・approximant (/r/,/l/) クラス判定。
+-- stop (/p/,/b/,/t/,/d/,/k/,/ɡ/) および fricative (/f/,/v/,/θ/,/ð/,/s/,/z/,/ʃ/,/ʒ/,/h/) は False。
+-- 母音: IPA シンボルが母音母音文字で始まるか、既知 IPA 文字セットに一致。
+isVowelOrApproximant :: Text -> Bool
+isVowelOrApproximant phoneme =
+  phoneme `elem` vowelsAndApproximants
+
+-- | 許容する音素シンボルセット（母音 + /r/,/l/）。
+-- IPA 表記の主要 General American 音素を網羅する。
+vowelsAndApproximants :: [Text]
+vowelsAndApproximants =
+  -- 母音（General American 主要母音）
+  [ "iː",
+    "ɪ",
+    "eɪ",
+    "ɛ",
+    "æ",
+    "ɑ",
+    "ɔ",
+    "oʊ",
+    "ʊ",
+    "uː",
+    "ʌ",
+    "ə",
+    "ɚ",
+    "aɪ",
+    "aʊ",
+    "ɔɪ",
+    -- 短縮・変形表記
+    "i",
+    "e",
+    "u",
+    "o",
+    "a",
+    -- approximant /r/,/l/ のみ（/w/,/j/ は除外）
+    "r",
+    "l",
+    "ɹ",
+    "ɾ"
+  ]
 
 -- ---- 型 ----
 
@@ -552,7 +638,8 @@ buildGopFinding tokenCount tokens expectedIpa detectedIpa phonemeAcoustics speak
                     findingInsertedVowel = Nothing,
                     findingInsertionPositionMs = Nothing,
                     findingWordPositionLabel = gopWordPosition phonemeGop,
-                    findingAcousticEvidence = acousticEvidence
+                    findingAcousticEvidence = acousticEvidence,
+                    findingArticulatoryEstimate = Nothing
                   }
               ]
 
@@ -816,7 +903,8 @@ buildEpenthesisFindings _sectionBodyText syllables tokenCount tokens =
                   findingInsertedVowel = insertedVowelIpa,
                   findingInsertionPositionMs = insertionMs,
                   findingWordPositionLabel = Nothing,
-                  findingAcousticEvidence = Nothing
+                  findingAcousticEvidence = Nothing,
+                  findingArticulatoryEstimate = Nothing
                 }
             ]
 
@@ -876,7 +964,8 @@ buildLexicalStressFindings _sectionBodyText wordStresses tokenCount tokens =
                   findingInsertedVowel = Nothing,
                   findingInsertionPositionMs = Nothing,
                   findingWordPositionLabel = Nothing,
-                  findingAcousticEvidence = Nothing
+                  findingAcousticEvidence = Nothing,
+                  findingArticulatoryEstimate = Nothing
                 }
 
 -- | weakForm finding を弱形実現データから生成する（M-102/M-109）。
@@ -936,7 +1025,8 @@ buildWeakFormFindings _sectionBodyText weakForms tokenCount tokens =
                   findingInsertedVowel = Nothing,
                   findingInsertionPositionMs = Nothing,
                   findingWordPositionLabel = Nothing,
-                  findingAcousticEvidence = Nothing
+                  findingAcousticEvidence = Nothing,
+                  findingArticulatoryEstimate = Nothing
                 }
 
 -- ---- connected speech 4 現象 producers（M-102R-a） ----
@@ -979,7 +1069,8 @@ connectedSpeechFindingBase textRange =
       findingInsertedVowel = Nothing,
       findingInsertionPositionMs = Nothing,
       findingWordPositionLabel = Nothing,
-      findingAcousticEvidence = Nothing
+      findingAcousticEvidence = Nothing,
+      findingArticulatoryEstimate = Nothing
     }
 
 -- | linking: 単語末子音終端と次語頭母音開始の gap < 50ms かつ境界で音声が連続している現象。

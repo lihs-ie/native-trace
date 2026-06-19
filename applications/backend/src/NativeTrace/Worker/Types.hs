@@ -29,6 +29,8 @@ module NativeTrace.Worker.Types (
   GoldenSpeakerConversionDto (..),
   -- Acoustic evidence (M-APD-9/10/11 / ADR-018)
   AcousticEvidence (..),
+  -- Articulatory estimate (M-AAI-8 / ADR-019)
+  ArticulatoryEstimate (..),
   -- GOP delta classification (M-CRL-7 / ADR-022)
   GopDeltaRequest (..),
   DeltaSignal (..),
@@ -307,6 +309,35 @@ instance ToJSON AcousticEvidence where
         "targetF3Hz" .= acousticTargetF3Hz evidence
       ]
 
+-- | 調音推定値（M-AAI-8 / ADR-019）。AAI service から得た per-phoneme EMA 座標。
+-- 6 wire 座標はすべて発話内 z-score 正規化 → [-1,1] クランプ済み（D3-b）。
+-- D4 ガードレール（displayEligibility ≥ 0.55 / 音素クラス / セグメント長）を全て満たしたときのみ
+-- AssessmentFinding に Just で乗る。1 つでも欠ければ Nothing（suppress→floor）。
+data ArticulatoryEstimate = ArticulatoryEstimate
+  { aeTongueTipX :: Double,
+    aeTongueTipY :: Double,
+    aeTongueDorsumX :: Double,
+    aeTongueDorsumY :: Double,
+    aeLipApertureX :: Double,
+    aeLipApertureY :: Double,
+    aeDisplayEligibility :: Double
+  }
+  deriving (Show, Eq)
+
+-- S-AAI-4 拡張点: 将来 re-record 後の「EMA が目標調音へ動いたか」delta 表示を追加する場合は
+-- "tongueTipDeltaX" / "tongueTipDeltaY" 等をこの ToJSON に追記する（艾 present MVP では reserved）。
+instance ToJSON ArticulatoryEstimate where
+  toJSON estimate =
+    object
+      [ "tongueTipX" .= aeTongueTipX estimate,
+        "tongueTipY" .= aeTongueTipY estimate,
+        "tongueDorsumX" .= aeTongueDorsumX estimate,
+        "tongueDorsumY" .= aeTongueDorsumY estimate,
+        "lipApertureX" .= aeLipApertureX estimate,
+        "lipApertureY" .= aeLipApertureY estimate,
+        "displayEligibility" .= aeDisplayEligibility estimate
+      ]
+
 data AssessmentFinding = AssessmentFinding
   { findingCategory :: FindingCategory,
     findingSeverity :: FindingSeverity,
@@ -345,7 +376,9 @@ data AssessmentFinding = AssessmentFinding
     -- | 音素の単語内位置ラベル（M-104R）。値は "initial" | "medial" | "final" | null。
     findingWordPositionLabel :: Maybe Text,
     -- | 音響証拠（M-APD-9/10/11 / ADR-018）。GOP finding のみ付与、それ以外は Nothing。
-    findingAcousticEvidence :: Maybe AcousticEvidence
+    findingAcousticEvidence :: Maybe AcousticEvidence,
+    -- | 調音推定値（M-AAI-8 / ADR-019）。D4 ガードレール全通過時のみ Just、失敗時 Nothing（floor）。
+    findingArticulatoryEstimate :: Maybe ArticulatoryEstimate
   }
 
 instance ToJSON AssessmentFinding where
@@ -373,7 +406,8 @@ instance ToJSON AssessmentFinding where
         "insertedVowel" .= findingInsertedVowel finding,
         "insertionPositionMs" .= findingInsertionPositionMs finding,
         "wordPositionLabel" .= findingWordPositionLabel finding,
-        "acousticEvidence" .= findingAcousticEvidence finding
+        "acousticEvidence" .= findingAcousticEvidence finding,
+        "articulatoryEstimate" .= findingArticulatoryEstimate finding
       ]
 
 -- | 全音素 GOP ヒートマップエントリ（C3-c, M-107c）。
