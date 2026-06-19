@@ -7,7 +7,12 @@
  * Route Handler のみが import する。UseCase / Domain / ACL からは import しない。
  */
 
-import { createConfig, type AppConfig } from "./infrastructure/config/index";
+import {
+  createConfig,
+  isClaudeCodeAvailable,
+  buildClaudeCodeChildEnv,
+  type AppConfig,
+} from "./infrastructure/config/index";
 import { createDrizzleDatabase, type DrizzleDatabase } from "./infrastructure/drizzle/client";
 import { createDrizzleTransactionManager } from "./infrastructure/drizzle/transaction-manager";
 import { createDrizzleMaterialRepository } from "./infrastructure/drizzle/repositories/material-repository";
@@ -36,6 +41,10 @@ import { createOpenAiPronunciationAssessmentAdaptor } from "./acl/pronunciation-
 import { createOssWorkerPronunciationAssessmentAdaptor } from "./acl/pronunciation-assessment/oss-worker/create-oss-worker-pronunciation-assessment-adaptor";
 import { createPronunciationAssessmentEngineRegistry } from "./acl/pronunciation-assessment/registry/create-pronunciation-assessment-engine-registry";
 import { createRuleBasedImprovementMessageGenerator } from "./acl/improvement-message/rule-based/create-rule-based-improvement-message-generator";
+import { createLlmImprovementMessageGenerator } from "./acl/improvement-message/llm/create-llm-improvement-message-generator";
+import { createClaudeCodeNarrativeInvoker } from "./acl/improvement-message/llm/claude-code-narrative-invoker";
+import { createOllamaNarrativeInvoker } from "./acl/improvement-message/llm/ollama-narrative-invoker";
+import { createDrizzleLlmNarrativeCacheRepository } from "./infrastructure/drizzle/repositories/llm-narrative-cache-repository";
 
 import { createBrowsePracticeMaterials } from "./usecase/browse-practice-materials/index";
 import { createCancelAssessmentRun } from "./usecase/cancel-assessment-run/index";
@@ -180,6 +189,7 @@ import type { TrainingSessionRepository } from "./usecase/port/training-session-
 import type { HvptTrialRepository } from "./usecase/port/hvpt-trial-repository";
 import type { SpacingScheduleRepository } from "./usecase/port/spacing-schedule-repository";
 import type { DrillContentRepository } from "./usecase/port/drill-content-repository";
+import type { AssessmentResultRepository } from "./usecase/port/assessment-result-repository";
 import { createAnalyzerStimulusClient } from "./infrastructure/analyzer/stimulus-client";
 import { createOssWorkerShadowingLagAdaptor } from "./acl/pronunciation-assessment/oss-worker/create-oss-worker-shadowing-lag-adaptor";
 import { createDrizzleAbUsageLogRepository } from "./infrastructure/drizzle/repositories/ab-usage-log-repository";
@@ -199,6 +209,8 @@ export type Container = Readonly<{
     hvptTrial: HvptTrialRepository;
     spacingSchedule: SpacingScheduleRepository;
     drillContent: DrillContentRepository;
+    /** M-CRL-4 (ADR-022): retry route が perPhonemeGop 読み取りに使用 */
+    assessmentResult: AssessmentResultRepository;
   }>;
   usecases: Readonly<{
     browsePracticeMaterials: (
@@ -353,8 +365,60 @@ const buildContainer = (): Container => {
     ossWorkerEngine,
   });
 
-  // ACL: improvement message generator
-  const improvementMessageGenerator = createRuleBasedImprovementMessageGenerator();
+  // ACL: improvement message generator — M-LLM-16 provider branch (ADR-021 D6)
+  const fallbackGenerator = createRuleBasedImprovementMessageGenerator();
+
+  let improvementMessageGenerator: import("./usecase/port/improvement-message-generator").ImprovementMessageGenerator;
+
+  if (config.llmCoachingProvider === "rule-based") {
+    // Default path — unchanged behaviour; generateFeedbackLayersAsync stays undefined.
+    improvementMessageGenerator = fallbackGenerator;
+  } else if (
+    config.llmCoachingProvider === "claude-code" &&
+    !isClaudeCodeAvailable(config.claudeCodeExecutablePath)
+  ) {
+    // M-LLM-7 downgrade: claude executable not resolvable on PATH (covers Docker-without-claude).
+    // generateFeedbackLayersAsync remains undefined → pre-loop batch skipped → rule-based sync path.
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        message:
+          "LLM coaching provider is 'claude-code' but the claude executable is not available; downgrading to rule-based.",
+        claudeExecutablePath: config.claudeCodeExecutablePath,
+      }),
+    );
+    improvementMessageGenerator = fallbackGenerator;
+  } else {
+    // LLM path: build cache + invoker + LLM adaptor factory.
+    const narrativeCache = createDrizzleLlmNarrativeCacheRepository(database);
+
+    const invoker =
+      config.llmCoachingProvider === "claude-code"
+        ? createClaudeCodeNarrativeInvoker({
+            claudeExecutablePath: config.claudeCodeExecutablePath,
+            providerModel: config.claudeCodeModel,
+            timeoutMs: config.llmNarrativeTimeoutMilliseconds,
+            childEnv: buildClaudeCodeChildEnv(),
+          })
+        : createOllamaNarrativeInvoker({
+            ollamaEndpoint: config.ollamaEndpoint,
+            ollamaModel: config.ollamaModel,
+            timeoutMs: config.llmNarrativeTimeoutMilliseconds,
+          });
+
+    const providerModel =
+      config.llmCoachingProvider === "claude-code" ? config.claudeCodeModel : config.ollamaModel;
+
+    improvementMessageGenerator = createLlmImprovementMessageGenerator({
+      provider: config.llmCoachingProvider,
+      invoker,
+      cache: narrativeCache,
+      fallback: fallbackGenerator,
+      promptVersion: config.llmNarrativePromptVersion,
+      providerModel,
+      logger, // ADR-023 D3 (M-TMO-9): pass structured logger for fallback observability
+    });
+  }
 
   // Shared deps bundle for convenience
   const sharedRepositories = {
@@ -484,6 +548,13 @@ const buildContainer = (): Container => {
       clock,
       logger,
       improvementMessageGenerator,
+      // M-LLM-15/M-LLM-16: wire config value so the env override takes effect.
+      // Without this field the pre-loop batch defaults to 3 regardless of LLM_NARRATIVE_MAX_CONCURRENCY.
+      llmNarrativeMaxConcurrency: config.llmNarrativeMaxConcurrency,
+      // ADR-023 D2 (M-TMO-5): wire finding cap so env override LLM_NARRATIVE_MAX_FINDINGS takes effect.
+      llmNarrativeMaxFindings: config.llmNarrativeMaxFindings,
+      // ADR-023 D3 (M-TMO-8): wire provider string for batch summary log.
+      llmCoachingProvider: config.llmCoachingProvider,
     }),
 
     submitPracticeAttempt: createSubmitPracticeAttempt({
@@ -628,6 +699,7 @@ const buildContainer = (): Container => {
     hvptTrial: hvptTrialRepository,
     spacingSchedule: spacingScheduleRepository,
     drillContent: drillContentRepository,
+    assessmentResult: assessmentResultRepository,
   };
 
   return { config, audioStorage, database, repositories, usecases };

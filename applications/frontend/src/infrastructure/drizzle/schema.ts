@@ -584,6 +584,20 @@ export const abUsageLogs = sqliteTable(
   ],
 );
 
+// DB-021: llm_narrative_cache (ADR-021 D5)
+// LLM が生成した feedbackLayers を sha256 署名をキーにキャッシュする。
+// signature = sha256(phenomenon|expected.ipa|detected.ipa|...|promptVersion|providerModel)
+export const llmNarrativeCache = sqliteTable("llm_narrative_cache", {
+  signature: text("signature").primaryKey(),
+  provider: text("provider").notNull(),
+  model: text("model").notNull(),
+  promptVersion: text("prompt_version").notNull(),
+  whatJa: text("what_ja").notNull(),
+  whyJa: text("why_ja").notNull(),
+  howJa: text("how_ja").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
 // DB-009: finding_dismissals
 export const findingDismissals = sqliteTable(
   "finding_dismissals",

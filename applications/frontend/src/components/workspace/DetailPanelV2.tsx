@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import type { EngineFindingDto } from "@/lib/api-types";
 import { toSeverityClass, SEVERITY_DISPLAY_LABELS } from "@/lib/severity";
 import {
@@ -17,9 +17,14 @@ type DetailPanelV2Props = {
   sectionIdentifier: string;
   onClose: () => void;
   onDismissed?: (findingIdentifier: string, dismissed: boolean) => void;
+  /** M-CRL-1 (ADR-022): 最新 ready 録音試行 identifier（部分再生に使用）*/
+  latestRecordingAttemptIdentifier: string | null;
 };
 
 type TtsSpeed = 0.5 | 0.85 | 1.0;
+
+/** M-CRL-2: 所見スコープ A/B chip の再生モード */
+type FindingPlayMode = "self" | "model";
 
 /**
  * v2 詳細パネル (M-WS / workspace-v2.html `.panel` 構造)
@@ -30,12 +35,14 @@ type TtsSpeed = 0.5 | 0.85 | 1.0;
  * - `.badge badge--{severity}` / `.phen` / `.fl[data-rank]` / `.conf[data-level]`
  * - `.dismiss-btn`: POST /api/v1/sections/{sectionId}/findings/{findingId}/dismissal
  * - ③How 内: お手本ボタン (POST /api/v1/tts)、調音図解リンク、ドリルリンク
+ * - panel-foot: 部分再生 + 自分の音/お手本 2-chip (M-CRL-1/2)
  */
 export const DetailPanelV2 = ({
   finding,
   sectionIdentifier,
   onClose,
   onDismissed,
+  latestRecordingAttemptIdentifier,
 }: DetailPanelV2Props) => {
   const [isDismissed, setIsDismissed] = useState(finding?.dismissed ?? false);
   const [ttsSpeed, setTtsSpeed] = useState<TtsSpeed>(0.85);
@@ -43,6 +50,13 @@ export const DetailPanelV2 = ({
   const [ttsPlaying, setTtsPlaying] = useState(false);
   const [dismissLoading, setDismissLoading] = useState(false);
   const [showArticulation, setShowArticulation] = useState(false);
+
+  // M-CRL-1/2: 部分再生 + A/B chip state
+  const [findingPlayMode, setFindingPlayMode] = useState<FindingPlayMode>("self");
+  const [audioRangePlaying, setAudioRangePlaying] = useState(false);
+  /** S-CRL-2: finding identifier キーでデコード済み AudioBuffer をキャッシュ */
+  const audioBufferCache = useRef<Map<string, AudioBuffer>>(new Map());
+  const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
 
   if (!finding) {
     return (
@@ -130,6 +144,88 @@ export const DetailPanelV2 = ({
       setTtsPlaying(true);
     } catch {
       // TTS unavailable — no-op, button stays
+    }
+  };
+
+  /**
+   * M-CRL-1: 部分再生 — Web Audio decodeAudioData + AudioBuffer スライス。
+   * GET /api/v1/recording-attempts/{id}/audio から全 blob を取得し、
+   * audioRange [startMs/1000, endMs/1000] 区間のみ AudioBuffer にスライスして再生する。
+   * S-CRL-2: finding.finding キーで AudioBuffer をキャッシュ（所見切替でキャッシュ破棄）。
+   */
+  const handlePlayAudioRange = async () => {
+    if (!finding.audioRange || !latestRecordingAttemptIdentifier) return;
+
+    // 再生中なら停止
+    if (audioRangePlaying && audioSourceRef.current) {
+      audioSourceRef.current.stop();
+      audioSourceRef.current = null;
+      setAudioRangePlaying(false);
+      return;
+    }
+
+    const cacheKey = finding.finding;
+    const startSec = finding.audioRange.startMilliseconds / 1000;
+    const endSec = finding.audioRange.endMilliseconds / 1000;
+
+    try {
+      // S-CRL-2: キャッシュヒット確認
+      let decoded = audioBufferCache.current.get(cacheKey) ?? null;
+
+      if (!decoded) {
+        const response = await fetch(
+          `/api/v1/recording-attempts/${latestRecordingAttemptIdentifier}/audio`,
+        );
+        if (!response.ok) return;
+        const arrayBuffer = await response.arrayBuffer();
+
+        const audioContext = new AudioContext();
+        decoded = await audioContext.decodeAudioData(arrayBuffer);
+        // S-CRL-2: キャッシュに保存（所見切替まで有効）
+        audioBufferCache.current.set(cacheKey, decoded);
+      }
+
+      const audioContext = new AudioContext();
+      const sampleRate = decoded.sampleRate;
+      const startSample = Math.floor(startSec * sampleRate);
+      const endSample = Math.min(Math.ceil(endSec * sampleRate), decoded.length);
+      const sliceLength = Math.max(0, endSample - startSample);
+
+      // 区間を新しい AudioBuffer にコピー
+      const sliced = audioContext.createBuffer(decoded.numberOfChannels, sliceLength, sampleRate);
+      for (let ch = 0; ch < decoded.numberOfChannels; ch++) {
+        const sourceData = decoded.getChannelData(ch);
+        const sliceData = sliced.getChannelData(ch);
+        for (let i = 0; i < sliceLength; i++) {
+          sliceData[i] = sourceData[startSample + i] ?? 0;
+        }
+      }
+
+      const source = audioContext.createBufferSource();
+      source.buffer = sliced;
+      source.connect(audioContext.destination);
+      source.onended = () => {
+        audioSourceRef.current = null;
+        setAudioRangePlaying(false);
+      };
+      source.start();
+      audioSourceRef.current = source;
+      setAudioRangePlaying(true);
+    } catch {
+      // Web Audio unavailable — no-op
+      setAudioRangePlaying(false);
+    }
+  };
+
+  /**
+   * M-CRL-2: findingPlayMode に応じて自分の音 or お手本 TTS を再生する。
+   * chip ボタンの onClick: mode を切り替えてそれぞれのハンドラを呼ぶ。
+   */
+  const handleFindingPlay = () => {
+    if (findingPlayMode === "self") {
+      void handlePlayAudioRange();
+    } else {
+      void handlePlayTts();
     }
   };
 
@@ -377,10 +473,10 @@ export const DetailPanelV2 = ({
         </div>
       )}
 
-      {/* 調音図解カード展開 (M-ARTIC-c) */}
+      {/* 調音図解カード展開 (M-ARTIC-c) — M-CRL-3: finding prop を追加 (W-3) */}
       {showArticulation && articulationEntry && (
         <div style={{ padding: "var(--sp-4) var(--sp-5)" }}>
-          <ArticulationCard entry={articulationEntry} />
+          <ArticulationCard entry={articulationEntry} finding={finding} />
         </div>
       )}
 
@@ -394,13 +490,40 @@ export const DetailPanelV2 = ({
       {/* panel-foot */}
       <div className="panel-foot">
         {finding.audioRange && (
-          <button className="btn btn--sm btn--secondary" type="button">
-            ▸ 部分再生{" "}
-            <span className="mono" style={{ opacity: 0.6 }}>
-              {(finding.audioRange.startMilliseconds / 1000).toFixed(2)}–
-              {(finding.audioRange.endMilliseconds / 1000).toFixed(2)}s
-            </span>
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+            {/* M-CRL-1: 部分再生ボタン — onClick で Web Audio スライス再生 */}
+            <button
+              className="btn btn--sm btn--secondary"
+              type="button"
+              onClick={() => void handleFindingPlay()}
+              disabled={findingPlayMode === "self" && !latestRecordingAttemptIdentifier}
+            >
+              {(findingPlayMode === "self" ? audioRangePlaying : ttsPlaying) ? "❚❚" : "▸"} 部分再生{" "}
+              <span className="mono" style={{ opacity: 0.6 }}>
+                {(finding.audioRange.startMilliseconds / 1000).toFixed(2)}–
+                {(finding.audioRange.endMilliseconds / 1000).toFixed(2)}s
+              </span>
+            </button>
+            {/* M-CRL-2: 自分の音 / お手本 A/B トグル — v3 .scope-ab（音源アイデンティティ dot, golden は first slice 外） */}
+            <div className="scope-ab">
+              <button
+                className={findingPlayMode === "self" ? "is-active" : ""}
+                type="button"
+                onClick={() => setFindingPlayMode("self")}
+              >
+                <span className="sa-dot" style={{ background: "var(--src-self)" }} />
+                自分の音
+              </button>
+              <button
+                className={findingPlayMode === "model" ? "is-active" : ""}
+                type="button"
+                onClick={() => setFindingPlayMode("model")}
+              >
+                <span className="sa-dot" style={{ background: "var(--src-model)" }} />
+                お手本
+              </button>
+            </div>
+          </div>
         )}
         <div className="panel-meta">
           {finding.gop !== null && <span className="mono">GOP {finding.gop.toFixed(1)}</span>}

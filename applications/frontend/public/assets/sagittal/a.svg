@@ -1,0 +1,52 @@
+<!-- source: self-authored schematic for NativeTrace | license: CC0 | phoneme: /ʌ/ -->
+<!-- Open-mid back unrounded vowel: tongue low-central to back, lips unrounded, moderate jaw opening -->
+<!-- NOTE: self-authored proxy — used for both /ʌ/ and /ɑ/ (nearest available approximation) -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Head outline (right-facing sagittal section) -->
+  <path d="M 80 30 Q 200 20 230 60 Q 260 100 250 160 Q 240 220 200 260 Q 160 295 120 300 Q 90 302 75 280 L 70 200 L 65 120 Z" stroke-width="2.5"/>
+
+  <!-- Hard palate -->
+  <path d="M 155 72 Q 185 78 205 95 Q 220 112 222 135" stroke-width="2.5"/>
+
+  <!-- Soft palate (velum) — raised -->
+  <path d="M 222 135 Q 228 150 224 165 Q 220 178 215 185" stroke-width="2.5"/>
+
+  <!-- Uvula -->
+  <path d="M 215 185 Q 218 195 214 202" stroke-width="2"/>
+
+  <!-- Pharynx back wall -->
+  <path d="M 214 202 Q 225 230 230 260" stroke-width="2"/>
+
+  <!-- Lower jaw / chin outline — moderately open -->
+  <path d="M 75 280 Q 120 312 176 306 Q 206 300 230 260" stroke-width="2.5"/>
+
+  <!-- Upper teeth -->
+  <line x1="147" y1="140" x2="147" y2="152" stroke-width="2.5"/>
+  <line x1="155" y1="138" x2="155" y2="150" stroke-width="2.5"/>
+  <line x1="163" y1="139" x2="163" y2="151" stroke-width="2.5"/>
+
+  <!-- Lower teeth — moderately open -->
+  <line x1="147" y1="175" x2="147" y2="187" stroke-width="2.5"/>
+  <line x1="155" y1="175" x2="155" y2="187" stroke-width="2.5"/>
+  <line x1="163" y1="175" x2="163" y2="187" stroke-width="2.5"/>
+
+  <!-- Lips — neutral, unrounded -->
+  <path d="M 127 147 Q 138 143 150 144 Q 158 144 167 143" stroke-width="2"/>
+  <path d="M 127 178 Q 138 184 150 183 Q 158 182 167 179" stroke-width="2"/>
+
+  <!-- TONGUE: low-central/back position -->
+  <path d="M 178 268 Q 188 248 197 228 Q 204 210 206 195 Q 207 183 204 174 Q 200 166 193 162 Q 185 158 175 158 Q 165 158 156 160" stroke="currentColor" stroke-width="3"/>
+  <!-- Tongue tip — pointing forward, low, central -->
+  <path d="M 156 160 Q 148 163 142 170 Q 138 177 140 183" stroke="currentColor" stroke-width="2.5"/>
+
+  <!-- Low-back/central position indicator -->
+  <text x="78" y="210" font-size="10" fill="currentColor" stroke="none" font-family="sans-serif">舌中央～後部・低位</text>
+  <line x1="148" y1="207" x2="178" y2="190" stroke-width="1.2" stroke-dasharray="3,2"/>
+
+  <!-- Proxy note -->
+  <text x="82" y="300" font-size="9" fill="currentColor" stroke="none" font-family="sans-serif">/ʌ/・/ɑ/ 近似図</text>
+
+  <!-- Nasal cavity -->
+  <path d="M 155 72 Q 148 50 145 35" stroke-width="1.5" stroke-dasharray="3,3"/>
+  <text x="100" y="42" font-size="10" fill="currentColor" stroke="none" font-family="sans-serif">鼻腔</text>
+</svg>

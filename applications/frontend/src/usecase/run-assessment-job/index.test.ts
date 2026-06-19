@@ -34,6 +34,7 @@ import { type Logger } from "../port/logger";
 import { type TransactionManager } from "../port/transaction-manager";
 import { TOKENIZER_VERSION } from "../shared/tokenizer";
 import { createRuleBasedImprovementMessageGenerator } from "../../acl/improvement-message/rule-based/create-rule-based-improvement-message-generator";
+import { type FeedbackLayersOutput } from "../port/improvement-message-generator";
 
 const makeLeasedJob = (): LeasedAnalysisJob => ({
   type: "leased",
@@ -682,5 +683,685 @@ describe("runAssessmentJob", () => {
     if (resultCreatedEvent?.type === "assessmentResultCreated") {
       expect(resultCreatedEvent.assessmentResult.findings[0]?.messageJa).toBe(existingMessage);
     }
+  });
+
+  // M-LLM-4 tests
+
+  describe("M-LLM-4: pre-loop batch with generateFeedbackLayersAsync", () => {
+    // Helper: make a draft with N findings (messageJa=null, feedbackLayers=null)
+    const makeDraftWithFindings = (count: number): AssessmentResultDraft => ({
+      ...makeDraft(),
+      engine: {
+        type: "oss_worker" as const,
+        identifier: "oss-worker-1" as never,
+        displayName: "OSS Worker" as never,
+        workerVersion: "1.0.0",
+        modelName: "v1",
+        rulesetVersion: "v1",
+        enabled: true,
+        configuration: {},
+      },
+      findings: Array.from({ length: count }, (_, i) => ({
+        phenomenon: "substitution" as const,
+        gop: -8.0 - i,
+        category: "accuracy" as const,
+        severity: "minor" as const,
+        textRange: { startChar: i * 5, endChar: i * 5 + 5 },
+        audioRange: null,
+        expected: { text: "hello", ipa: "h ɛ l oʊ" },
+        detected: { text: "helo", ipa: "h ɛ l oː" },
+        messageJa: null,
+        messageEn: null,
+        scoreImpact: -2,
+        confidence: 0.8,
+        detectedTopCandidate: null,
+        nBest: null,
+        matchesL1Pattern: false,
+        functionalLoad: `high-${i}`,
+        catalogId: null,
+        wordPair: null,
+        expectedPronunciation: null,
+        insertedVowel: null,
+        insertionPositionMs: null,
+        feedbackLayers: null,
+        dismissed: false,
+        wordPositionLabel: null,
+      })),
+    });
+
+    it("(a) with concurrency=2 over 4 findings, invoker called at most 2 in-flight at a time", async () => {
+      ulidCounter = 0;
+
+      // Track maximum in-flight calls
+      let currentInflight = 0;
+      let maxInflight = 0;
+      const asyncCallCount = { value: 0 };
+
+      // Fake generator with generateFeedbackLayersAsync that tracks concurrency
+      const fakeGenerator: RunAssessmentJobDependencies["improvementMessageGenerator"] = {
+        generate: () => "fake-message",
+        generateFeedbackLayers: () => ({
+          whatJa: "fake-what",
+          whyJa: "fake-why",
+          howJa: "fake-how",
+        }),
+        generateFeedbackLayersAsync: async (input): Promise<FeedbackLayersOutput> => {
+          asyncCallCount.value++;
+          currentInflight++;
+          if (currentInflight > maxInflight) maxInflight = currentInflight;
+          // Simulate async work
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          currentInflight--;
+          return {
+            whatJa: `llm-what-${input.functionalLoad ?? ""}`,
+            whyJa: "llm-why",
+            howJa: "llm-how",
+          };
+        },
+      };
+
+      const deps = makeDependencies({
+        engineRegistry: {
+          find: () => ok({ assess: () => okAsync(makeDraftWithFindings(4)) }),
+        },
+        improvementMessageGenerator: fakeGenerator,
+        llmNarrativeMaxConcurrency: 2,
+      });
+
+      const execute = createRunAssessmentJob(deps);
+      const result = await execute({ leaseOwner: "runner-1", leaseDurationSeconds: 60 });
+
+      expect(result.isOk()).toBe(true);
+      expect(result._unsafeUnwrap().job?.state).toBe("succeeded");
+      // All 4 findings were processed
+      expect(asyncCallCount.value).toBe(4);
+      // Never more than 2 in-flight simultaneously
+      expect(maxInflight).toBeLessThanOrEqual(2);
+    });
+
+    it("(b) precomputed Map value reaches the persisted finding (feedbackLayers from LLM, messageJa from whatJa)", async () => {
+      ulidCounter = 0;
+
+      const llmFeedback: FeedbackLayersOutput = {
+        whatJa: "LLM生成のwhatJa",
+        whyJa: "LLM生成のwhyJa",
+        howJa: "LLM生成のhowJa",
+      };
+
+      const fakeGenerator: RunAssessmentJobDependencies["improvementMessageGenerator"] = {
+        generate: () => "rule-based-message",
+        generateFeedbackLayers: () => ({
+          whatJa: "rule-based-what",
+          whyJa: "rule-based-why",
+          howJa: "rule-based-how",
+        }),
+        generateFeedbackLayersAsync: async (): Promise<FeedbackLayersOutput> => llmFeedback,
+      };
+
+      const deps = makeDependencies({
+        engineRegistry: {
+          find: () => ok({ assess: () => okAsync(makeDraftWithFindings(1)) }),
+        },
+        improvementMessageGenerator: fakeGenerator,
+        llmNarrativeMaxConcurrency: 3,
+      });
+
+      const execute = createRunAssessmentJob(deps);
+      const result = await execute({ leaseOwner: "runner-1", leaseDurationSeconds: 60 });
+
+      expect(result.isOk()).toBe(true);
+      const output = result._unsafeUnwrap();
+      const resultCreatedEvent = output.events.find((e) => e.type === "assessmentResultCreated");
+      expect(resultCreatedEvent).toBeDefined();
+      if (resultCreatedEvent?.type === "assessmentResultCreated") {
+        const domainFinding = resultCreatedEvent.assessmentResult.findings[0];
+        // feedbackLayers comes from the precomputed Map (LLM output)
+        expect(domainFinding?.feedbackLayers).toEqual(llmFeedback);
+        // messageJa uses feedbackLayers.whatJa when LLM precomputed
+        expect(domainFinding?.messageJa).toBe(llmFeedback.whatJa);
+      }
+    });
+
+    it("(c) rule-based path (generateFeedbackLayersAsync undefined): sync loop unchanged, Map never consulted", async () => {
+      ulidCounter = 0;
+
+      let generateFeedbackLayersCallCount = 0;
+      const syncGenerator: RunAssessmentJobDependencies["improvementMessageGenerator"] = {
+        generate: () => "sync-message",
+        generateFeedbackLayers: () => {
+          generateFeedbackLayersCallCount++;
+          return { whatJa: "sync-what", whyJa: "sync-why", howJa: "sync-how" };
+        },
+        // generateFeedbackLayersAsync is undefined → rule-based path
+      };
+
+      const deps = makeDependencies({
+        engineRegistry: {
+          find: () => ok({ assess: () => okAsync(makeDraftWithFindings(3)) }),
+        },
+        improvementMessageGenerator: syncGenerator,
+      });
+
+      const execute = createRunAssessmentJob(deps);
+      const result = await execute({ leaseOwner: "runner-1", leaseDurationSeconds: 60 });
+
+      expect(result.isOk()).toBe(true);
+      const output = result._unsafeUnwrap();
+      expect(output.job?.state).toBe("succeeded");
+
+      // Sync generateFeedbackLayers was called for each finding
+      expect(generateFeedbackLayersCallCount).toBe(3);
+
+      // Findings use sync path values
+      const resultCreatedEvent = output.events.find((e) => e.type === "assessmentResultCreated");
+      if (resultCreatedEvent?.type === "assessmentResultCreated") {
+        for (const finding of resultCreatedEvent.assessmentResult.findings) {
+          expect(finding.feedbackLayers?.whatJa).toBe("sync-what");
+          // messageJa comes from generate() in rule-based path
+          expect(finding.messageJa).toBe("sync-message");
+        }
+      }
+    });
+
+    it("(c-snapshot) existing snapshot: rule-based generator, no async method, produces same messageJa as generate()", async () => {
+      ulidCounter = 0;
+      // Use real rule-based generator to verify snapshot-compatible behavior
+      const realGenerator = createRuleBasedImprovementMessageGenerator();
+      // Real generator has no generateFeedbackLayersAsync
+      expect(realGenerator.generateFeedbackLayersAsync).toBeUndefined();
+
+      const draftWithFinding: AssessmentResultDraft = {
+        ...makeDraft(),
+        engine: {
+          type: "oss_worker" as const,
+          identifier: "oss-worker-1" as never,
+          displayName: "OSS Worker" as never,
+          workerVersion: "1.0.0",
+          modelName: "v1",
+          rulesetVersion: "v1",
+          enabled: true,
+          configuration: {},
+        },
+        findings: [
+          {
+            phenomenon: "substitution",
+            gop: -8.5,
+            category: "accuracy" as const,
+            severity: "minor" as const,
+            textRange: { startChar: 0, endChar: 5 },
+            audioRange: null,
+            expected: { text: "hello", ipa: "h ɛ l oʊ" },
+            detected: { text: "helo", ipa: "h ɛ l oː" },
+            messageJa: null,
+            messageEn: null,
+            scoreImpact: -2,
+            confidence: 0.8,
+            detectedTopCandidate: null,
+            nBest: null,
+            matchesL1Pattern: false,
+            functionalLoad: null,
+            catalogId: null,
+            wordPair: null,
+            expectedPronunciation: null,
+            insertedVowel: null,
+            insertionPositionMs: null,
+            feedbackLayers: null,
+            dismissed: false,
+            wordPositionLabel: null,
+          },
+        ],
+      };
+
+      const deps = makeDependencies({
+        engineRegistry: {
+          find: () => ok({ assess: () => okAsync(draftWithFinding) }),
+        },
+        improvementMessageGenerator: realGenerator,
+      });
+      const execute = createRunAssessmentJob(deps);
+      const result = await execute({ leaseOwner: "runner-1", leaseDurationSeconds: 60 });
+
+      expect(result.isOk()).toBe(true);
+      const resultCreatedEvent = result
+        ._unsafeUnwrap()
+        .events.find((e) => e.type === "assessmentResultCreated");
+      if (resultCreatedEvent?.type === "assessmentResultCreated") {
+        const finding = resultCreatedEvent.assessmentResult.findings[0];
+        expect(finding).toBeDefined();
+        // rule-based: messageJa comes from generate() = generateFeedbackLayers().whatJa
+        const expectedMessage = realGenerator.generate({
+          phenomenon: "substitution",
+          expected: { text: "hello", ipa: "h ɛ l oʊ" },
+          detected: { text: "helo", ipa: "h ɛ l oː" },
+          gop: -8.5,
+          functionalLoad: null,
+        });
+        expect(finding?.messageJa).toBe(expectedMessage);
+      }
+    });
+  });
+
+  // M-TMO-3 + M-TMO-8 tests (ADR-023 cap + selection + batch summary)
+
+  describe("M-TMO-3/M-TMO-8: ADR-023 cap + selection + batch summary", () => {
+    // Helper: make a finding template with configurable severity / functionalLoad
+    const makeRankedFindingDraft = (
+      overrides: Partial<{
+        severity: "critical" | "major" | "minor" | "suggestion";
+        functionalLoad: string | null;
+        index: number;
+      }> = {},
+    ) => ({
+      phenomenon: "substitution" as const,
+      gop: -8.0,
+      category: "accuracy" as const,
+      severity: (overrides.severity ?? "minor") as "critical" | "major" | "minor" | "suggestion",
+      textRange: { startChar: (overrides.index ?? 0) * 5, endChar: (overrides.index ?? 0) * 5 + 5 },
+      audioRange: null,
+      expected: { text: "hello", ipa: "h ɛ l oʊ" },
+      detected: { text: "helo", ipa: "h ɛ l oː" },
+      messageJa: null,
+      messageEn: null,
+      scoreImpact: -2,
+      confidence: 0.8,
+      detectedTopCandidate: null,
+      nBest: null,
+      matchesL1Pattern: false,
+      functionalLoad: overrides.functionalLoad !== undefined ? overrides.functionalLoad : "mid",
+      catalogId: null,
+      wordPair: null,
+      expectedPronunciation: null,
+      insertedVowel: null,
+      insertionPositionMs: null,
+      feedbackLayers: null,
+      dismissed: false,
+      wordPositionLabel: null,
+    });
+
+    // Helper: make a draft with specific findings array
+    const makeDraftWithSpecificFindings = (
+      findings: ReturnType<typeof makeRankedFindingDraft>[],
+    ): AssessmentResultDraft => ({
+      ...makeDraft(),
+      engine: {
+        type: "oss_worker" as const,
+        identifier: "oss-worker-1" as never,
+        displayName: "OSS Worker" as never,
+        workerVersion: "1.0.0",
+        modelName: "v1",
+        rulesetVersion: "v1",
+        enabled: true,
+        configuration: {},
+      },
+      findings,
+    });
+
+    it("(cap) generator is called at most llmNarrativeMaxFindings times for 10 findings with cap 8", async () => {
+      ulidCounter = 0;
+
+      const callCount = { value: 0 };
+      const fakeGenerator: RunAssessmentJobDependencies["improvementMessageGenerator"] = {
+        generate: () => "fake-message",
+        generateFeedbackLayers: () => ({
+          whatJa: "fake-what",
+          whyJa: "fake-why",
+          howJa: "fake-how",
+        }),
+        generateFeedbackLayersAsync: async (): Promise<FeedbackLayersOutput> => {
+          callCount.value++;
+          return { whatJa: "llm-what", whyJa: "llm-why", howJa: "llm-how" };
+        },
+      };
+
+      const tenFindings = Array.from({ length: 10 }, (_, i) =>
+        makeRankedFindingDraft({ severity: "minor", functionalLoad: "mid", index: i }),
+      );
+
+      const deps = makeDependencies({
+        engineRegistry: {
+          find: () => ok({ assess: () => okAsync(makeDraftWithSpecificFindings(tenFindings)) }),
+        },
+        improvementMessageGenerator: fakeGenerator,
+        llmNarrativeMaxFindings: 8,
+      });
+
+      const execute = createRunAssessmentJob(deps);
+      const result = await execute({ leaseOwner: "runner-1", leaseDurationSeconds: 60 });
+
+      expect(result.isOk()).toBe(true);
+      expect(result._unsafeUnwrap().job?.state).toBe("succeeded");
+      // Cap of 8: generator called exactly 8 times (not 10)
+      expect(callCount.value).toBe(8);
+    });
+
+    it("(rank order severity) critical finding selected over major/minor when cap=1", async () => {
+      ulidCounter = 0;
+
+      const selectedInputs: string[] = [];
+      const fakeGenerator: RunAssessmentJobDependencies["improvementMessageGenerator"] = {
+        generate: () => "fake-message",
+        generateFeedbackLayers: () => ({
+          whatJa: "fake-what",
+          whyJa: "fake-why",
+          howJa: "fake-how",
+        }),
+        generateFeedbackLayersAsync: async (input): Promise<FeedbackLayersOutput> => {
+          selectedInputs.push(input.functionalLoad ?? "null-fl");
+          return { whatJa: "llm-what", whyJa: "llm-why", howJa: "llm-how" };
+        },
+      };
+
+      // Put critical at index 2, minor at 0, major at 1
+      const findings = [
+        makeRankedFindingDraft({ severity: "minor", functionalLoad: "low", index: 0 }),
+        makeRankedFindingDraft({ severity: "major", functionalLoad: "mid", index: 1 }),
+        makeRankedFindingDraft({ severity: "critical", functionalLoad: "low", index: 2 }),
+      ];
+
+      const deps = makeDependencies({
+        engineRegistry: {
+          find: () => ok({ assess: () => okAsync(makeDraftWithSpecificFindings(findings)) }),
+        },
+        improvementMessageGenerator: fakeGenerator,
+        llmNarrativeMaxFindings: 1,
+      });
+
+      const execute = createRunAssessmentJob(deps);
+      const result = await execute({ leaseOwner: "runner-1", leaseDurationSeconds: 60 });
+
+      expect(result.isOk()).toBe(true);
+      // Only 1 selected, it must be the critical one (functionalLoad="low")
+      expect(selectedInputs).toHaveLength(1);
+      // The critical finding has functionalLoad="low"
+      expect(selectedInputs[0]).toBe("low");
+    });
+
+    it("(rank order functionalLoad) high selected over mid at same severity; max selected over high", async () => {
+      ulidCounter = 0;
+
+      const callSequence: string[] = [];
+      const fakeGenerator: RunAssessmentJobDependencies["improvementMessageGenerator"] = {
+        generate: () => "fake-message",
+        generateFeedbackLayers: () => ({
+          whatJa: "fake-what",
+          whyJa: "fake-why",
+          howJa: "fake-how",
+        }),
+        generateFeedbackLayersAsync: async (input): Promise<FeedbackLayersOutput> => {
+          callSequence.push(input.functionalLoad ?? "null");
+          return { whatJa: "llm-what", whyJa: "llm-why", howJa: "llm-how" };
+        },
+      };
+
+      // Three major findings: mid, high, max. cap=1 → max selected first
+      const findings = [
+        makeRankedFindingDraft({ severity: "major", functionalLoad: "mid", index: 0 }),
+        makeRankedFindingDraft({ severity: "major", functionalLoad: "high", index: 1 }),
+        makeRankedFindingDraft({ severity: "major", functionalLoad: "max", index: 2 }),
+      ];
+
+      const deps = makeDependencies({
+        engineRegistry: {
+          find: () => ok({ assess: () => okAsync(makeDraftWithSpecificFindings(findings)) }),
+        },
+        improvementMessageGenerator: fakeGenerator,
+        llmNarrativeMaxFindings: 1,
+      });
+
+      const execute = createRunAssessmentJob(deps);
+      const result = await execute({ leaseOwner: "runner-1", leaseDurationSeconds: 60 });
+
+      expect(result.isOk()).toBe(true);
+      expect(callSequence).toHaveLength(1);
+      // max > high > mid: the max one is selected
+      expect(callSequence[0]).toBe("max");
+    });
+
+    it("(null functionalLoad last) null functionalLoad ranks below any non-null at same severity", async () => {
+      ulidCounter = 0;
+
+      const callSequence: Array<string | null | undefined> = [];
+      const fakeGenerator: RunAssessmentJobDependencies["improvementMessageGenerator"] = {
+        generate: () => "fake-message",
+        generateFeedbackLayers: () => ({
+          whatJa: "fake-what",
+          whyJa: "fake-why",
+          howJa: "fake-how",
+        }),
+        generateFeedbackLayersAsync: async (input): Promise<FeedbackLayersOutput> => {
+          callSequence.push(input.functionalLoad);
+          return { whatJa: "llm-what", whyJa: "llm-why", howJa: "llm-how" };
+        },
+      };
+
+      // Two minor findings: null FL at index 0, "low" FL at index 1. cap=1 → "low" selected
+      const findings = [
+        makeRankedFindingDraft({ severity: "minor", functionalLoad: null, index: 0 }),
+        makeRankedFindingDraft({ severity: "minor", functionalLoad: "low", index: 1 }),
+      ];
+
+      const deps = makeDependencies({
+        engineRegistry: {
+          find: () => ok({ assess: () => okAsync(makeDraftWithSpecificFindings(findings)) }),
+        },
+        improvementMessageGenerator: fakeGenerator,
+        llmNarrativeMaxFindings: 1,
+      });
+
+      const execute = createRunAssessmentJob(deps);
+      const result = await execute({ leaseOwner: "runner-1", leaseDurationSeconds: 60 });
+
+      expect(result.isOk()).toBe(true);
+      expect(callSequence).toHaveLength(1);
+      // "low" (non-null) beats null
+      expect(callSequence[0]).toBe("low");
+    });
+
+    it("(stable tie-break) two identical-severity/functionalLoad findings → lower original index selected first", async () => {
+      ulidCounter = 0;
+
+      const callIndices: number[] = [];
+      let callIndex = 0;
+      const fakeGenerator: RunAssessmentJobDependencies["improvementMessageGenerator"] = {
+        generate: () => "fake-message",
+        generateFeedbackLayers: () => ({
+          whatJa: "fake-what",
+          whyJa: "fake-why",
+          howJa: "fake-how",
+        }),
+        generateFeedbackLayersAsync: async (): Promise<FeedbackLayersOutput> => {
+          callIndices.push(callIndex++);
+          return { whatJa: `llm-what-${callIndex}`, whyJa: "llm-why", howJa: "llm-how" };
+        },
+      };
+
+      // Two identical findings at index 0 and 1, cap=1 → index 0 selected (stable tie-break)
+      const findings = [
+        makeRankedFindingDraft({ severity: "major", functionalLoad: "high", index: 0 }),
+        makeRankedFindingDraft({ severity: "major", functionalLoad: "high", index: 1 }),
+      ];
+
+      // We check which finding (by textRange.startChar) gets the LLM output
+      const deps = makeDependencies({
+        engineRegistry: {
+          find: () => ok({ assess: () => okAsync(makeDraftWithSpecificFindings(findings)) }),
+        },
+        improvementMessageGenerator: fakeGenerator,
+        llmNarrativeMaxFindings: 1,
+      });
+
+      const execute = createRunAssessmentJob(deps);
+      const result = await execute({ leaseOwner: "runner-1", leaseDurationSeconds: 60 });
+
+      expect(result.isOk()).toBe(true);
+      // Generator called exactly once (cap=1)
+      expect(callIndices).toHaveLength(1);
+
+      // The LLM result should be on finding[0], finding[1] gets rule-based
+      const resultCreatedEvent = result
+        ._unsafeUnwrap()
+        .events.find((e) => e.type === "assessmentResultCreated");
+      expect(resultCreatedEvent?.type).toBe("assessmentResultCreated");
+      if (resultCreatedEvent?.type === "assessmentResultCreated") {
+        // finding[0] has LLM feedbackLayers.whatJa = "llm-what-1" (callIndex was 0 at call time → returned llm-what-1)
+        expect(resultCreatedEvent.assessmentResult.findings[0]?.feedbackLayers?.whatJa).toMatch(
+          /^llm-what/,
+        );
+        // finding[1] gets rule-based whatJa = "fake-what"
+        expect(resultCreatedEvent.assessmentResult.findings[1]?.feedbackLayers?.whatJa).toBe(
+          "fake-what",
+        );
+      }
+    });
+
+    it("(ORPHAN-1 keying) highest-priority finding at non-zero original index gets LLM output (not index 0)", async () => {
+      ulidCounter = 0;
+
+      const fakeGenerator: RunAssessmentJobDependencies["improvementMessageGenerator"] = {
+        generate: () => "rule-based-message",
+        generateFeedbackLayers: () => ({
+          whatJa: "rule-based-what",
+          whyJa: "rule-based-why",
+          howJa: "rule-based-how",
+        }),
+        generateFeedbackLayersAsync: async (input): Promise<FeedbackLayersOutput> => ({
+          whatJa: `llm-what-${input.functionalLoad ?? "null"}`,
+          whyJa: "llm-why",
+          howJa: "llm-how",
+        }),
+      };
+
+      // 6 findings: index 0-4 = minor/mid, index 5 = critical/max (highest priority)
+      const findings = Array.from({ length: 6 }, (_, i) =>
+        i === 5
+          ? makeRankedFindingDraft({ severity: "critical", functionalLoad: "max", index: i })
+          : makeRankedFindingDraft({ severity: "minor", functionalLoad: "mid", index: i }),
+      );
+
+      const deps = makeDependencies({
+        engineRegistry: {
+          find: () => ok({ assess: () => okAsync(makeDraftWithSpecificFindings(findings)) }),
+        },
+        improvementMessageGenerator: fakeGenerator,
+        llmNarrativeMaxFindings: 1, // only 1 selected: the critical/max at original index 5
+      });
+
+      const execute = createRunAssessmentJob(deps);
+      const result = await execute({ leaseOwner: "runner-1", leaseDurationSeconds: 60 });
+
+      expect(result.isOk()).toBe(true);
+      const resultCreatedEvent = result
+        ._unsafeUnwrap()
+        .events.find((e) => e.type === "assessmentResultCreated");
+      expect(resultCreatedEvent?.type).toBe("assessmentResultCreated");
+      if (resultCreatedEvent?.type === "assessmentResultCreated") {
+        const domainFindings = resultCreatedEvent.assessmentResult.findings;
+        // finding at original index 5 must have LLM output (functionalLoad="max")
+        expect(domainFindings[5]?.feedbackLayers?.whatJa).toBe("llm-what-max");
+        // findings at indices 0-4 must have rule-based output
+        for (let i = 0; i < 5; i++) {
+          expect(domainFindings[i]?.feedbackLayers?.whatJa).toBe("rule-based-what");
+        }
+      }
+    });
+
+    it("(M-TMO-8 batch summary) logger.info called with llm narrative batch + correct counts after 1 fallback in 3", async () => {
+      ulidCounter = 0;
+
+      // Two findings succeed LLM, one triggers onFallback
+      let callCount = 0;
+      const fakeGenerator: RunAssessmentJobDependencies["improvementMessageGenerator"] = {
+        generate: () => "fake-message",
+        generateFeedbackLayers: () => ({
+          whatJa: "fake-what",
+          whyJa: "fake-why",
+          howJa: "fake-how",
+        }),
+        generateFeedbackLayersAsync: async (_input, onFallback): Promise<FeedbackLayersOutput> => {
+          callCount++;
+          if (callCount === 2) {
+            // 2nd call triggers fallback
+            onFallback?.("invoker_error");
+          }
+          return { whatJa: "llm-what", whyJa: "llm-why", howJa: "llm-how" };
+        },
+      };
+
+      const threeFindings = Array.from({ length: 3 }, (_, i) =>
+        makeRankedFindingDraft({ severity: "minor", functionalLoad: "mid", index: i }),
+      );
+
+      const loggerSpy = makeLogger();
+
+      const deps = makeDependencies({
+        engineRegistry: {
+          find: () => ok({ assess: () => okAsync(makeDraftWithSpecificFindings(threeFindings)) }),
+        },
+        improvementMessageGenerator: fakeGenerator,
+        llmNarrativeMaxFindings: 3,
+        llmCoachingProvider: "claude-code",
+        logger: loggerSpy,
+      });
+
+      const execute = createRunAssessmentJob(deps);
+      const result = await execute({ leaseOwner: "runner-1", leaseDurationSeconds: 60 });
+
+      expect(result.isOk()).toBe(true);
+
+      // logger.info must have been called with "llm narrative batch"
+      const infoCalls = (loggerSpy.info as ReturnType<typeof vi.fn>).mock.calls;
+      const batchCall = infoCalls.find((args) => args[0] === "llm narrative batch");
+      expect(batchCall).toBeDefined();
+      const batchContext = batchCall?.[1] as {
+        provider: string;
+        requested: number;
+        llmSuccess: number;
+        llmFallback: number;
+        byReason: Record<string, number>;
+      };
+      expect(batchContext.provider).toBe("claude-code");
+      expect(batchContext.requested).toBe(3);
+      expect(batchContext.llmSuccess).toBe(2);
+      expect(batchContext.llmFallback).toBe(1);
+      expect(batchContext.byReason["invoker_error"]).toBe(1);
+    });
+
+    it("(rule-based path) generateFeedbackLayersAsync undefined → logger.info 'llm narrative batch' NOT called", async () => {
+      ulidCounter = 0;
+
+      const loggerSpy = makeLogger();
+
+      // Sync-only generator (no generateFeedbackLayersAsync)
+      const syncGenerator: RunAssessmentJobDependencies["improvementMessageGenerator"] = {
+        generate: () => "sync-message",
+        generateFeedbackLayers: () => ({
+          whatJa: "sync-what",
+          whyJa: "sync-why",
+          howJa: "sync-how",
+        }),
+        // generateFeedbackLayersAsync is intentionally absent
+      };
+
+      const threeFindings = Array.from({ length: 3 }, (_, i) =>
+        makeRankedFindingDraft({ severity: "minor", functionalLoad: "mid", index: i }),
+      );
+
+      const deps = makeDependencies({
+        engineRegistry: {
+          find: () => ok({ assess: () => okAsync(makeDraftWithSpecificFindings(threeFindings)) }),
+        },
+        improvementMessageGenerator: syncGenerator,
+        logger: loggerSpy,
+      });
+
+      const execute = createRunAssessmentJob(deps);
+      const result = await execute({ leaseOwner: "runner-1", leaseDurationSeconds: 60 });
+
+      expect(result.isOk()).toBe(true);
+
+      const infoCalls = (loggerSpy.info as ReturnType<typeof vi.fn>).mock.calls;
+      const batchCall = infoCalls.find((args) => args[0] === "llm narrative batch");
+      expect(batchCall).toBeUndefined();
+    });
   });
 });

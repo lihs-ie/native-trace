@@ -125,6 +125,56 @@ describe("createRuleBasedImprovementMessageGenerator", () => {
     expect(message).toContain("母音");
   });
 
+  // ADR-020 M-HOW-6: ACL howJa branches on bare detectedTopCandidate via findStepsForSubstitute
+  describe("(ADR-020 M-HOW-6) howJa ACL-layer branching on detectedTopCandidate", () => {
+    it("(M-HOW-6) /l/ finding with detectedTopCandidate='ɾ' yields l-r-substitution ɾ-variant step in howJa", () => {
+      const layers = generator.generateFeedbackLayers({
+        phenomenon: "substitution",
+        expected: { text: "light", ipa: null },
+        detected: { text: null, ipa: null },
+        catalogId: "l-r-substitution",
+        detectedTopCandidate: "ɾ",
+      });
+      // l-r-substitution substituteVariants["ɾ"] unique text: 弾き音と違い、当てたまま保持する
+      expect(layers.howJa).toContain("弾き音と違い、当てたまま保持する");
+    });
+
+    it("(M-HOW-6) /r/ finding with detectedTopCandidate='ɾ' yields r-substitution ɾ-variant step in howJa, different from /l/ howJa", () => {
+      const lLayers = generator.generateFeedbackLayers({
+        phenomenon: "substitution",
+        expected: { text: "light", ipa: null },
+        detected: { text: null, ipa: null },
+        catalogId: "l-r-substitution",
+        detectedTopCandidate: "ɾ",
+      });
+      const rLayers = generator.generateFeedbackLayers({
+        phenomenon: "substitution",
+        expected: { text: "right", ipa: null },
+        detected: { text: null, ipa: null },
+        catalogId: "r-substitution",
+        detectedTopCandidate: "ɾ",
+      });
+      // r-substitution substituteVariants["ɾ"] unique text: 舌先を一切接触させない
+      expect(rLayers.howJa).toContain("舌先を一切接触させない");
+      // Proves real branching: /l/ and /r/ howJa must differ
+      expect(lLayers.howJa).not.toBe(rLayers.howJa);
+    });
+
+    it("(M-HOW-6) /l/ finding with detectedTopCandidate=null falls back to generic stepsJa and excludes variant-only text", () => {
+      const layers = generator.generateFeedbackLayers({
+        phenomenon: "substitution",
+        expected: { text: "light", ipa: null },
+        detected: { text: null, ipa: null },
+        catalogId: "l-r-substitution",
+        detectedTopCandidate: null,
+      });
+      // Generic stepsJa[0] contains: 軽く当てる (not in variant steps)
+      expect(layers.howJa).toContain("軽く当てる");
+      // Variant-only text must NOT appear when detectedTopCandidate is null
+      expect(layers.howJa).not.toContain("弾き音と違い、当てたまま保持する");
+    });
+  });
+
   // ADR-017 D2: epenthesis — word-as-vowel pattern must never appear
   it("(ADR-017 D2) epenthesis never produces 「<word>」という母音 for any input", () => {
     const word = "strike";

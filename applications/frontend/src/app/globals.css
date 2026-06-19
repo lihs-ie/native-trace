@@ -170,6 +170,97 @@
   --choice-min-h: 88px;      /* HVPT 選択肢の最小高 (誤タップ防止) */
 }
 
+/* ============================================================
+   NativeTrace — Design Tokens v3.0 追加トークン
+   tokens-v3.css から逐語移植（@import url('tokens-v2.css') 行は除く。
+   v2 トークンは上のブロックに既にインライン済み）。
+   ADR-014〜022（録音品質・音響音声学診断・調音逆推定・決定論How・
+   LLMコーチング・所見クローズドループ）のための新トークン。
+
+   不変の原則: 色=重大度 は v1/v2 のまま。v3 の新軸「floor / enrichment
+   （確定 / 推定）」は重大度ランプ（赤22〜黄92）から十分に離れた紫系 hue で、
+   かつ破線・点線で冗長符号化する。推定は色だけでなく必ず線種でも推定と分かる。
+   ============================================================ */
+
+:root {
+  /* ---- floor / enrichment（確定 / 推定）— v3 の新軸 (ADR-019/020/021) ----
+     floor = 常に正しい確定情報（静的図解・カタログ手順・実測GOP）。
+     enrichment = 推定（AAI・音響偏差・LLM言い換え）。重大度色を侵さない
+     紫系 hue 312 で、破線で「推定」を冗長符号化する。 */
+  --floor:         oklch(0.80 0.010 256);          /* 確定情報 = 無彩色（メタ） */
+  --floor-soft:    oklch(0.345 0.016 256);
+  --enrich:        oklch(0.66 0.14 312);           /* 推定アクセント（紫・重大度外） */
+  --enrich-text:   oklch(0.78 0.12 312);
+  --enrich-soft:   oklch(0.66 0.14 312 / 0.16);
+  --enrich-line:   oklch(0.70 0.13 312 / 0.6);
+
+  /* ---- 音響音声学診断 acousticEvidence (ADR-018) ----
+     方向ラベルは「偏差の方向」であって重大度ではない。測定値=teal系
+     （明瞭性軸 axis-intel と同系）、目標ノルム=ブランド青（chart-ref）。
+     減点しない付帯証拠なので無彩〜teal に留め、赤系は使わない。 */
+  --measured:        var(--axis-intel);            /* 学習者の実測フォルマント */
+  --measured-text:   var(--axis-intel-text);
+  --measured-soft:   var(--axis-intel-soft);
+  --target-norm:     var(--chart-ref);             /* Hillenbrand 目標ノルム */
+  --target-norm-soft:var(--chart-ref-soft);
+  --dir-off:         var(--sev-major);             /* 方向ずれの矢印（±1SD超）= major 系 */
+  --dir-off-text:    var(--sev-major-text);
+  --dir-ok:          var(--positive);              /* 範囲内 = ok */
+  --dir-ok-text:     var(--positive-text);
+
+  /* ---- AAI 調音逆推定 EMA (ADR-019) ----
+     舌先 / 舌背 / 唇開き の3点。推定なので enrichment 系。 */
+  --ema-tongue:   var(--enrich);
+  --ema-lip:      oklch(0.74 0.115 330);
+  --ema-track:    var(--enrich-line);
+  --aai-elig-ok:  var(--positive);                 /* displayEligibility ≥ 0.55 */
+  --aai-elig-low: var(--text-faint);
+
+  /* ---- GOP デルタ / 改善計測 (ADR-022) ----
+     deltaSignal: improved=positive / regressed=critical / unchanged=neutral。
+     boundarySignal: crossedMinor/Major は重大度ランプを脱する方向。 */
+  --delta-improved:      var(--positive);
+  --delta-improved-text: var(--positive-text);
+  --delta-improved-soft: var(--positive-soft);
+  --delta-regressed:     var(--sev-critical);
+  --delta-regressed-text:var(--sev-critical-text);
+  --delta-regressed-soft:var(--sev-critical-soft);
+  --delta-flat:          var(--text-faint);
+
+  /* ---- 録音中 音量メーター (ADR-016) ----
+     ピークホール残光 + 「音量小」ラベルは持続低下(500ms)でのみ点灯。
+     ゲート整合: -36 dBFS = LOW_VOLUME_DISPLAY_THRESHOLD 41%。 */
+  --vu-fill:       var(--positive);
+  --vu-fill-mid:   var(--axis-intel);
+  --vu-peak:       var(--text-primary);            /* ピークホール残光ライン */
+  --vu-low:        var(--sev-minor);               /* 音量小ゾーン */
+  --vu-gate:       var(--sev-critical-line);       /* -36 dBFS ゲート線 */
+  --vu-track:      var(--surface-3);
+
+  /* ---- 録音品質ステート (ADR-014/015) ----
+     low_quality=再録音(critical系) / partial=部分成功(cloud落ち, suggest系)。 */
+  --q-rerecord:      var(--sev-critical);
+  --q-rerecord-text: var(--sev-critical-text);
+  --q-rerecord-soft: var(--sev-critical-soft);
+  --q-partial:       var(--sev-suggest);
+  --q-partial-text:  var(--sev-suggest-text);
+  --q-partial-soft:  var(--sev-suggest-soft);
+
+  /* ---- LLM コーチング provider 同一性 (ADR-021) ----
+     claude-code(subscription) / ollama(local) / rule-based(fallback)。
+     provider は「文章の出所」メタ。enrichment 系で、rule-based=無彩。 */
+  --llm-claude:    var(--enrich);
+  --llm-ollama:    oklch(0.70 0.12 200);
+  --llm-rule:      var(--floor);                   /* 決定論 fallback = 確定床 */
+
+  /* ---- ADR ステータス ---- */
+  --adr-accepted:  var(--positive);
+  --adr-proposed:  var(--sev-suggest);
+
+  /* ---- v3 寸法 ---- */
+  --sagittal-size: 264px;       /* 矢状断面図の基準辺 */
+}
+
 /* ---- Resets / base ---- */
 *, *::before, *::after { box-sizing: border-box; }
 * { padding: 0; margin: 0; }

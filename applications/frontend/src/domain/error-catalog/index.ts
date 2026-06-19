@@ -7,6 +7,7 @@
  */
 
 import catalogData from "./data/japanese-l1-catalog.json";
+import { canonicalizePhoneme } from "./phoneme-canonicalization";
 
 // ---- 型定義 ----
 
@@ -23,6 +24,12 @@ export type RecommendedTrainingKind = "perception" | "articulation" | "prosody";
 export type ArticulationGuide = Readonly<{
   mannerJa: string;
   stepsJa: ReadonlyArray<string>;
+  /**
+   * substituteVariants — detectedTopCandidate の canonical BARE IPA をキーとする代替調音ステップマップ。
+   * キーは canonical BARE IPA 記号（例: "ɾ"。"[ɾ]" ではない）。
+   * ADR-020 D2: canonicalizePhoneme での等価比較のみ使用する。
+   */
+  substituteVariants?: Readonly<Record<string, ReadonlyArray<string>>>;
 }>;
 
 export type ErrorCatalogEntry = Readonly<{
@@ -117,9 +124,36 @@ const parseEntry = (raw: unknown): ErrorCatalogEntry => {
     if (!Array.isArray(articulationRaw["stepsJa"])) {
       throw new Error(`ErrorCatalogEntry(${entry["id"]}): articulation.stepsJa must be array`);
     }
+    let substituteVariants: Readonly<Record<string, ReadonlyArray<string>>> | undefined = undefined;
+    if (
+      articulationRaw["substituteVariants"] !== null &&
+      articulationRaw["substituteVariants"] !== undefined
+    ) {
+      const rawVariants = articulationRaw["substituteVariants"];
+      if (typeof rawVariants !== "object" || Array.isArray(rawVariants)) {
+        throw new Error(
+          `ErrorCatalogEntry(${entry["id"]}): articulation.substituteVariants must be an object`,
+        );
+      }
+      const variantsRecord = rawVariants as Record<string, unknown>;
+      for (const [key, value] of Object.entries(variantsRecord)) {
+        if (typeof key !== "string") {
+          throw new Error(
+            `ErrorCatalogEntry(${entry["id"]}): articulation.substituteVariants keys must be strings`,
+          );
+        }
+        if (!Array.isArray(value) || !(value as unknown[]).every((v) => typeof v === "string")) {
+          throw new Error(
+            `ErrorCatalogEntry(${entry["id"]}): articulation.substituteVariants["${key}"] must be string[]`,
+          );
+        }
+      }
+      substituteVariants = variantsRecord as Record<string, ReadonlyArray<string>>;
+    }
     articulation = {
       mannerJa: articulationRaw["mannerJa"],
       stepsJa: articulationRaw["stepsJa"] as string[],
+      ...(substituteVariants !== undefined ? { substituteVariants } : {}),
     };
   }
 
@@ -184,3 +218,39 @@ export const findCatalogEntry = (
  */
 export const findCatalogEntryById = (catalogIdentifier: string): ErrorCatalogEntry | null =>
   loadedCatalog.find((entry) => entry.id === catalogIdentifier) ?? null;
+
+/**
+ * findStepsForSubstitute — detectedTopCandidate の canonical 等価比較で substituteVariants から
+ * 対応する調音ステップ配列を解決する。
+ *
+ * ADR-020 D4 (M-HOW-5):
+ * - detectedTopCandidate が null / articulation 不在 / substituteVariants 不在 → stepsJa を返す。
+ * - それ以外: canonicalizePhoneme(detectedTopCandidate) と substituteVariants の各キーを
+ *   canonicalizePhoneme で正規化して等価比較する（生文字列・部分一致は使わない）。
+ * - 一致キーが存在すればそのバリアント配列を返す。なければ stepsJa を返す。
+ *
+ * NOTE: findCatalogEntry の latent shadowing bug（配列順 first match）には依存しない（Non-goal）。
+ */
+export function findStepsForSubstitute(
+  entry: ErrorCatalogEntry,
+  detectedTopCandidate: string | null,
+): ReadonlyArray<string> {
+  if (
+    detectedTopCandidate === null ||
+    entry.articulation === null ||
+    entry.articulation.substituteVariants === undefined
+  ) {
+    return entry.articulation?.stepsJa ?? [];
+  }
+
+  const canonicalDetected = canonicalizePhoneme(detectedTopCandidate);
+  const variants = entry.articulation.substituteVariants;
+
+  for (const key of Object.keys(variants)) {
+    if (canonicalizePhoneme(key) === canonicalDetected) {
+      return variants[key] ?? [];
+    }
+  }
+
+  return entry.articulation.stepsJa;
+}

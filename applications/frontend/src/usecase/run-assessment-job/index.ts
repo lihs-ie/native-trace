@@ -51,7 +51,10 @@ import { type Clock } from "../port/clock";
 import { type Logger } from "../port/logger";
 import { TOKENIZER_VERSION } from "../shared/tokenizer";
 import { type AssessmentResultDraft } from "../assessment-result-draft";
-import { type ImprovementMessageGenerator } from "../port/improvement-message-generator";
+import {
+  type ImprovementMessageGenerator,
+  type FeedbackLayersOutput,
+} from "../port/improvement-message-generator";
 
 // ---- Constants ----
 
@@ -106,6 +109,26 @@ export type RunAssessmentJobDependencies = Readonly<{
   clock: Clock;
   logger: Logger;
   improvementMessageGenerator: ImprovementMessageGenerator;
+  /**
+   * M-LLM-4 (ADR-021): pre-loop batch 並列度上限。
+   * 省略時は 3（= config.llmNarrativeMaxConcurrency のデフォルト）。
+   * registry は現在 config 値を渡さないため optional にし、
+   * dispatch 4 (registry 分岐) で渡されるまでデフォルトで動作する。
+   * M-LLM-16: createRunAssessmentJob の呼び出し側（registry.ts）は無改修のままコンパイルできる。
+   */
+  llmNarrativeMaxConcurrency?: number;
+  /**
+   * ADR-023 D2 (M-TMO-5): LLM 生成対象 finding 数上限。
+   * 省略時は 8（= config.llmNarrativeMaxFindings のデフォルト）。
+   * severity 降順 → functionalLoad（max > high > mid > low）降順の上位 N 件を LLM 対象に選択。
+   * 上限外 finding は rule-based パスへ落ちる。
+   */
+  llmNarrativeMaxFindings?: number;
+  /**
+   * ADR-023 D3 (M-TMO-8): LLM provider 文字列。バッチサマリログの provider フィールドに使う。
+   * registry から config.llmCoachingProvider を渡す。省略時は "unknown"。
+   */
+  llmCoachingProvider?: string;
 }>;
 
 // ---- Helpers ----
@@ -531,55 +554,91 @@ export const createRunAssessmentJob =
                                         });
                                       }
 
-                                      // findings に identifier を付与 + confidence 検証
-                                      const findingsWithId: AssessmentFinding[] = [];
-                                      for (const findingDraft of draft.findings) {
-                                        const findingIdRaw =
-                                          dependencies.entropyProvider.generateUlid();
-                                        const findingIdentifier =
-                                          createAssessmentFindingIdentifier(findingIdRaw);
-                                        if (!findingIdentifier) {
-                                          return errAsync<
-                                            readonly [
-                                              AssessmentResult,
-                                              NonEmptyList<AssessmentResultCreated>,
-                                            ],
-                                            DomainError
-                                          >({
-                                            type: "assessmentSchemaInvalid",
-                                            reason: "finding identifier 生成に失敗しました",
-                                          });
-                                        }
+                                      // M-LLM-4 (ADR-021) + ADR-023 D2 (M-TMO-3): pre-loop batch 並列生成
+                                      // generateFeedbackLayersAsync が定義されている場合（LLM プロバイダ）、
+                                      // finding を severity 降順 → functionalLoad 降順でソートし、
+                                      // 上位 llmNarrativeMaxFindings 件の「元配列 index」のみを LLM 対象に選択。
+                                      // ADR-023 D2: LLM を最も重要な finding（severity 高 → functionalLoad 高）に集中投下する。
+                                      // Map のキーは必ず元配列 index（sorted 後位置ではない）— ORPHAN RISK 1。
+                                      // undefined（rule-based）の場合は空 Map を返しスキップする。
+                                      return fromPromise(
+                                        (async (): Promise<Map<number, FeedbackLayersOutput>> => {
+                                          const precomputed = new Map<
+                                            number,
+                                            FeedbackLayersOutput
+                                          >();
+                                          const generateFeedbackLayersAsync =
+                                            dependencies.improvementMessageGenerator
+                                              .generateFeedbackLayersAsync;
+                                          if (!generateFeedbackLayersAsync) {
+                                            return precomputed;
+                                          }
+                                          const llmNarrativeMaxConcurrency =
+                                            dependencies.llmNarrativeMaxConcurrency ?? 3;
+                                          const llmNarrativeMaxFindings =
+                                            dependencies.llmNarrativeMaxFindings ?? 8;
 
-                                        const confidenceResult = createConfidence0To1(
-                                          findingDraft.confidence,
-                                        );
-                                        if (confidenceResult.isErr()) {
-                                          return errAsync<
-                                            readonly [
-                                              AssessmentResult,
-                                              NonEmptyList<AssessmentResultCreated>,
-                                            ],
-                                            DomainError
-                                          >({
-                                            type: "assessmentSchemaInvalid",
-                                            reason: `finding.confidence: ${extractReason(confidenceResult.error) ?? confidenceResult.error.type}`,
-                                          });
-                                        }
+                                          // ADR-023 D2 (M-TMO-3): severity/functionalLoad rank maps
+                                          // severity: critical=4 > major=3 > minor=2 > suggestion=1; unknown=0
+                                          const severityRank: Record<string, number> = {
+                                            critical: 4,
+                                            major: 3,
+                                            minor: 2,
+                                            suggestion: 1,
+                                          };
+                                          // functionalLoad: max=4 > high=3 > mid=2 > low=1; null/unknown=0
+                                          const functionalLoadRank: Record<string, number> = {
+                                            max: 4,
+                                            high: 3,
+                                            mid: 2,
+                                            low: 1,
+                                          };
 
-                                        // phenomenon を型ガードで確定（invalid なら substitution にフォールバック）
-                                        const phenomenon: FindingPhenomenon =
-                                          isValidFindingPhenomenon(findingDraft.phenomenon ?? "")
-                                            ? (findingDraft.phenomenon as FindingPhenomenon)
-                                            : "substitution";
+                                          // Build index-ranked list; stable sort preserves original order for ties
+                                          const rankedIndices = draft.findings
+                                            .map((findingDraft, originalIndex) => ({
+                                              originalIndex,
+                                              severityScore:
+                                                severityRank[findingDraft.severity ?? ""] ?? 0,
+                                              functionalLoadScore:
+                                                functionalLoadRank[
+                                                  findingDraft.functionalLoad ?? ""
+                                                ] ?? 0,
+                                            }))
+                                            .sort((rankA, rankB) => {
+                                              if (rankA.severityScore !== rankB.severityScore) {
+                                                return rankB.severityScore - rankA.severityScore;
+                                              }
+                                              if (
+                                                rankA.functionalLoadScore !==
+                                                rankB.functionalLoadScore
+                                              ) {
+                                                return (
+                                                  rankB.functionalLoadScore -
+                                                  rankA.functionalLoadScore
+                                                );
+                                              }
+                                              // stable tie-break: preserve original index order (asc)
+                                              return rankA.originalIndex - rankB.originalIndex;
+                                            });
 
-                                        // messageJa が null/空なら ImprovementMessageGenerator で充填
-                                        const messageJa =
-                                          findingDraft.messageJa &&
-                                          findingDraft.messageJa.trim().length > 0
-                                            ? findingDraft.messageJa
-                                            : dependencies.improvementMessageGenerator.generate({
-                                                phenomenon: phenomenon ?? "substitution",
+                                          // Select top-N original indices
+                                          const selectedOriginalIndices = new Set(
+                                            rankedIndices
+                                              .slice(0, llmNarrativeMaxFindings)
+                                              .map((item) => item.originalIndex),
+                                          );
+
+                                          // Build batch inputs keyed by ORIGINAL index (ORPHAN RISK 1)
+                                          const allInputs = draft.findings
+                                            .map((findingDraft, index) => ({
+                                              index,
+                                              input: {
+                                                phenomenon: isValidFindingPhenomenon(
+                                                  findingDraft.phenomenon ?? "",
+                                                )
+                                                  ? (findingDraft.phenomenon as FindingPhenomenon)
+                                                  : ("substitution" as const),
                                                 expected: findingDraft.expected,
                                                 detected: findingDraft.detected,
                                                 wordPositionLabel:
@@ -591,164 +650,304 @@ export const createRunAssessmentJob =
                                                 insertedVowel: findingDraft.insertedVowel ?? null,
                                                 insertionPositionMs:
                                                   findingDraft.insertionPositionMs ?? null,
-                                              });
+                                                detectedTopCandidate:
+                                                  findingDraft.detectedTopCandidate ?? null,
+                                                nBest: findingDraft.nBest ?? null,
+                                                // M-LLM-3 (ADR-021): gop / functionalLoad を配線
+                                                gop: findingDraft.gop ?? null,
+                                                functionalLoad: findingDraft.functionalLoad ?? null,
+                                              },
+                                            }))
+                                            // Filter to only selected (top-N) original indices
+                                            .filter(({ index }) =>
+                                              selectedOriginalIndices.has(index),
+                                            );
 
-                                        // feedbackLayers が null の場合は generator から生成
-                                        const feedbackLayers =
-                                          findingDraft.feedbackLayers ??
-                                          dependencies.improvementMessageGenerator.generateFeedbackLayers(
-                                            {
-                                              phenomenon: phenomenon ?? "substitution",
-                                              expected: findingDraft.expected,
-                                              detected: findingDraft.detected,
-                                              wordPositionLabel:
-                                                findingDraft.wordPositionLabel ?? null,
-                                              catalogId: findingDraft.catalogId ?? null,
-                                              wordPair: findingDraft.wordPair ?? null,
-                                              expectedPronunciation:
-                                                findingDraft.expectedPronunciation ?? null,
-                                              insertedVowel: findingDraft.insertedVowel ?? null,
-                                              insertionPositionMs:
-                                                findingDraft.insertionPositionMs ?? null,
-                                            },
+                                          // ADR-023 D3 (M-TMO-8): per-job fallback accumulator
+                                          // (created per-job, not singleton — no cross-job accumulation)
+                                          let llmFallbackCount = 0;
+                                          const byReason: Record<string, number> = {};
+                                          const requested = allInputs.length;
+
+                                          for (
+                                            let chunkStart = 0;
+                                            chunkStart < allInputs.length;
+                                            chunkStart += llmNarrativeMaxConcurrency
+                                          ) {
+                                            const chunk = allInputs.slice(
+                                              chunkStart,
+                                              chunkStart + llmNarrativeMaxConcurrency,
+                                            );
+                                            const chunkResults = await Promise.all(
+                                              chunk.map(({ index, input }) =>
+                                                generateFeedbackLayersAsync(
+                                                  input,
+                                                  (reason: string) => {
+                                                    // onFallback fires when factory fell back to rule-based
+                                                    llmFallbackCount++;
+                                                    byReason[reason] = (byReason[reason] ?? 0) + 1;
+                                                  },
+                                                ).then((layers) => ({ index, layers })),
+                                              ),
+                                            );
+                                            for (const { index, layers } of chunkResults) {
+                                              // Map keyed by ORIGINAL finding index (ORPHAN RISK 1 guard)
+                                              precomputed.set(index, layers);
+                                            }
+                                          }
+
+                                          // ADR-023 D3 (M-TMO-8): emit batch summary (LLM path only)
+                                          const llmSuccess = requested - llmFallbackCount;
+                                          dependencies.logger.info("llm narrative batch", {
+                                            provider: dependencies.llmCoachingProvider ?? "unknown",
+                                            requested,
+                                            llmSuccess,
+                                            llmFallback: llmFallbackCount,
+                                            byReason,
+                                          });
+
+                                          return precomputed;
+                                        })(),
+                                        (err): DomainError => ({
+                                          type: "assessmentEngineFailed",
+                                          engine: "oss_worker",
+                                          reason: `LLM pre-loop batch failed: ${String(err)}`,
+                                          failureKind: "retryable",
+                                        }),
+                                      ).andThen((precomputed) => {
+                                        // findings に identifier を付与 + confidence 検証
+                                        const findingsWithId: AssessmentFinding[] = [];
+                                        for (
+                                          let findingIndex = 0;
+                                          findingIndex < draft.findings.length;
+                                          findingIndex++
+                                        ) {
+                                          const findingDraft = draft.findings[findingIndex]!;
+                                          const findingIdRaw =
+                                            dependencies.entropyProvider.generateUlid();
+                                          const findingIdentifier =
+                                            createAssessmentFindingIdentifier(findingIdRaw);
+                                          if (!findingIdentifier) {
+                                            return errAsync<
+                                              readonly [
+                                                AssessmentResult,
+                                                NonEmptyList<AssessmentResultCreated>,
+                                              ],
+                                              DomainError
+                                            >({
+                                              type: "assessmentSchemaInvalid",
+                                              reason: "finding identifier 生成に失敗しました",
+                                            });
+                                          }
+
+                                          const confidenceResult = createConfidence0To1(
+                                            findingDraft.confidence,
                                           );
+                                          if (confidenceResult.isErr()) {
+                                            return errAsync<
+                                              readonly [
+                                                AssessmentResult,
+                                                NonEmptyList<AssessmentResultCreated>,
+                                              ],
+                                              DomainError
+                                            >({
+                                              type: "assessmentSchemaInvalid",
+                                              reason: `finding.confidence: ${extractReason(confidenceResult.error) ?? confidenceResult.error.type}`,
+                                            });
+                                          }
 
-                                        // Draft の textRange/audioRange を Domain 型へ変換
-                                        findingsWithId.push({
-                                          identifier: findingIdentifier,
-                                          phenomenon,
-                                          gop: findingDraft.gop,
-                                          category: findingDraft.category,
-                                          severity: findingDraft.severity,
-                                          textRange: {
-                                            startOffset: findingDraft.textRange.startChar,
-                                            endOffset: findingDraft.textRange.endChar,
-                                          },
-                                          audioRange: findingDraft.audioRange
-                                            ? {
-                                                startMilliseconds: findingDraft.audioRange.startMs,
-                                                endMilliseconds: findingDraft.audioRange.endMs,
-                                              }
-                                            : null,
-                                          expected: findingDraft.expected,
-                                          detected: findingDraft.detected,
-                                          messageJa,
-                                          messageEn: findingDraft.messageEn,
-                                          scoreImpact: findingDraft.scoreImpact,
-                                          confidence: confidenceResult.value,
-                                          detectedTopCandidate:
-                                            findingDraft.detectedTopCandidate ?? null,
-                                          nBest: findingDraft.nBest ?? null,
-                                          matchesL1Pattern: findingDraft.matchesL1Pattern,
-                                          functionalLoad: findingDraft.functionalLoad ?? null,
-                                          catalogId: findingDraft.catalogId ?? null,
-                                          wordPair: findingDraft.wordPair ?? null,
-                                          expectedPronunciation:
-                                            findingDraft.expectedPronunciation ?? null,
-                                          insertedVowel: findingDraft.insertedVowel ?? null,
-                                          insertionPositionMs:
-                                            findingDraft.insertionPositionMs ?? null,
-                                          feedbackLayers,
-                                          dismissed: findingDraft.dismissed,
-                                          wordPositionLabel: findingDraft.wordPositionLabel ?? null,
-                                        });
-                                      }
+                                          // phenomenon を型ガードで確定（invalid なら substitution にフォールバック）
+                                          const phenomenon: FindingPhenomenon =
+                                            isValidFindingPhenomenon(findingDraft.phenomenon ?? "")
+                                              ? (findingDraft.phenomenon as FindingPhenomenon)
+                                              : "substitution";
 
-                                      const scores: ScoreSet = {
-                                        overall: createScore0To100(
-                                          draft.scores.overall,
-                                        )._unsafeUnwrap(),
-                                        accuracy: createScore0To100(
-                                          draft.scores.accuracy,
-                                        )._unsafeUnwrap(),
-                                        nativeLikeness: createScore0To100(
-                                          draft.scores.nativeLikeness,
-                                        )._unsafeUnwrap(),
-                                        pronunciation: createScore0To100(
-                                          draft.scores.pronunciation,
-                                        )._unsafeUnwrap(),
-                                        connectedSpeech: createScore0To100(
-                                          draft.scores.connectedSpeech,
-                                        )._unsafeUnwrap(),
-                                        prosody: createScore0To100(
-                                          draft.scores.prosody,
-                                        )._unsafeUnwrap(),
-                                        intelligibility:
-                                          draft.scores.intelligibility !== null
-                                            ? createScore0To100(
-                                                draft.scores.intelligibility,
-                                              )._unsafeUnwrap()
-                                            : null,
-                                        cefrOverall: draft.scores.cefrOverall,
-                                        cefrSegmental: draft.scores.cefrSegmental,
-                                        cefrProsodic: draft.scores.cefrProsodic,
-                                      };
+                                          // M-LLM-3 (ADR-021): generate / generateFeedbackLayers 入力に
+                                          // gop / functionalLoad を配線（両呼び出し点に必須）
+                                          const generateInput = {
+                                            phenomenon: phenomenon ?? "substitution",
+                                            expected: findingDraft.expected,
+                                            detected: findingDraft.detected,
+                                            wordPositionLabel:
+                                              findingDraft.wordPositionLabel ?? null,
+                                            catalogId: findingDraft.catalogId ?? null,
+                                            wordPair: findingDraft.wordPair ?? null,
+                                            expectedPronunciation:
+                                              findingDraft.expectedPronunciation ?? null,
+                                            insertedVowel: findingDraft.insertedVowel ?? null,
+                                            insertionPositionMs:
+                                              findingDraft.insertionPositionMs ?? null,
+                                            detectedTopCandidate:
+                                              findingDraft.detectedTopCandidate ?? null,
+                                            nBest: findingDraft.nBest ?? null,
+                                            gop: findingDraft.gop ?? null,
+                                            functionalLoad: findingDraft.functionalLoad ?? null,
+                                          };
 
-                                      // Draft の segments を Domain 型へ変換
-                                      const segments = createNonEmptyList(
-                                        draft.segments.map(
-                                          (s): AssessmentSegment => ({
+                                          // M-LLM-4 (ADR-021): feedbackLayers 解決順序
+                                          // findingDraft.feedbackLayers
+                                          //   ?? precomputed.get(findingIndex)   ← LLM pre-loop result
+                                          //   ?? generateFeedbackLayers(input)   ← rule-based sync fallback
+                                          const precomputedLayers = precomputed.get(findingIndex);
+                                          const feedbackLayers =
+                                            findingDraft.feedbackLayers ??
+                                            precomputedLayers ??
+                                            dependencies.improvementMessageGenerator.generateFeedbackLayers(
+                                              generateInput,
+                                            );
+
+                                          // messageJa: 既存値があればそのまま。
+                                          // LLM pre-loop 経由（precomputedLayers あり）: feedbackLayers.whatJa を採用。
+                                          // rule-based（precomputedLayers なし）: generate() を呼ぶ（現状維持）。
+                                          const messageJa =
+                                            findingDraft.messageJa &&
+                                            findingDraft.messageJa.trim().length > 0
+                                              ? findingDraft.messageJa
+                                              : precomputedLayers !== undefined
+                                                ? feedbackLayers.whatJa
+                                                : dependencies.improvementMessageGenerator.generate(
+                                                    generateInput,
+                                                  );
+
+                                          // Draft の textRange/audioRange を Domain 型へ変換
+                                          findingsWithId.push({
+                                            identifier: findingIdentifier,
+                                            phenomenon,
+                                            gop: findingDraft.gop,
+                                            category: findingDraft.category,
+                                            severity: findingDraft.severity,
                                             textRange: {
-                                              startOffset: s.textRange.startChar,
-                                              endOffset: s.textRange.endChar,
+                                              startOffset: findingDraft.textRange.startChar,
+                                              endOffset: findingDraft.textRange.endChar,
                                             },
-                                            audioRange: {
-                                              startMilliseconds: s.audioRange.startMs,
-                                              endMilliseconds: s.audioRange.endMs,
+                                            audioRange: findingDraft.audioRange
+                                              ? {
+                                                  startMilliseconds:
+                                                    findingDraft.audioRange.startMs,
+                                                  endMilliseconds: findingDraft.audioRange.endMs,
+                                                }
+                                              : null,
+                                            expected: findingDraft.expected,
+                                            detected: findingDraft.detected,
+                                            messageJa,
+                                            messageEn: findingDraft.messageEn,
+                                            scoreImpact: findingDraft.scoreImpact,
+                                            confidence: confidenceResult.value,
+                                            detectedTopCandidate:
+                                              findingDraft.detectedTopCandidate ?? null,
+                                            nBest: findingDraft.nBest ?? null,
+                                            matchesL1Pattern: findingDraft.matchesL1Pattern,
+                                            functionalLoad: findingDraft.functionalLoad ?? null,
+                                            catalogId: findingDraft.catalogId ?? null,
+                                            wordPair: findingDraft.wordPair ?? null,
+                                            expectedPronunciation:
+                                              findingDraft.expectedPronunciation ?? null,
+                                            insertedVowel: findingDraft.insertedVowel ?? null,
+                                            insertionPositionMs:
+                                              findingDraft.insertionPositionMs ?? null,
+                                            feedbackLayers,
+                                            dismissed: findingDraft.dismissed,
+                                            wordPositionLabel:
+                                              findingDraft.wordPositionLabel ?? null,
+                                          });
+                                        }
+
+                                        const scores: ScoreSet = {
+                                          overall: createScore0To100(
+                                            draft.scores.overall,
+                                          )._unsafeUnwrap(),
+                                          accuracy: createScore0To100(
+                                            draft.scores.accuracy,
+                                          )._unsafeUnwrap(),
+                                          nativeLikeness: createScore0To100(
+                                            draft.scores.nativeLikeness,
+                                          )._unsafeUnwrap(),
+                                          pronunciation: createScore0To100(
+                                            draft.scores.pronunciation,
+                                          )._unsafeUnwrap(),
+                                          connectedSpeech: createScore0To100(
+                                            draft.scores.connectedSpeech,
+                                          )._unsafeUnwrap(),
+                                          prosody: createScore0To100(
+                                            draft.scores.prosody,
+                                          )._unsafeUnwrap(),
+                                          intelligibility:
+                                            draft.scores.intelligibility !== null
+                                              ? createScore0To100(
+                                                  draft.scores.intelligibility,
+                                                )._unsafeUnwrap()
+                                              : null,
+                                          cefrOverall: draft.scores.cefrOverall,
+                                          cefrSegmental: draft.scores.cefrSegmental,
+                                          cefrProsodic: draft.scores.cefrProsodic,
+                                        };
+
+                                        // Draft の segments を Domain 型へ変換
+                                        const segments = createNonEmptyList(
+                                          draft.segments.map(
+                                            (s): AssessmentSegment => ({
+                                              textRange: {
+                                                startOffset: s.textRange.startChar,
+                                                endOffset: s.textRange.endChar,
+                                              },
+                                              audioRange: {
+                                                startMilliseconds: s.audioRange.startMs,
+                                                endMilliseconds: s.audioRange.endMs,
+                                              },
+                                              transcript: s.transcript,
+                                              confidence: s.confidence,
+                                            }),
+                                          ),
+                                        )!;
+
+                                        // rawResponse は ACL が 1MB 上限処理済みの Envelope
+                                        // UseCase は storageKey として { data: rawResponse } で包んで保存
+                                        const rawData = { data: draft.rawResponse };
+
+                                        const resultIdentifierRaw =
+                                          dependencies.entropyProvider.generateUlid();
+                                        const resultIdentifier =
+                                          createAssessmentResultIdentifier(resultIdentifierRaw);
+                                        if (!resultIdentifier) {
+                                          return errAsync<
+                                            readonly [
+                                              AssessmentResult,
+                                              NonEmptyList<AssessmentResultCreated>,
+                                            ],
+                                            DomainError
+                                          >({
+                                            type: "assessmentSchemaInvalid",
+                                            reason: "result identifier 生成に失敗しました",
+                                          });
+                                        }
+
+                                        const metadata = mapMetadata(draft);
+                                        const engineSnapshot = mapEngineSnapshot(draft);
+
+                                        const { assessmentResult, events: resultEvents } =
+                                          createAssessmentResult({
+                                            identifier: resultIdentifier,
+                                            analysisJob: runningJob.identifier,
+                                            scores,
+                                            summary: {
+                                              overallCommentJa: draft.summary.messageJa,
+                                              overallCommentEn: draft.summary.messageEn,
                                             },
-                                            transcript: s.transcript,
-                                            confidence: s.confidence,
-                                          }),
-                                        ),
-                                      )!;
+                                            findings: findingsWithId,
+                                            segments,
+                                            metadata,
+                                            tokenizerVersion,
+                                            raw: rawData,
+                                            engineSnapshot,
+                                            now,
+                                            perPhonemeGop: draft.perPhonemeGop,
+                                            focusSounds: draft.focusSounds,
+                                            prosody: draft.prosody,
+                                            engineSummaryMessageJa: draft.engineSummaryMessageJa,
+                                          });
 
-                                      // rawResponse は ACL が 1MB 上限処理済みの Envelope
-                                      // UseCase は storageKey として { data: rawResponse } で包んで保存
-                                      const rawData = { data: draft.rawResponse };
-
-                                      const resultIdentifierRaw =
-                                        dependencies.entropyProvider.generateUlid();
-                                      const resultIdentifier =
-                                        createAssessmentResultIdentifier(resultIdentifierRaw);
-                                      if (!resultIdentifier) {
-                                        return errAsync<
-                                          readonly [
-                                            AssessmentResult,
-                                            NonEmptyList<AssessmentResultCreated>,
-                                          ],
-                                          DomainError
-                                        >({
-                                          type: "assessmentSchemaInvalid",
-                                          reason: "result identifier 生成に失敗しました",
-                                        });
-                                      }
-
-                                      const metadata = mapMetadata(draft);
-                                      const engineSnapshot = mapEngineSnapshot(draft);
-
-                                      const { assessmentResult, events: resultEvents } =
-                                        createAssessmentResult({
-                                          identifier: resultIdentifier,
-                                          analysisJob: runningJob.identifier,
-                                          scores,
-                                          summary: {
-                                            overallCommentJa: draft.summary.messageJa,
-                                            overallCommentEn: draft.summary.messageEn,
-                                          },
-                                          findings: findingsWithId,
-                                          segments,
-                                          metadata,
-                                          tokenizerVersion,
-                                          raw: rawData,
-                                          engineSnapshot,
-                                          now,
-                                          perPhonemeGop: draft.perPhonemeGop,
-                                          focusSounds: draft.focusSounds,
-                                          prosody: draft.prosody,
-                                          engineSummaryMessageJa: draft.engineSummaryMessageJa,
-                                        });
-
-                                      return okAsync([assessmentResult, resultEvents] as const);
+                                        return okAsync([assessmentResult, resultEvents] as const);
+                                      });
                                     })
                                     .andThen(([assessmentResult, resultEvents]) => {
                                       // 保存直前にキャンセル再確認

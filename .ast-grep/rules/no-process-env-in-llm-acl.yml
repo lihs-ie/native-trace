@@ -1,0 +1,11 @@
+# 適応度関数: LLM ACL 層での process.env 直参照禁止
+# ADR-021 M-LLM-18: acl/improvement-message/llm/** は process.env を直読みしてはならない。
+# 全 config 値は registry → deps 経由で受け取る（environment-access-only-in-config.yml の補助ルール）。
+id: no-process-env-in-llm-acl
+language: typescript
+severity: error
+message: LLM ACL 層 (acl/improvement-message/llm/**) で process.env を直参照してはならない。config 値は deps 経由で受け取ること (ADR-021 M-LLM-18)
+files:
+  - applications/frontend/src/acl/improvement-message/llm/**
+rule:
+  pattern: process.env

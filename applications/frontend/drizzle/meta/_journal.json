@@ -57,6 +57,13 @@
       "when": 1781398377330,
       "tag": "0007_tidy_logan",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1781819087435,
+      "tag": "0008_chilly_the_stranger",
+      "breakpoints": true
     }
   ]
 }

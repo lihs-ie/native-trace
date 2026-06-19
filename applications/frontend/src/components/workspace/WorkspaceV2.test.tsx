@@ -129,7 +129,14 @@ const buildEngineResult = (overrides: Partial<EngineResultDto> = {}): EngineResu
 
 describe("DetailPanelV2", () => {
   it("finding=null のとき空状態メッセージを描画する", () => {
-    render(<DetailPanelV2 finding={null} sectionIdentifier="sec-01" onClose={() => undefined} />);
+    render(
+      <DetailPanelV2
+        finding={null}
+        sectionIdentifier="sec-01"
+        onClose={() => undefined}
+        latestRecordingAttemptIdentifier={null}
+      />,
+    );
     expect(
       screen.getByText("本文のハイライトをクリックすると、ここに詳細が表示されます。"),
     ).toBeInTheDocument();
@@ -141,6 +148,7 @@ describe("DetailPanelV2", () => {
         finding={buildFinding()}
         sectionIdentifier="sec-01"
         onClose={() => undefined}
+        latestRecordingAttemptIdentifier={null}
       />,
     );
     expect(container.querySelector(".fb3-row--what")).toBeInTheDocument();
@@ -154,6 +162,7 @@ describe("DetailPanelV2", () => {
         finding={buildFinding()}
         sectionIdentifier="sec-01"
         onClose={() => undefined}
+        latestRecordingAttemptIdentifier={null}
       />,
     );
     expect(container.querySelector(".nbest-row.is-top")).toBeInTheDocument();
@@ -165,6 +174,7 @@ describe("DetailPanelV2", () => {
         finding={buildFinding()}
         sectionIdentifier="sec-01"
         onClose={() => undefined}
+        latestRecordingAttemptIdentifier={null}
       />,
     );
     const confElement = container.querySelector(".conf[data-level]");
@@ -178,6 +188,7 @@ describe("DetailPanelV2", () => {
         finding={buildFinding()}
         sectionIdentifier="sec-01"
         onClose={() => undefined}
+        latestRecordingAttemptIdentifier={null}
       />,
     );
     expect(container.querySelector(".dismiss-btn")).toBeInTheDocument();
@@ -189,6 +200,7 @@ describe("DetailPanelV2", () => {
         finding={buildFinding()}
         sectionIdentifier="sec-01"
         onClose={() => undefined}
+        latestRecordingAttemptIdentifier={null}
       />,
     );
     expect(container.querySelector(".phen .pe")).toBeInTheDocument();
@@ -200,6 +212,7 @@ describe("DetailPanelV2", () => {
         finding={buildFinding({ dismissed: true })}
         sectionIdentifier="sec-01"
         onClose={() => undefined}
+        latestRecordingAttemptIdentifier={null}
       />,
     );
     expect(container.querySelector(".finding--dismissed")).toBeInTheDocument();
@@ -211,6 +224,7 @@ describe("DetailPanelV2", () => {
         finding={buildFinding({ matchesL1Pattern: true })}
         sectionIdentifier="sec-01"
         onClose={() => undefined}
+        latestRecordingAttemptIdentifier={null}
       />,
     );
     expect(container.querySelector(".proj-badge")).toBeInTheDocument();
@@ -222,6 +236,7 @@ describe("DetailPanelV2", () => {
         finding={buildFinding({ feedbackLayers: null })}
         sectionIdentifier="sec-01"
         onClose={() => undefined}
+        latestRecordingAttemptIdentifier={null}
       />,
     );
     expect(container.querySelector(".panel-jp")).toBeInTheDocument();

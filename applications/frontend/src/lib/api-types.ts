@@ -292,6 +292,22 @@ export type EngineResultDto = {
   prosody: ProsodyDto | null;
 };
 
+/**
+ * M-CRL-6 (ADR-022): finding-level retry 録音の評価結果。
+ * EngineResultDto の兄弟 export（フィールドとして追加しない）。
+ * qualityStatus は 200 レスポンスでは常に 'normal'（low_quality retry は 422 で処理）。
+ */
+export type RetryRecordingResponse = {
+  findingIdentifier: string;
+  phoneme: string;
+  originalGop: number;
+  retryGop: number;
+  gopDelta: number;
+  deltaSignal: "improved" | "unchanged" | "regressed";
+  boundarySignal: "crossedMajor" | "crossedMinor" | "none";
+  qualityStatus: "normal" | "low_quality";
+};
+
 export type WorkspaceDto = {
   material?: MaterialDto;
   sectionSeries?: SectionSeriesDto;

@@ -515,6 +515,7 @@ export const WorkspaceResultV2 = ({
             finding={selectedFinding}
             sectionIdentifier={sectionIdentifier}
             onClose={() => setSelectedFinding(null)}
+            latestRecordingAttemptIdentifier={activeRecordingAttemptIdentifier}
           />
         )}
       </div>

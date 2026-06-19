@@ -43,6 +43,7 @@ import {
   type AssessmentResultIdentifier,
 } from "../../domain/assessment-result";
 import { getAllCatalogEntries } from "../../domain/error-catalog";
+import { canonicalizePhoneme } from "../../domain/error-catalog/phoneme-canonicalization";
 import { type DiagnosticSessionRepository } from "../port/diagnostic-session-repository";
 import { type WeaknessProfileRepository } from "../port/weakness-profile-repository";
 import { type AssessmentResultRepository } from "../port/assessment-result-repository";
@@ -180,33 +181,8 @@ const estimateMasteryFromGopAndSeverity = (
   return severityToMastery[severity] ?? 0.5;
 };
 
-/**
- * normalizeIpaSymbol — IPA 記号から角括弧 `[...]` やスラッシュ `/.../ ` を除去して比較用文字列に正規化する。
- * catalog confusionSet は "[ɾ]" 形式、targetPhoneme は "/l/" 形式で格納されている。
- * worker の detectedTopCandidate / expected IPA tokens は括弧なし形式。
- */
-const normalizeIpaSymbol = (symbol: string): string =>
-  symbol.replace(/^\[/, "").replace(/\]$/, "").replace(/^\//, "").replace(/\/$/, "").trim();
-
-/**
- * PHONEME_ALIASES — 音素エイリアスマップ。
- * worker が出力する IPA 記号と catalog の IPA 記号が異なる場合の対応。
- * 例: ɹ（英語 /r/ のそり舌接近音）→ ɾ（弾き音: catalog confusionSet の表記）
- * 例: r → ɾ（ラテン文字 r を弾き音に正規化）
- * DD-293: このマップはドメイン外の IPA 正規化知識であり usecase 層に置く。
- */
-const PHONEME_ALIASES: Readonly<Record<string, string>> = {
-  ɹ: "ɾ", // そり舌接近音 → 弾き音（catalog 表記）
-  r: "ɾ", // ラテン文字 r → 弾き音
-};
-
-/**
- * canonicalizePhoneme — 音素記号を canonical 形式に正規化する（括弧除去 + エイリアス解決）。
- */
-const canonicalizePhoneme = (symbol: string): string => {
-  const stripped = normalizeIpaSymbol(symbol);
-  return PHONEME_ALIASES[stripped] ?? stripped;
-};
+// canonicalizePhoneme は domain/error-catalog/phoneme-canonicalization から import（ADR-020 D0）。
+// 旧: usecase 層ローカル定義（DD-293: 正規化知識を usecase に置く方針）→ domain 共有モジュールへ昇格。
 
 /**
  * resolveCatalogIdFromIpaAndPhenomenon — IPA 情報と phenomenon から catalog エントリを特定する (M-DG-3)。

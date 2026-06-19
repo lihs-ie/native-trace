@@ -10,7 +10,11 @@ import {
   type ImprovementMessageGeneratorInput,
   type FeedbackLayersOutput,
 } from "../../../usecase/port/improvement-message-generator";
-import { findCatalogEntryById, findCatalogEntry } from "../../../domain/error-catalog";
+import {
+  findCatalogEntryById,
+  findCatalogEntry,
+  findStepsForSubstitute,
+} from "../../../domain/error-catalog";
 
 /**
  * expected/detected から表示用テキストを取得する。
@@ -168,10 +172,12 @@ const generateFeedbackLayersFromInput = (
     }
   }
 
-  // ③ how: 修正層（カタログの articulation.stepsJa 要約）
+  // ③ how: 修正層（ADR-020 D2: findStepsForSubstitute で detectedTopCandidate ベース分岐）
   let howJa: string;
   if (fallbackEntry !== null && fallbackEntry.articulation !== null) {
-    const steps = fallbackEntry.articulation.stepsJa;
+    // findStepsForSubstitute: detectedTopCandidate=null → stepsJa（後方互換）、
+    // canonical 一致 → substituteVariants バリアント steps
+    const steps = findStepsForSubstitute(fallbackEntry, input.detectedTopCandidate ?? null);
     if (steps.length > 0) {
       howJa = steps.slice(0, 3).join("。") + (steps.length > 3 ? "。…" : "");
     } else {

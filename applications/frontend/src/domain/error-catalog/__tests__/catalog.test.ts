@@ -3,9 +3,13 @@ import {
   getAllCatalogEntries,
   findCatalogEntry,
   findCatalogEntryById,
+  findStepsForSubstitute,
   type ErrorCatalogEntry,
   type FunctionalLoadRank,
 } from "../index";
+import { canonicalizePhoneme } from "../phoneme-canonicalization";
+// Read-only import from parallel D5 track — only HIGH_PRIORITY_PHONEME_SET is used
+import { HIGH_PRIORITY_PHONEME_SET } from "../../../lib/articulation-data";
 
 const MINIMUM_CATALOG_ENTRY_COUNT = 17;
 
@@ -223,5 +227,152 @@ describe("japanese-l1-catalog", () => {
       const entries: ReadonlyArray<ErrorCatalogEntry> = getAllCatalogEntries();
       expect(entries).toBeDefined();
     });
+  });
+});
+
+/**
+ * findStepsForSubstitute unit tests — ADR-020 D6 (M-HOW-5)
+ * fixture 規則: BARE IPA 形式のみ（"ɾ"）。"[ɾ]" は使わない。
+ */
+describe("findStepsForSubstitute", () => {
+  // 最小限の fixture: substituteVariants を持つエントリ
+  const variantSteps = ["バリアントステップ1", "バリアントステップ2", "バリアントステップ3"];
+  const genericSteps = ["汎用ステップ1", "汎用ステップ2"];
+  const entryWithVariant: ErrorCatalogEntry = {
+    id: "test-substitution",
+    kind: "segmental",
+    targetPhoneme: "/l/",
+    contrast: "/l/-/r/",
+    confusionSet: ["[ɾ]"],
+    l1MechanismJa: "テスト用",
+    functionalLoad: "max",
+    intelligibilityImpact: "high",
+    recommendedTraining: ["articulation"],
+    evidenceStrength: "high",
+    evidenceIds: ["E-8"],
+    articulation: {
+      mannerJa: "テスト調音",
+      stepsJa: genericSteps,
+      substituteVariants: {
+        ɾ: variantSteps, // BARE IPA キー
+      },
+    },
+  };
+
+  const entryWithoutVariants: ErrorCatalogEntry = {
+    ...entryWithVariant,
+    id: "test-no-variants",
+    articulation: {
+      mannerJa: "テスト調音",
+      stepsJa: genericSteps,
+    },
+  };
+
+  const entryWithNullArticulation: ErrorCatalogEntry = {
+    ...entryWithVariant,
+    id: "test-null-articulation",
+    articulation: null,
+  };
+
+  it("bare ɾ detectedTopCandidate → variant steps (≠ stepsJa)", () => {
+    const result = findStepsForSubstitute(entryWithVariant, "ɾ");
+    expect(result).toEqual(variantSteps);
+    expect(result).not.toEqual(genericSteps);
+  });
+
+  it("null detectedTopCandidate → stepsJa (後方互換)", () => {
+    const result = findStepsForSubstitute(entryWithVariant, null);
+    expect(result).toEqual(genericSteps);
+  });
+
+  it("unmatched detectedTopCandidate ('p') → stepsJa", () => {
+    const result = findStepsForSubstitute(entryWithVariant, "p");
+    expect(result).toEqual(genericSteps);
+  });
+
+  it("entry without substituteVariants + ɾ → stepsJa", () => {
+    const result = findStepsForSubstitute(entryWithoutVariants, "ɾ");
+    expect(result).toEqual(genericSteps);
+  });
+
+  it("entry with null articulation + ɾ → empty array", () => {
+    const result = findStepsForSubstitute(entryWithNullArticulation, "ɾ");
+    expect(result).toEqual([]);
+  });
+
+  it("ɹ alias is resolved to ɾ → variant steps hit", () => {
+    // ɹ は PHONEME_ALIASES で ɾ に正規化される
+    const result = findStepsForSubstitute(entryWithVariant, "ɹ");
+    expect(result).toEqual(variantSteps);
+  });
+
+  it("r alias is resolved to ɾ → variant steps hit", () => {
+    // ラテン文字 r も ɾ に正規化される
+    const result = findStepsForSubstitute(entryWithVariant, "r");
+    expect(result).toEqual(variantSteps);
+  });
+});
+
+/**
+ * catalog coverage tests — ADR-020 D6 (M-HOW-11a)
+ * HIGH_PRIORITY_PHONEME_SET の各音素に対応する catalog エントリが存在することを assert。
+ *
+ * "カバー" の定義: targetPhoneme に完全一致、または contrast 文字列に含まれる。
+ * /ʌ/ は ae-a-substitution の contrast "/æ/-/ʌ/" に含まれ、
+ * /ɪ/ は iː-ɪ-substitution の contrast "/iː/-/ɪ/" に含まれる（targetPhoneme 単独エントリなし）。
+ * 主目的: /f/ のように catalog に一切存在しない音素の write-time 検出（D3 で追加済み）。
+ */
+describe("catalog coverage (HIGH_PRIORITY_PHONEME_SET)", () => {
+  /** phoneme がカタログのいずれかのエントリでカバーされているか判定する */
+  const isCoveredByCatalog = (
+    entries: ReadonlyArray<ErrorCatalogEntry>,
+    phoneme: string,
+  ): boolean =>
+    entries.some(
+      (entry) =>
+        entry.targetPhoneme === phoneme ||
+        (entry.contrast !== null && entry.contrast.includes(phoneme)),
+    );
+
+  it("HIGH_PRIORITY_PHONEME_SET の全音素がカタログ内のいずれかのエントリでカバーされていること", () => {
+    const entries = getAllCatalogEntries();
+    for (const phoneme of HIGH_PRIORITY_PHONEME_SET) {
+      const covered = isCoveredByCatalog(entries, phoneme);
+      expect(covered, `catalog missing coverage for phoneme="${phoneme}"`).toBe(true);
+    }
+  });
+
+  it("/f/ に対応する targetPhoneme エントリが存在すること（D3 f-h-substitution 追加確認）", () => {
+    const entries = getAllCatalogEntries();
+    const fEntry = entries.find((entry) => entry.targetPhoneme === "/f/");
+    expect(fEntry).toBeDefined();
+    expect(fEntry?.id).toBe("f-h-substitution");
+  });
+});
+
+/**
+ * substituteVariants 整合テスト — ADR-020 D6 (M-HOW-11b)
+ * 各エントリの substituteVariants キー（canonicalize 済み）が confusionSet（canonicalize 済み）の
+ * 部分集合であることを assert（孤児バリアント + 括弧揺れ防止）。
+ */
+describe("substituteVariants integrity", () => {
+  it("各エントリの substituteVariants キー（canonical）が confusionSet（canonical）の部分集合であること", () => {
+    const entries = getAllCatalogEntries();
+    for (const entry of entries) {
+      if (entry.articulation?.substituteVariants === undefined) continue;
+
+      const canonicalConfusionSet = new Set(
+        entry.confusionSet.map((symbol) => canonicalizePhoneme(symbol)),
+      );
+      const variantKeys = Object.keys(entry.articulation.substituteVariants);
+
+      for (const key of variantKeys) {
+        const canonicalKey = canonicalizePhoneme(key);
+        expect(
+          canonicalConfusionSet.has(canonicalKey),
+          `entry "${entry.id}": substituteVariants key "${key}" (canonical: "${canonicalKey}") is not in confusionSet (canonical: ${JSON.stringify([...canonicalConfusionSet])})`,
+        ).toBe(true);
+      }
+    }
   });
 });

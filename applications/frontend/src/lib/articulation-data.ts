@@ -19,6 +19,11 @@ export type ArticulationEntry = {
   steps: string[];
   /** お手本単語（TTS に渡す）  */
   exampleWord: string;
+  /**
+   * 調音断面図 SVG のパス（例: "/assets/sagittal/l.svg"）。
+   * M-HOW-8: 配置済み音素のみ設定。未配置は省略し ArticulationCard が placeholder にフォールバックする。
+   */
+  sagittalSvgPath?: string;
 };
 
 /** 高優先音素セット（IPA スラッシュ付き）— M-ARTIC-b 11音素 */
@@ -50,6 +55,7 @@ export const ARTICULATION_DATA: ArticulationEntry[] = [
       "right / run / very で練習する。語頭・語中・語末すべてで同じ舌の形を維持する。",
     ],
     exampleWord: "right",
+    sagittalSvgPath: "/assets/sagittal/r.svg",
   },
   {
     phoneme: "l",
@@ -63,6 +69,7 @@ export const ARTICULATION_DATA: ArticulationEntry[] = [
       "light → late → feel → call の順で練習。語末では母音を添えず舌先を当てたまま終える。",
     ],
     exampleWord: "light",
+    sagittalSvgPath: "/assets/sagittal/l.svg",
   },
   {
     phoneme: "æ",
@@ -76,6 +83,7 @@ export const ARTICULATION_DATA: ArticulationEntry[] = [
       "cat / bad / man で練習。舌が後退すると /ɑ/ になるので、前への意識を保つ。",
     ],
     exampleWord: "cat",
+    sagittalSvgPath: "/assets/sagittal/ae.svg",
   },
   {
     phoneme: "ʌ",
@@ -89,6 +97,7 @@ export const ARTICULATION_DATA: ArticulationEntry[] = [
       "cup / but / love で練習。弱形（schwa /ə/）より明るく強い音。",
     ],
     exampleWord: "cup",
+    sagittalSvgPath: "/assets/sagittal/a.svg",
   },
   {
     phoneme: "iː",
@@ -102,6 +111,7 @@ export const ARTICULATION_DATA: ArticulationEntry[] = [
       "see / beat / feel で練習。/ɪ/ と比べて唇の引きと舌の高さで差をつける。",
     ],
     exampleWord: "see",
+    sagittalSvgPath: "/assets/sagittal/i.svg",
   },
   {
     phoneme: "ɪ",
@@ -115,6 +125,7 @@ export const ARTICULATION_DATA: ArticulationEntry[] = [
       "bit / ship / give で練習。/iː/ と /ɪ/ を交互に比較して聞き取る。",
     ],
     exampleWord: "bit",
+    sagittalSvgPath: "/assets/sagittal/i.svg",
   },
   {
     phoneme: "θ",
@@ -128,6 +139,7 @@ export const ARTICULATION_DATA: ArticulationEntry[] = [
       "think / three / bath で練習。/s/ や /f/ と混同しないよう、舌先の位置を鏡で確認する。",
     ],
     exampleWord: "think",
+    sagittalSvgPath: "/assets/sagittal/theta.svg",
   },
   {
     phoneme: "ð",
@@ -141,6 +153,7 @@ export const ARTICULATION_DATA: ArticulationEntry[] = [
       "the / this / breathe で練習。機能語（the, this, that）は速い会話で弱化することが多い。",
     ],
     exampleWord: "this",
+    sagittalSvgPath: "/assets/sagittal/eth.svg",
   },
   {
     phoneme: "v",
@@ -154,6 +167,7 @@ export const ARTICULATION_DATA: ArticulationEntry[] = [
       "very / voice / have で練習。語末 /v/ は特に日本語話者が /b/ に置き換えやすい。",
     ],
     exampleWord: "very",
+    sagittalSvgPath: "/assets/sagittal/v.svg",
   },
   {
     phoneme: "f",
@@ -167,6 +181,7 @@ export const ARTICULATION_DATA: ArticulationEntry[] = [
       "feel / off / life で練習。/h/ との混同に注意 — /f/ は歯と唇の摩擦が必要。",
     ],
     exampleWord: "feel",
+    sagittalSvgPath: "/assets/sagittal/f.svg",
   },
   {
     phoneme: "ə",
@@ -180,5 +195,6 @@ export const ARTICULATION_DATA: ArticulationEntry[] = [
       "about（a-）/ problem（-em）/ teacher（-er）の弱音節で練習。",
     ],
     exampleWord: "about",
+    sagittalSvgPath: "/assets/sagittal/schwa.svg",
   },
 ];
