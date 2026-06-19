@@ -444,3 +444,267 @@ describe("ArticulationCard Plan B 目標調音オーバーレイ (ADR-019)", () 
     expect(container.querySelector(".ema-target")).not.toBeInTheDocument();
   });
 });
+
+// ---- ADR-019 D6: 天井偏差 step + badge + disclaimer 句 + ミニマルペアボタン ----
+
+/**
+ * buildEntryWithMinimalPair — minimalPair を持つ /l/ エントリ
+ */
+const buildEntryWithMinimalPair = (): import("@/lib/articulation-data").ArticulationEntry => ({
+  ...buildEntryWithTarget(),
+  minimalPair: { targetWord: "light", contrastWord: "right", contrastIpaDisplay: "/r/" },
+});
+
+describe("ADR-019 D6: 天井偏差 step (M-AAI-19/20)", () => {
+  it("M-AAI-19: elig>=0.55 + targetArticulation + 明確な偏差 => 天井 step が artic-steps 内に追記される（後退・下降）", () => {
+    // tongueTipX=0.6 → estTipXpercent=80%, tongueTipY=0.5 → estTipYpercent=25%
+    // targetArticulation: {x:55, y:41}
+    // deltaX = 80 - 55 = 25 > 2 → 後退
+    // deltaY = 25 - 41 = -16 < -2 → 上昇
+    // (note: tongueTipY=-0.5 → estTipYpercent = (-(-0.5)*0.5+0.5)*100 = (0.25+0.5)*100 = 75%
+    //  deltaY = 75 - 41 = 34 > 2 → 下降)
+    // Using tongueTipX=0.6 (estTipXpercent=80), tongueTipY=-0.5 (estTipYpercent=75):
+    //  deltaX = 80-55=25 > 2 → 後退; deltaY = 75-41=34 > 2 → 下降
+    const estimate: import("@/lib/api-types").ArticulatoryEstimateDto = {
+      tongueTipX: 0.6,
+      tongueTipY: -0.5,
+      tongueDorsumX: 0.0,
+      tongueDorsumY: 0.0,
+      lipApertureX: 0.0,
+      lipApertureY: 0.0,
+      displayEligibility: 0.7,
+    };
+    const { container } = render(
+      <ArticulationCard
+        entry={buildEntryWithTarget()}
+        finding={buildFinding()}
+        articulatoryEstimate={estimate}
+      />,
+    );
+    const steps = container.querySelector("ol.artic-steps");
+    expect(steps).toBeInTheDocument();
+    const liItems = steps?.querySelectorAll("li") ?? [];
+    const ceilingLi = Array.from(liItems).find((li) => li.textContent?.includes("天井"));
+    expect(ceilingLi).toBeDefined();
+    expect(ceilingLi?.textContent).toContain("天井");
+    expect(ceilingLi?.textContent).toContain("後退");
+    expect(ceilingLi?.textContent).toContain("下降");
+    expect(ceilingLi?.textContent).toContain("しています");
+  });
+
+  it("M-AAI-20 (i): articulatoryEstimate=null => 天井 step が存在しない、floor steps が描画される", () => {
+    const { container } = render(
+      <ArticulationCard
+        entry={buildEntryWithTarget()}
+        finding={buildFinding()}
+        articulatoryEstimate={null}
+      />,
+    );
+    const steps = container.querySelector("ol.artic-steps");
+    expect(steps).toBeInTheDocument();
+    const liItems = steps?.querySelectorAll("li") ?? [];
+    // 天井 step が存在しない
+    const ceilingLi = Array.from(liItems).find((li) => li.textContent?.includes("天井"));
+    expect(ceilingLi).toBeUndefined();
+    // floor steps は描画されている
+    expect(liItems.length).toBe(buildEntryWithTarget().steps.length);
+  });
+
+  it("M-AAI-20 (ii): displayEligibility=0.5 (<0.55) => 天井 step が存在しない", () => {
+    const { container } = render(
+      <ArticulationCard
+        entry={buildEntryWithTarget()}
+        finding={buildFinding()}
+        articulatoryEstimate={buildArticulatoryEstimate(0.5)}
+      />,
+    );
+    const steps = container.querySelector("ol.artic-steps");
+    const liItems = steps?.querySelectorAll("li") ?? [];
+    const ceilingLi = Array.from(liItems).find((li) => li.textContent?.includes("天井"));
+    expect(ceilingLi).toBeUndefined();
+  });
+
+  it("M-AAI-20 (iii): entry.targetArticulation=undefined => 天井 step が存在しない", () => {
+    const { container } = render(
+      <ArticulationCard
+        entry={buildEntryWithSvgPath()} // targetArticulation なし
+        finding={buildFinding()}
+        articulatoryEstimate={buildArticulatoryEstimate(0.7)}
+      />,
+    );
+    const steps = container.querySelector("ol.artic-steps");
+    const liItems = steps?.querySelectorAll("li") ?? [];
+    const ceilingLi = Array.from(liItems).find((li) => li.textContent?.includes("天井"));
+    expect(ceilingLi).toBeUndefined();
+    // floor steps は描画されている
+    expect(liItems.length).toBe(buildEntryWithSvgPath().steps.length);
+  });
+
+  it("M-AAI-19 ほぼ目標どおり: ε以内の差 => 「ほぼ目標どおりです」が描画される", () => {
+    // tongueTipX で estTipXpercent ≈ targetArticulation.x になるように設定
+    // targetArticulation: {x:55, y:41}
+    // estTipXpercent = (0.1*0.5+0.5)*100 = 55% → deltaX=0 (ε以内)
+    // estTipYpercent = (-(-0.18)*0.5+0.5)*100 = (0.09+0.5)*100 = 59% → deltaY = 59-41=18 > 2 → 下降
+    // Needed: both axes ε-within. tongueTipX=0.1 → 55%, tongueTipY=-(-0.18)=0.18 → estTipYpercent=(−0.18*0.5+0.5)*100=41%
+    // tongueTipY must make estTipYpercent ≈ 41. estTipYpercent = (-tipY*0.5+0.5)*100 = 41 → -tipY*0.5 = -0.09 → tipY = 0.18
+    const estimate: import("@/lib/api-types").ArticulatoryEstimateDto = {
+      tongueTipX: 0.1, // estTipXpercent = 55
+      tongueTipY: 0.18, // estTipYpercent = (-0.18*0.5+0.5)*100 = 41
+      tongueDorsumX: 0.0,
+      tongueDorsumY: 0.0,
+      lipApertureX: 0.0,
+      lipApertureY: 0.0,
+      displayEligibility: 0.7,
+    };
+    const { container } = render(
+      <ArticulationCard
+        entry={buildEntryWithTarget()}
+        finding={buildFinding()}
+        articulatoryEstimate={estimate}
+      />,
+    );
+    const steps = container.querySelector("ol.artic-steps");
+    const liItems = steps?.querySelectorAll("li") ?? [];
+    const ceilingLi = Array.from(liItems).find((li) => li.textContent?.includes("天井"));
+    expect(ceilingLi).toBeDefined();
+    expect(ceilingLi?.textContent).toContain("ほぼ目標どおりです");
+  });
+});
+
+describe("ADR-019 D6: ADR ステータスバッジ (M-AAI-21a)", () => {
+  it("adr-badge--proposed クラスを持つ要素が存在し「ADR-019」と「Proposed」を含む", () => {
+    const { container } = render(
+      <ArticulationCard entry={buildEntry()} finding={buildFinding()} />,
+    );
+    const badge = container.querySelector(".adr-badge--proposed");
+    expect(badge).toBeInTheDocument();
+    expect(badge?.textContent).toContain("ADR-019");
+    expect(badge?.textContent).toContain("Proposed");
+  });
+});
+
+describe("ADR-019 D6: disclaimer 句補完 (M-AAI-21b)", () => {
+  it("showEmaOverlay=true 相当 => .disclaimer に「生 mm・舌体・下顎は出さず」句を含む", () => {
+    const { container } = render(
+      <ArticulationCard
+        entry={buildEntryWithSvgPath()}
+        finding={buildFinding()}
+        articulatoryEstimate={buildArticulatoryEstimate(0.7)}
+      />,
+    );
+    const disclaimer = container.querySelector(".disclaimer");
+    expect(disclaimer).toBeInTheDocument();
+    expect(disclaimer?.textContent).toContain("生 mm・舌体・下顎は出さず");
+    expect(disclaimer?.textContent).toContain("aai 無効時は床のみ");
+  });
+
+  it("showEmaOverlay=true 相当 => 既存文「あなたの舌位置を断定するものではありません。」が残っている", () => {
+    const { container } = render(
+      <ArticulationCard
+        entry={buildEntryWithSvgPath()}
+        finding={buildFinding()}
+        articulatoryEstimate={buildArticulatoryEstimate(0.7)}
+      />,
+    );
+    const disclaimer = container.querySelector(".disclaimer");
+    expect(disclaimer?.textContent).toContain("あなたの舌位置を断定するものではありません");
+  });
+});
+
+describe("ADR-019 D6: ミニマルペアボタン (M-AAI-21c)", () => {
+  it("/l/ 音素 (minimalPair あり) => .artic-audio 内に「light · ミニマルペア」ボタンが存在する", () => {
+    const { container } = render(
+      <ArticulationCard entry={buildEntryWithMinimalPair()} finding={buildFinding()} />,
+    );
+    const articAudio = container.querySelector(".artic-audio");
+    expect(articAudio).toBeInTheDocument();
+    const buttons = articAudio?.querySelectorAll("button") ?? [];
+    const minimalPairButton = Array.from(buttons).find((btn) =>
+      btn.textContent?.includes("ミニマルペア"),
+    );
+    expect(minimalPairButton).toBeDefined();
+    expect(minimalPairButton?.textContent).toContain("light");
+    expect(minimalPairButton?.textContent).toContain("ミニマルペア");
+  });
+
+  it("/l/ ミニマルペアボタンは .artic-audio 内でお手本ボタンと同居する", () => {
+    const { container } = render(
+      <ArticulationCard entry={buildEntryWithMinimalPair()} finding={buildFinding()} />,
+    );
+    const articAudio = container.querySelector(".artic-audio");
+    expect(articAudio).toBeInTheDocument();
+    // お手本ボタン
+    const ttsButton = Array.from(articAudio?.querySelectorAll("button") ?? []).find((btn) =>
+      btn.textContent?.includes("お手本"),
+    );
+    expect(ttsButton).toBeDefined();
+    // ミニマルペアボタン
+    const minimalPairButton = Array.from(articAudio?.querySelectorAll("button") ?? []).find((btn) =>
+      btn.textContent?.includes("ミニマルペア"),
+    );
+    expect(minimalPairButton).toBeDefined();
+  });
+
+  it("minimalPair フィールド未設定の entry => ミニマルペアボタンが存在しない", () => {
+    // buildEntry() には minimalPair がない
+    const { container } = render(
+      <ArticulationCard entry={buildEntry()} finding={buildFinding()} />,
+    );
+    const articAudio = container.querySelector(".artic-audio");
+    const buttons = articAudio?.querySelectorAll("button") ?? [];
+    const minimalPairButton = Array.from(buttons).find((btn) =>
+      btn.textContent?.includes("ミニマルペア"),
+    );
+    expect(minimalPairButton).toBeUndefined();
+  });
+});
+
+describe("ADR-019 D6: scoreImpact 不変アサート — presentation-only (M-AAI-22 frontend)", () => {
+  it("M-AAI-22/ADR-004: 天井 step の文言は finding.scoreImpact に依存しない（同一 estimate+target で同じ方向ラベル）", () => {
+    // M-AAI-22/ADR-004: presentation-only — 天井 step 導出は articulatoryEstimate + targetArticulation のみを参照。
+    // scoreImpact の値が変わっても天井 step のテキストは変わらない。
+    const estimate: import("@/lib/api-types").ArticulatoryEstimateDto = {
+      tongueTipX: 0.6,
+      tongueTipY: -0.5,
+      tongueDorsumX: 0.0,
+      tongueDorsumY: 0.0,
+      lipApertureX: 0.0,
+      lipApertureY: 0.0,
+      displayEligibility: 0.7,
+    };
+
+    const { container: containerMajor } = render(
+      <ArticulationCard
+        entry={buildEntryWithTarget()}
+        finding={buildFinding({ scoreImpact: -20 })}
+        articulatoryEstimate={estimate}
+      />,
+    );
+    const { container: containerMinor } = render(
+      <ArticulationCard
+        entry={buildEntryWithTarget()}
+        finding={buildFinding({ scoreImpact: -3 })}
+        articulatoryEstimate={estimate}
+      />,
+    );
+
+    const getCeilingText = (container: HTMLElement): string | undefined => {
+      const steps = container.querySelector("ol.artic-steps");
+      const liItems = steps?.querySelectorAll("li") ?? [];
+      return (
+        Array.from(liItems).find((li) => li.textContent?.includes("天井"))?.textContent ?? undefined
+      );
+    };
+
+    const textMajor = getCeilingText(containerMajor);
+    const textMinor = getCeilingText(containerMinor);
+
+    expect(textMajor).toBeDefined();
+    expect(textMinor).toBeDefined();
+    // 同一 estimate + target → 同じ方向ラベル
+    expect(textMajor).toBe(textMinor);
+    // どちらも「後退・下降しています」を含む（scoreImpact に依存しない）
+    expect(textMajor).toContain("後退");
+    expect(textMajor).toContain("下降");
+  });
+});

@@ -25,12 +25,13 @@ export type ArticulationEntry = {
    */
   sagittalSvgPath?: string;
   /**
-   * 目標調音の目安位置（Plan B — ADR-019 S-AAI-5(b) 校正まで使う静的 floor ガイド）。
+   * 目標調音の目安位置 — ADR-019 D6 正式契約 floor フィールド。
    *
    * x, y は sagittal-wrap ボックス内のパーセント座標（0–100）。
    * SVG は右向き断面図（前歯・唇が左、咽頭が右、鼻腔が上）で、
    * 各 SVG の解剖学的テキストラベルやアーティキュレータ経路座標から導出した目安値。
-   * ML 推定ではなく決定論的な静的データ。S-AAI-5(b) キャリブレーション時に精緻化する。
+   * 10進数のパーセント座標で、決定論的な静的 floor データ。ML 推定ではない。
+   * S-AAI-5(b) キャリブレーション（EMA→矢状断面 SVG 写像校正）で精緻化する。
    */
   targetArticulation?: {
     /** sagittal-wrap 左端からのパーセント（前→後 方向） */
@@ -40,6 +41,12 @@ export type ArticulationEntry = {
     /** 目標調音の主アーティキュレータ説明（日本語） */
     label: string;
   };
+  /**
+   * ミニマルペア（弁別対）— ADR-019 D6 chrome（presentation-only floor data）。
+   * japanese-l1-catalog.json の confusionSet 由来（drill-content.ts と同源）。新規スコアリング経路なし。
+   * 対象語→対比語を順次 TTS 再生する弁別ボタンに使う。対立が機能しない音素は省略。
+   */
+  minimalPair?: { targetWord: string; contrastWord: string; contrastIpaDisplay: string };
 };
 
 /** 高優先音素セット（IPA スラッシュ付き）— M-ARTIC-b 11音素 */
@@ -74,6 +81,8 @@ export const ARTICULATION_DATA: ArticulationEntry[] = [
     sagittalSvgPath: "/assets/sagittal/r.svg",
     // SVG 舌体 bunched 頂点 ~(200,160)/320 = (62%,50%)。接触なし表示位置より中後方。
     targetArticulation: { x: 62, y: 50, label: "舌中央を盛り上げ・舌先は接触させない" },
+    // r-substitution: minimalPairs[0] から verbatim (drill-content.ts l.99)
+    minimalPair: { targetWord: "right", contrastWord: "light", contrastIpaDisplay: "/l/" },
   },
   {
     phoneme: "l",
@@ -90,6 +99,8 @@ export const ARTICULATION_DATA: ArticulationEntry[] = [
     sagittalSvgPath: "/assets/sagittal/l.svg",
     // SVG 接触円 (175,132)/320 = (54.7%,41.3%)。接触ラベル "接触" 付近。
     targetArticulation: { x: 55, y: 41, label: "舌先を歯茎に接触" },
+    // l-r-substitution: design HTML:105 "light" に対応するペア (drill-content.ts l.53)
+    minimalPair: { targetWord: "light", contrastWord: "right", contrastIpaDisplay: "/r/" },
   },
   {
     phoneme: "æ",
@@ -106,6 +117,8 @@ export const ARTICULATION_DATA: ArticulationEntry[] = [
     sagittalSvgPath: "/assets/sagittal/ae.svg",
     // SVG 舌前部低位 ~(143-158,150-154)/320 = (約42%,48%)。ラベル "舌前部・低位"。
     targetArticulation: { x: 42, y: 49, label: "舌前部を低く・口を大きく" },
+    // ae-a-substitution: minimalPairs[0] から verbatim (drill-content.ts l.171)
+    minimalPair: { targetWord: "cat", contrastWord: "cut", contrastIpaDisplay: "/ʌ/" },
   },
   {
     phoneme: "ʌ",
@@ -122,6 +135,7 @@ export const ARTICULATION_DATA: ArticulationEntry[] = [
     sagittalSvgPath: "/assets/sagittal/a.svg",
     // SVG 舌中央～後部低位 ~(185,162)/320 = (57.8%,50.6%)。ラベル "舌中央～後部・低位"。
     targetArticulation: { x: 58, y: 52, label: "舌を低く・やや後ろへ" },
+    // minimalPair 省略（/ɪ/・/ʌ/・/ð/・/f/・/ə/ は対立が機能しないかコントラスト側）
   },
   {
     phoneme: "iː",
@@ -138,6 +152,8 @@ export const ARTICULATION_DATA: ArticulationEntry[] = [
     sagittalSvgPath: "/assets/sagittal/i.svg",
     // SVG 舌前部高位 ~(182,148)/320 = (56.9%,46.3%)。ラベル "舌前部・高位（口蓋に近い）"。
     targetArticulation: { x: 55, y: 45, label: "舌前部を高く（口蓋に近づける）" },
+    // iː-ɪ-substitution: minimalPairs[0] から verbatim (drill-content.ts l.201)
+    minimalPair: { targetWord: "seat", contrastWord: "sit", contrastIpaDisplay: "/ɪ/" },
   },
   {
     phoneme: "ɪ",
@@ -154,6 +170,7 @@ export const ARTICULATION_DATA: ArticulationEntry[] = [
     sagittalSvgPath: "/assets/sagittal/i.svg",
     // /iː/ より僅かに低く・後方（/iː/ と同 SVG 共用、位置を微差で分離）。
     targetArticulation: { x: 56, y: 47, label: "舌前部をやや高く（/iː/ より緩める）" },
+    // minimalPair 省略（/ɪ/ はコントラスト側であり対立ボタンを表示しない）
   },
   {
     phoneme: "θ",
@@ -170,6 +187,8 @@ export const ARTICULATION_DATA: ArticulationEntry[] = [
     sagittalSvgPath: "/assets/sagittal/theta.svg",
     // SVG 舌先接触円 (147,140)/320 = (45.9%,43.8%)。歯間位置。
     targetArticulation: { x: 46, y: 44, label: "舌先を上下の歯の間に" },
+    // theta-s-substitution: minimalPairs[0] から verbatim (drill-content.ts l.140)
+    minimalPair: { targetWord: "think", contrastWord: "sink", contrastIpaDisplay: "/s/" },
   },
   {
     phoneme: "ð",
@@ -186,6 +205,7 @@ export const ARTICULATION_DATA: ArticulationEntry[] = [
     sagittalSvgPath: "/assets/sagittal/eth.svg",
     // /θ/ と同じ歯間接触点 (147,140)/320 = (45.9%,43.8%)。有声。
     targetArticulation: { x: 46, y: 44, label: "舌先を上下の歯の間に（有声）" },
+    // minimalPair 省略（/ð/ は対立が機能しない音素）
   },
   {
     phoneme: "v",
@@ -202,6 +222,8 @@ export const ARTICULATION_DATA: ArticulationEntry[] = [
     sagittalSvgPath: "/assets/sagittal/v.svg",
     // SVG 唇歯接触円 (156,148)/320 = (48.75%,46.25%)。有声。
     targetArticulation: { x: 49, y: 46, label: "下唇を上の前歯に（有声）" },
+    // v-b-substitution: minimalPairs[0] から verbatim (drill-content.ts l.109)
+    minimalPair: { targetWord: "van", contrastWord: "ban", contrastIpaDisplay: "/b/" },
   },
   {
     phoneme: "f",
@@ -218,6 +240,7 @@ export const ARTICULATION_DATA: ArticulationEntry[] = [
     sagittalSvgPath: "/assets/sagittal/f.svg",
     // /v/ と同じ唇歯接触円 (156,148)/320 = (48.75%,46.25%)。無声。
     targetArticulation: { x: 49, y: 46, label: "下唇を上の前歯に" },
+    // minimalPair 省略（/f/ は対立が機能しない音素）
   },
   {
     phoneme: "ə",
@@ -234,5 +257,6 @@ export const ARTICULATION_DATA: ArticulationEntry[] = [
     sagittalSvgPath: "/assets/sagittal/schwa.svg",
     // SVG 中央・中段ラベル線 終点 ~(188,175)/320 = (58.75%,54.7%)。中性舌位。
     targetArticulation: { x: 55, y: 50, label: "舌は中央・脱力（中性位）" },
+    // minimalPair 省略（/ə/ は機能的ミニマルペア対立なし、catalog contrast:null）
   },
 ];

@@ -54,6 +54,12 @@ const normalizedCoordToPercent = (coordinate: number): string =>
 /** D4 ガードレール: displayEligibility ≥ 0.55 かつ非 null のとき EMA オーバーレイを表示 */
 const DISPLAY_ELIGIBILITY_THRESHOLD = 0.55;
 
+/**
+ * M-AAI-19 (ADR-019 D6): 天井偏差方向判定のε閾値（パーセントポイント）。
+ * estTip と targetArticulation の差が ε 以下のとき当該軸のラベルを省略する。
+ */
+const DEVIATION_EPSILON_PERCENT = 2.0;
+
 export const ArticulationCard = ({
   entry,
   finding,
@@ -114,6 +120,43 @@ export const ArticulationCard = ({
       audioRef.current.pause();
       audioRef.current = null;
       setTtsPlaying(false);
+    }
+  };
+
+  /**
+   * M-AAI-21c (ADR-019 D6): ミニマルペアの A/B 順次再生。
+   * targetWord を TTS 再生し、ended 後に contrastWord を再生する。
+   * LOCAL Audio オブジェクトを使い、お手本 audioRef の toggle state を汚染しない。
+   * エラーは no-op（TTS 不在時はサイレントに失敗）。
+   */
+  const handlePlayMinimalPair = async ({
+    targetWord,
+    contrastWord,
+  }: {
+    targetWord: string;
+    contrastWord: string;
+  }) => {
+    const playWord = async (word: string): Promise<void> => {
+      const response = await fetch("/api/v1/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: word, speed: ttsSpeed }),
+      });
+      if (!response.ok) return;
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
+      await new Promise<void>((resolve) => {
+        audio.onended = () => resolve();
+        void audio.play();
+      });
+    };
+
+    try {
+      await playWord(targetWord);
+      await playWord(contrastWord);
+    } catch {
+      // TTS unavailable — no-op
     }
   };
 
@@ -340,6 +383,8 @@ export const ArticulationCard = ({
             {entry.ipaDisplay}
           </span>
           <b style={{ fontSize: "var(--text-sm)" }}>{entry.nameJa}</b>
+          {/* M-AAI-21a (ADR-019 D6): ADR ステータスバッジ — design HTML:79 準拠。Proposed 状態を UI 上で開示。 */}
+          <span className="adr-badge adr-badge--proposed">ADR-019 · Proposed</span>
           <span className="kbd-label" style={{ marginLeft: "auto" }}>
             {entry.nameEn}
           </span>
@@ -378,6 +423,32 @@ export const ArticulationCard = ({
           {entry.steps.map((step, index) => (
             <li key={index}>{step}</li>
           ))}
+          {/* M-AAI-19/20 (ADR-019 D6): 天井偏差 step — showEmaOverlay かつ targetArticulation 設定済みのとき追記。
+              偏差方向は articulatoryEstimate と targetArticulation のみから決定論的に導出（worker 非依存）。
+              M-AAI-22/ADR-004: presentation-only — finding.scoreImpact / severity / ScoreSet は一切参照しない。 */}
+          {(() => {
+            if (!showEmaOverlay || !entry.targetArticulation || !articulatoryEstimate) return null;
+            const estTipXpercent = (articulatoryEstimate.tongueTipX * 0.5 + 0.5) * 100;
+            const estTipYpercent = (-articulatoryEstimate.tongueTipY * 0.5 + 0.5) * 100;
+            const deltaX = estTipXpercent - entry.targetArticulation.x;
+            const deltaY = estTipYpercent - entry.targetArticulation.y;
+            const dirs: string[] = [];
+            if (deltaX > DEVIATION_EPSILON_PERCENT) dirs.push("後退");
+            else if (deltaX < -DEVIATION_EPSILON_PERCENT) dirs.push("前進");
+            if (deltaY > DEVIATION_EPSILON_PERCENT) dirs.push("下降");
+            else if (deltaY < -DEVIATION_EPSILON_PERCENT) dirs.push("上昇");
+            const deviationSentence =
+              dirs.length > 0
+                ? `舌先が目標より${dirs.join("・")}しています。`
+                : "舌先はほぼ目標どおりです。";
+            return (
+              <li key="ceiling">
+                <span>
+                  <b>天井</b>: 破線 = 目標、塗り = あなたの推定舌先。{deviationSentence}
+                </span>
+              </li>
+            );
+          })()}
         </ol>
 
         {/* M-AAI-14 (ADR-019 D4): L2 disclaimer — AAI 有効時のみ表示。Kocjancic 2025 音響併置。
@@ -387,9 +458,13 @@ export const ArticulationCard = ({
         {showEmaOverlay ? (
           <div className="disclaimer" style={{ marginTop: "var(--sp-3)" }}>
             <span className="dc-ico">~</span>
+            {/* M-AAI-21b (ADR-019 D6): design HTML:101 の落ちていた句を追記。
+                既存文「あなたの舌位置を断定するものではありません。」を残し、その直後に連結。
+                D3-b/D3-c の wire 非露出契約（生 mm・下顎・舌体を出さない）と D2 degrade を UI で明示。 */}
             <span>
               推定です（native 話者データ由来。/r/→[ɾ]
-              など訛りでは外れることがあります）。あなたの舌位置を断定するものではありません。
+              など訛りでは外れることがあります）。あなたの舌位置を断定するものではありません。生
+              mm・舌体・下顎は出さず、発話内 z 正規化座標のみ。aai 無効時は床のみ。
             </span>
           </div>
         ) : showSagittal ? (
@@ -412,6 +487,19 @@ export const ArticulationCard = ({
             {entry.exampleWord}
           </span>
         </button>
+
+        {/* M-AAI-21c (ADR-019 D6): ミニマルペア A/B 順次再生ボタン — design HTML:105 準拠。
+            LOCAL Audio オブジェクトを使い、お手本 audioRef の toggle state を汚染しない。
+            entry.minimalPair が未設定の音素（/ɪ/・/ʌ/・/ð/・/f/・/ə/）はボタン非表示。 */}
+        {entry.minimalPair && (
+          <button
+            className="btn btn--sm btn--secondary"
+            type="button"
+            onClick={() => void handlePlayMinimalPair(entry.minimalPair!)}
+          >
+            ▸ {entry.minimalPair.targetWord} · ミニマルペア
+          </button>
+        )}
 
         {/* 速度切替 */}
         <div className="speed" style={{ display: "inline-flex", gap: "4px" }}>
