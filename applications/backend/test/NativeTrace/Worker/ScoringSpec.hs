@@ -1,5 +1,7 @@
 module NativeTrace.Worker.ScoringSpec (spec) where
 
+import Data.Aeson (encode)
+import Data.ByteString.Lazy.Char8 qualified as LBS8
 import Data.Map.Strict qualified as Map
 import Data.Maybe (isJust, isNothing)
 import Data.Text qualified as Text
@@ -41,6 +43,7 @@ import NativeTrace.Worker.Types (
   GopDeltaResponse (..),
   TextRange (..),
  )
+import NativeTrace.Worker.Types qualified as Types
 import Servant (runHandler)
 import System.Environment (unsetEnv)
 import Test.Hspec
@@ -1010,6 +1013,281 @@ spec = do
       let result = deriveAcousticEvidence "iː" singleVowel "F" [singleVowel]
       isJust (acousticTongueHeight result) `shouldBe` True
 
+  -- ADR-024 M-ADVL-11 / M-ADVL-14: presentation-only scalar fields
+  describe "deriveAcousticEvidence ADR-024 scalars (M-ADVL-11)" $ do
+    -- spectralCentroidHz: input centroid は透過される
+    it "acousticSpectralCentroidHz transits the input centroid value for /s/" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "s",
+                acousticStartMs = 0,
+                acousticEndMs = 80,
+                acousticF1Hz = Nothing,
+                acousticF2Hz = Nothing,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Just 4800.0,
+                acousticDurationMs = 80
+              }
+      let result = deriveAcousticEvidence "s" measured "M" [measured]
+      Types.acousticSpectralCentroidHz result `shouldBe` Just 4800.0
+
+    it "acousticSpectralCentroidHz is Nothing when input centroid is Nothing" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "iː",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Just 270,
+                acousticF2Hz = Just 2290,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "iː" measured "M" [measured]
+      Types.acousticSpectralCentroidHz result `shouldBe` Nothing
+
+    -- tenseLengthRatio: tense 音素 "iː" + lax 母音あり → measuredDurMs / mean(lax durations)
+    it "acousticTenseLengthRatio for tense \"iː\" equals measuredDurMs / mean(lax durations)" $ do
+      -- "iː" 200ms, lax: "ɪ" 100ms + "æ" 100ms → mean=100, ratio=2.0
+      let tenseMeasured =
+            PhonemeAcoustic
+              { acousticPhoneme = "iː",
+                acousticStartMs = 0,
+                acousticEndMs = 200,
+                acousticF1Hz = Just 270,
+                acousticF2Hz = Just 2290,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 200
+              }
+      let lax1 =
+            PhonemeAcoustic
+              { acousticPhoneme = "ɪ",
+                acousticStartMs = 200,
+                acousticEndMs = 300,
+                acousticF1Hz = Just 430,
+                acousticF2Hz = Just 2070,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let lax2 =
+            PhonemeAcoustic
+              { acousticPhoneme = "æ",
+                acousticStartMs = 300,
+                acousticEndMs = 400,
+                acousticF1Hz = Just 660,
+                acousticF2Hz = Just 1720,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "iː" tenseMeasured "M" [tenseMeasured, lax1, lax2]
+      acousticTenseLengthRatio result `shouldBe` Just 2.0
+
+    it "acousticTenseLengthRatio is Nothing for non-tense phoneme \"r\"" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "r",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Nothing,
+                acousticF2Hz = Nothing,
+                acousticF3Hz = Just 2200,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "r" measured "M" [measured]
+      acousticTenseLengthRatio result `shouldBe` Nothing
+
+    -- signedF1SdDeviation / signedF2SdDeviation: sex="M", single vowel uses fallback SD
+    -- iː M norm: F1=270, F2=2290. fallbackSd = norm*0.10.
+    -- F1=600: (600-270)/(270*0.10) = 330/27.0 ≈ 12.2222 (positive → measured above norm)
+    it "acousticSignedF1SdDeviation is positive when measured F1 > norm (above norm → positive)" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "iː",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Just 600,
+                acousticF2Hz = Just 2290,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "iː" measured "M" [measured]
+      case acousticSignedF1SdDeviation result of
+        Nothing -> expectationFailure "expected Just for vowel with M norm"
+        Just deviation -> do
+          deviation `shouldSatisfy` (> 0)
+          -- (600-270)/(270*0.10) = 330/27 = 12.2222...
+          abs (deviation - (330.0 / 27.0)) `shouldSatisfy` (< 1.0e-6)
+
+    -- F2=2000 < norm 2290: (2000-2290)/(2290*0.10) = -290/229 ≈ -1.2664 (negative → measured below norm)
+    it "acousticSignedF2SdDeviation is negative when measured F2 < norm (below norm → negative)" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "iː",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Just 270,
+                acousticF2Hz = Just 2000,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "iː" measured "M" [measured]
+      case acousticSignedF2SdDeviation result of
+        Nothing -> expectationFailure "expected Just for vowel with M norm"
+        Just deviation -> do
+          deviation `shouldSatisfy` (< 0)
+          -- (2000-2290)/(2290*0.10) = -290/229
+          abs (deviation - ((-290.0) / 229.0)) `shouldSatisfy` (< 1.0e-6)
+
+    it "acousticSignedF1SdDeviation is Nothing for non-vowel (consonant \"r\")" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "r",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Nothing,
+                acousticF2Hz = Nothing,
+                acousticF3Hz = Just 2200,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "r" measured "M" [measured]
+      acousticSignedF1SdDeviation result `shouldBe` Nothing
+
+    it "acousticSignedF2SdDeviation is Nothing for non-vowel (consonant \"r\")" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "r",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Nothing,
+                acousticF2Hz = Nothing,
+                acousticF3Hz = Just 2200,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "r" measured "M" [measured]
+      acousticSignedF2SdDeviation result `shouldBe` Nothing
+
+    -- signedF3SdDeviation: vowel with F3 norm. iː M norm F3=3010.
+    -- F3=3300: (3300-3010)/(3010*0.10) = 290/301 ≈ 0.96345 (positive)
+    it "acousticSignedF3SdDeviation is positive when measured F3 > norm and is a vowel with norm" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "iː",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Just 270,
+                acousticF2Hz = Just 2290,
+                acousticF3Hz = Just 3300,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "iː" measured "M" [measured]
+      case acousticSignedF3SdDeviation result of
+        Nothing -> expectationFailure "expected Just for vowel with F3 norm"
+        Just deviation -> do
+          deviation `shouldSatisfy` (> 0)
+          -- (3300-3010)/(3010*0.10) = 290/301
+          abs (deviation - (290.0 / 301.0)) `shouldSatisfy` (< 1.0e-6)
+
+    it "acousticSignedF3SdDeviation is Nothing for consonant \"r\" (no norm row)" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "r",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Nothing,
+                acousticF2Hz = Nothing,
+                acousticF3Hz = Just 2200,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "r" measured "M" [measured]
+      acousticSignedF3SdDeviation result `shouldBe` Nothing
+
+    -- targetSpectralCentroidHz: /s/ → Just 4500, /ʃ/ → Just 3500, otherwise → Nothing
+    it "acousticTargetSpectralCentroidHz is Just 4500.0 for /s/" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "s",
+                acousticStartMs = 0,
+                acousticEndMs = 80,
+                acousticF1Hz = Nothing,
+                acousticF2Hz = Nothing,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Just 4800.0,
+                acousticDurationMs = 80
+              }
+      let result = deriveAcousticEvidence "s" measured "M" [measured]
+      acousticTargetSpectralCentroidHz result `shouldBe` Just 4500.0
+
+    it "acousticTargetSpectralCentroidHz is Just 3500.0 for /ʃ/" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "ʃ",
+                acousticStartMs = 0,
+                acousticEndMs = 80,
+                acousticF1Hz = Nothing,
+                acousticF2Hz = Nothing,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Just 3200.0,
+                acousticDurationMs = 80
+              }
+      let result = deriveAcousticEvidence "ʃ" measured "M" [measured]
+      acousticTargetSpectralCentroidHz result `shouldBe` Just 3500.0
+
+    it "acousticTargetSpectralCentroidHz is Nothing for non-sibilant phoneme \"iː\"" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "iː",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Just 270,
+                acousticF2Hz = Just 2290,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "iː" measured "M" [measured]
+      acousticTargetSpectralCentroidHz result `shouldBe` Nothing
+
+    -- targetTenseLengthRatio: tense → Just 1.4, non-tense → Nothing
+    it "acousticTargetTenseLengthRatio is Just 1.4 for tense phoneme \"iː\"" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "iː",
+                acousticStartMs = 0,
+                acousticEndMs = 150,
+                acousticF1Hz = Just 270,
+                acousticF2Hz = Just 2290,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 150
+              }
+      let result = deriveAcousticEvidence "iː" measured "M" [measured]
+      acousticTargetTenseLengthRatio result `shouldBe` Just 1.4
+
+    it "acousticTargetTenseLengthRatio is Nothing for non-tense phoneme \"r\"" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "r",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Nothing,
+                acousticF2Hz = Nothing,
+                acousticF3Hz = Just 2200,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "r" measured "M" [measured]
+      acousticTargetTenseLengthRatio result `shouldBe` Nothing
+
   -- M-APD-17: scoreImpact 不変 — acousticEvidence の有無で findingScoreImpact が変わらないこと
   describe "scoreImpact invariant (M-APD-17)" $ do
     it "severityToScoreImpact FindingSeverityMajor == -5.0 (unchanged)" $ do
@@ -1095,3 +1373,47 @@ spec = do
       let withFindings = generateFindingsFromGop bodyText withAcousticResult
       let withoutFindings = generateFindingsFromGop bodyText withoutAcousticResult
       map findingScoreImpact withFindings `shouldBe` map findingScoreImpact withoutFindings
+
+  -- ADR-024 M-ADVL-10: AcousticEvidence ToJSON wire-key contract
+  -- Tests that encode/toJSON emits the 7 ADR-024 wire keys so that a field-name
+  -- typo in the ToJSON instance cannot silently break the Zod contract while
+  -- cabal test stays green.
+  describe "AcousticEvidence ToJSON wire keys (M-ADVL-10 / ADR-024 contract)" $ do
+    let evidence =
+          AcousticEvidence
+            { acousticTongueHeight = Just "ok",
+              acousticTongueBackness = Just "tooFront",
+              acousticRhoticity = Nothing,
+              acousticSibilantPlace = Nothing,
+              acousticVowelLength = Nothing,
+              acousticMeasuredF1Hz = Just 270.0,
+              acousticMeasuredF2Hz = Just 2290.0,
+              acousticMeasuredF3Hz = Nothing,
+              acousticTargetF1Hz = Just 270.0,
+              acousticTargetF2Hz = Just 2290.0,
+              acousticTargetF3Hz = Nothing,
+              acousticSpectralCentroidHz = Just 3600.0,
+              acousticTenseLengthRatio = Just 1.5,
+              acousticSignedF1SdDeviation = Just 1.4,
+              acousticSignedF2SdDeviation = Just (-1.1),
+              acousticSignedF3SdDeviation = Just (-0.8),
+              acousticTargetSpectralCentroidHz = Just 4500.0,
+              acousticTargetTenseLengthRatio = Just 1.4
+            }
+        encoded = LBS8.unpack (encode evidence)
+    it "emits wire key \"spectralCentroidHz\"" $
+      encoded `shouldContain` "spectralCentroidHz"
+    it "emits wire key \"tenseLengthRatio\"" $
+      encoded `shouldContain` "tenseLengthRatio"
+    it "emits wire key \"signedF1SdDeviation\"" $
+      encoded `shouldContain` "signedF1SdDeviation"
+    it "emits wire key \"signedF2SdDeviation\"" $
+      encoded `shouldContain` "signedF2SdDeviation"
+    it "emits wire key \"signedF3SdDeviation\"" $
+      encoded `shouldContain` "signedF3SdDeviation"
+    it "emits wire key \"targetSpectralCentroidHz\"" $
+      encoded `shouldContain` "targetSpectralCentroidHz"
+    it "emits wire key \"targetTenseLengthRatio\"" $
+      encoded `shouldContain` "targetTenseLengthRatio"
+    it "emits value 3600 for \"spectralCentroidHz\" (value mapping lock)" $
+      encoded `shouldContain` "\"spectralCentroidHz\":3600"

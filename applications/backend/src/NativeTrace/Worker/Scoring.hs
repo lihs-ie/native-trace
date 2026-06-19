@@ -57,6 +57,7 @@ import NativeTrace.Worker.AnalyzerClient (
   WeakFormRealization (..),
   WordStress (..),
  )
+import NativeTrace.Worker.AnalyzerClient qualified as AnalyzerClient
 import NativeTrace.Worker.Catalog (
   CatalogEntry (..),
   catalog,
@@ -753,7 +754,15 @@ deriveAcousticEvidence phoneme measured sex allAcoustics =
       acousticMeasuredF3Hz = acousticF3Hz measured,
       acousticTargetF1Hz = targetF1,
       acousticTargetF2Hz = targetF2,
-      acousticTargetF3Hz = targetF3
+      acousticTargetF3Hz = targetF3,
+      -- ADR-024 M-ADVL-11: presentation-only scalars
+      acousticSpectralCentroidHz = AnalyzerClient.acousticSpectralCentroidHz measured,
+      acousticTenseLengthRatio = tenseLengthRatio,
+      acousticSignedF1SdDeviation = signedF1SdDeviation,
+      acousticSignedF2SdDeviation = signedF2SdDeviation,
+      acousticSignedF3SdDeviation = signedF3SdDeviation,
+      acousticTargetSpectralCentroidHz = targetSpectralCentroidHz,
+      acousticTargetTenseLengthRatio = targetTenseLengthRatio
     }
  where
   isVowel = phoneme `elem` fullVowelPhonemes
@@ -774,11 +783,76 @@ deriveAcousticEvidence phoneme measured sex allAcoustics =
     ]
   vowelF1s = [f1 | a <- utteranceVowels, Just f1 <- [acousticF1Hz a]]
   vowelF2s = [f2 | a <- utteranceVowels, Just f2 <- [acousticF2Hz a]]
+  vowelF3s = [f3 | a <- utteranceVowels, Just f3 <- [acousticF3Hz a]]
   -- enoughVowels ガードは speakerSex='unknown' の Lobanov パスのみに適用する (M-APD-11)。
   -- M/F パスはノルム行を直接参照するため母音数に依存しない。
   enoughVowelsForLobanov = length utteranceVowels >= 3
   sdF1 = acousticStdDev vowelF1s
   sdF2 = acousticStdDev vowelF2s
+  sdF3 = acousticStdDev vowelF3s
+
+  -- ADR-024 M-ADVL-11: signed SD deviations (presentation-only, scoreImpact 不変)
+  -- effectiveSdF1/effectiveSdF2 は tongueHeight/tongueBackness の M/F パスと同一算出式。
+  -- speakerSex='unknown' の Lobanov パスでは sdF1/sdF2 をそのまま使い、
+  -- ゼロ SD のとき Nothing を返す（deviationLabel と同一挙動）。
+  signedF1SdDeviation
+    | not isVowel = Nothing
+    | sex == "unknown" =
+        if not enoughVowelsForLobanov
+          then Nothing
+          else case (acousticF1Hz measured, normRow) of
+            (Just f1, Just (nF1, _, _)) ->
+              if sdF1 <= 0 then Nothing else Just ((f1 - nF1) / sdF1)
+            _ -> Nothing
+    | otherwise = case (acousticF1Hz measured, normRow) of
+        (Just f1, Just (nF1, _, _)) ->
+          let effectiveSdF1 = if sdF1 > 0 then sdF1 else nF1 * acousticFallbackRelativeSd
+           in Just ((f1 - nF1) / effectiveSdF1)
+        _ -> Nothing
+
+  signedF2SdDeviation
+    | not isVowel = Nothing
+    | sex == "unknown" =
+        if not enoughVowelsForLobanov
+          then Nothing
+          else case (acousticF2Hz measured, normRow) of
+            (Just f2, Just (_, nF2, _)) ->
+              if sdF2 <= 0 then Nothing else Just ((f2 - nF2) / sdF2)
+            _ -> Nothing
+    | otherwise = case (acousticF2Hz measured, normRow) of
+        (Just f2, Just (_, nF2, _)) ->
+          let effectiveSdF2 = if sdF2 > 0 then sdF2 else nF2 * acousticFallbackRelativeSd
+           in Just ((f2 - nF2) / effectiveSdF2)
+        _ -> Nothing
+
+  signedF3SdDeviation
+    | not isVowel = Nothing
+    | otherwise = case (acousticF3Hz measured, normRow) of
+        (Just f3, Just (_, _, nF3)) ->
+          let effectiveSdF3 = if sdF3 > 0 then sdF3 else nF3 * acousticFallbackRelativeSd
+           in Just ((f3 - nF3) / effectiveSdF3)
+        _ -> Nothing
+
+  -- tenseLengthRatio: tense 音素のとき measuredDurMs / mean(lax durations)。lax 不在は Nothing。
+  tenseLengthRatio
+    | phoneme `elem` tenseVowelPhonemes =
+        let laxDurations = [fromIntegral (acousticDurationMs a) | a <- allAcoustics, acousticPhoneme a `elem` laxVowelPhonemes]
+            measuredDur = fromIntegral (acousticDurationMs measured) :: Double
+         in if null laxDurations
+              then Nothing
+              else Just (measuredDur / acousticMean laxDurations)
+    | otherwise = Nothing
+
+  -- targetSpectralCentroidHz: /s/ → 4500, /ʃ/ → 3500, それ以外 → Nothing。
+  targetSpectralCentroidHz
+    | phoneme == "s" = Just sibilantSCentroidHz
+    | phoneme == "ʃ" = Just sibilantShCentroidHz
+    | otherwise = Nothing
+
+  -- targetTenseLengthRatio: tense 音素 → 1.4, それ以外 → Nothing。
+  targetTenseLengthRatio
+    | phoneme `elem` tenseVowelPhonemes = Just tenseLaxDurationRatio
+    | otherwise = Nothing
 
   -- tongueHeight: 高 F1 = 開口 = 舌が低い。
   -- speakerSex='unknown': Lobanov 正規化。3 母音未満は正規化不能 → Nothing (偽陽性回避)。
@@ -831,10 +905,10 @@ deriveAcousticEvidence phoneme measured sex allAcoustics =
 
   -- sibilantPlace: /s/ は重心が低いと口蓋化、/ʃ/ は重心が高いと歯茎化。
   sibilantPlace
-    | phoneme == "s" = case acousticSpectralCentroidHz measured of
+    | phoneme == "s" = case AnalyzerClient.acousticSpectralCentroidHz measured of
         Just c -> Just (if c < sibilantShCentroidHz then "tooPalatal" else "ok")
         Nothing -> Nothing
-    | phoneme == "ʃ" = case acousticSpectralCentroidHz measured of
+    | phoneme == "ʃ" = case AnalyzerClient.acousticSpectralCentroidHz measured of
         Just c -> Just (if c > sibilantSCentroidHz then "tooAlveolar" else "ok")
         Nothing -> Nothing
     | otherwise = Nothing

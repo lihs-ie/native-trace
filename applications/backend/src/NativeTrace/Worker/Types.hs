@@ -286,7 +286,15 @@ data AcousticEvidence = AcousticEvidence
     acousticMeasuredF3Hz :: Maybe Double,
     acousticTargetF1Hz :: Maybe Double,
     acousticTargetF2Hz :: Maybe Double,
-    acousticTargetF3Hz :: Maybe Double
+    acousticTargetF3Hz :: Maybe Double,
+    -- ADR-024 M-ADVL-10: presentation-only scalars (scoreImpact 不変, ADR-004/ADR-018 D7)
+    acousticSpectralCentroidHz :: Maybe Double,
+    acousticTenseLengthRatio :: Maybe Double,
+    acousticSignedF1SdDeviation :: Maybe Double,
+    acousticSignedF2SdDeviation :: Maybe Double,
+    acousticSignedF3SdDeviation :: Maybe Double,
+    acousticTargetSpectralCentroidHz :: Maybe Double,
+    acousticTargetTenseLengthRatio :: Maybe Double
   }
   deriving (Show, Eq)
 
@@ -306,7 +314,14 @@ instance ToJSON AcousticEvidence where
         "measuredF3Hz" .= acousticMeasuredF3Hz evidence,
         "targetF1Hz" .= acousticTargetF1Hz evidence,
         "targetF2Hz" .= acousticTargetF2Hz evidence,
-        "targetF3Hz" .= acousticTargetF3Hz evidence
+        "targetF3Hz" .= acousticTargetF3Hz evidence,
+        "spectralCentroidHz" .= acousticSpectralCentroidHz evidence,
+        "tenseLengthRatio" .= acousticTenseLengthRatio evidence,
+        "signedF1SdDeviation" .= acousticSignedF1SdDeviation evidence,
+        "signedF2SdDeviation" .= acousticSignedF2SdDeviation evidence,
+        "signedF3SdDeviation" .= acousticSignedF3SdDeviation evidence,
+        "targetSpectralCentroidHz" .= acousticTargetSpectralCentroidHz evidence,
+        "targetTenseLengthRatio" .= acousticTargetTenseLengthRatio evidence
       ]
 
 -- | 調音推定値（M-AAI-8 / ADR-019）。AAI service から得た per-phoneme EMA 座標。
