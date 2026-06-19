@@ -412,6 +412,7 @@
   `pnpm test --run` 緑。
   新規 `.tsx` ファイルが追加されていないこと:
   `git diff --name-only HEAD -- applications/frontend/src/components/ | grep "\.tsx$"` が 0 件。
+  <!-- ADR-024 supersede: この `.tsx` ゼロ assert は ADR-024（音響診断ビジュアルレイヤと数値スカラー契約拡張）が supersede する。AcousticDiagnosisCard.tsx が ArticulationCard 配下に追加される。M-APD-16 本体の rule-based howJa 分岐 Must は不変。-->
 
 - **M-APD-17** →
   `grep -n "scoreImpact\|gopMajorThreshold\|gopMinorThreshold" applications/backend/src/Scoring.hs`
@@ -446,7 +447,7 @@
 - **VOT 計測 (`vot_ms`)**: Phase 2 以降。本スライスでは dataclass / schema に追加しない。
 - **摩擦エネルギー比 (`frication_energy_ratio`)**: Phase 2 以降。/v/-/b/ 弁別は VOT ではなく摩擦エネルギー比であることを ADR が明文化しているが、実装は Phase 2。
 - **scoreImpact への音響偏差の反映**: 意図的に除外。GOP が既に減点済みで二重減点を避ける (D7)。
-- **新 UI コンポーネント / 画面**: acousticEvidence の方向ラベルは既存 feedbackLayers.howJa テキストに乗る。新規 `.tsx` は追加しない。
+- **新 UI コンポーネント / 画面**: acousticEvidence の方向ラベルは既存 feedbackLayers.howJa テキストに乗る。新規 `.tsx` は追加しない。<!-- ADR-024 supersede: この Non-goal は ADR-024（音響診断ビジュアルレイヤと数値スカラー契約拡張）が supersede する。AcousticDiagnosisCard.tsx が新設される。-->
 - **話者性別の UI 選択機能**: `AnalysisMetadata.speakerSex` は API optional フィールドとして追加するが、UI で収集する動線は本スライスに含まない。
 - **re-record delta 表示**: acousticEvidence の「フォルマントが目標方向へ動いたか」delta 表示は将来拡張 (D9)。first slice (ADR-022 閉ループ) とは独立。
 - **closed-loop first slice (ADR-022) への依存**: 本スライスは ADR-022 の前提でも依存でもない。

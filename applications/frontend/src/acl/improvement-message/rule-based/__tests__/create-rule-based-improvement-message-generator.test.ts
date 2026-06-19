@@ -194,6 +194,13 @@ describe("createRuleBasedImprovementMessageGenerator", () => {
           targetF1Hz: 270,
           targetF2Hz: 2290,
           targetF3Hz: 3010,
+          spectralCentroidHz: null,
+          tenseLengthRatio: null,
+          signedF1SdDeviation: null,
+          signedF2SdDeviation: null,
+          signedF3SdDeviation: null,
+          targetSpectralCentroidHz: null,
+          targetTenseLengthRatio: null,
         },
       });
       const bareTemplateLayers = generator.generateFeedbackLayers({
@@ -225,6 +232,13 @@ describe("createRuleBasedImprovementMessageGenerator", () => {
           targetF1Hz: null,
           targetF2Hz: null,
           targetF3Hz: null,
+          spectralCentroidHz: null,
+          tenseLengthRatio: null,
+          signedF1SdDeviation: null,
+          signedF2SdDeviation: null,
+          signedF3SdDeviation: null,
+          targetSpectralCentroidHz: null,
+          targetTenseLengthRatio: null,
         },
       });
       expect(layers.howJa).toContain("rhoticity");
@@ -247,6 +261,13 @@ describe("createRuleBasedImprovementMessageGenerator", () => {
           targetF1Hz: null,
           targetF2Hz: null,
           targetF3Hz: null,
+          spectralCentroidHz: null,
+          tenseLengthRatio: null,
+          signedF1SdDeviation: null,
+          signedF2SdDeviation: null,
+          signedF3SdDeviation: null,
+          targetSpectralCentroidHz: null,
+          targetTenseLengthRatio: null,
         },
       });
       expect(layers.howJa).toContain("母音をもっと長く");
@@ -287,6 +308,13 @@ describe("createRuleBasedImprovementMessageGenerator", () => {
           targetF1Hz: null,
           targetF2Hz: null,
           targetF3Hz: null,
+          spectralCentroidHz: null,
+          tenseLengthRatio: null,
+          signedF1SdDeviation: null,
+          signedF2SdDeviation: null,
+          signedF3SdDeviation: null,
+          targetSpectralCentroidHz: null,
+          targetTenseLengthRatio: null,
         },
       });
       const withNull = generator.generateFeedbackLayers({

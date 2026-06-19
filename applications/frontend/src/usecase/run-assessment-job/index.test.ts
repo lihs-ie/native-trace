@@ -709,6 +709,13 @@ describe("runAssessmentJob", () => {
       targetF1Hz: 270,
       targetF2Hz: 2290,
       targetF3Hz: 3010,
+      spectralCentroidHz: null,
+      tenseLengthRatio: null,
+      signedF1SdDeviation: null,
+      signedF2SdDeviation: null,
+      signedF3SdDeviation: null,
+      targetSpectralCentroidHz: null,
+      targetTenseLengthRatio: null,
     };
 
     const draftWithAcoustic: AssessmentResultDraft = {

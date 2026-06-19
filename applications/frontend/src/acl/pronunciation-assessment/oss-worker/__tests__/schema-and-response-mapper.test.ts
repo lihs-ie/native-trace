@@ -499,4 +499,140 @@ describe("oss-worker response-mapper", () => {
       expect(result.value.status).toBe("normal");
     }
   });
+
+  // M-ADVL-12 (ADR-024): 新 7 フィールドを含む acousticEvidence が schema parse を通過し AcousticEvidenceDto に転写されること
+  it("(M-ADVL-12) schema parses acousticEvidence with 7 new scalar fields and round-trips to AcousticEvidenceDto", () => {
+    const findingWithNewScalars = {
+      ...workerFixture.findings[0],
+      acousticEvidence: {
+        rhoticity: "insufficient",
+        tongueHeight: "tooLow",
+        tongueBackness: "ok",
+        sibilantPlace: null,
+        vowelLength: "ok",
+        measuredF1Hz: 450.0,
+        measuredF2Hz: 1100.0,
+        measuredF3Hz: 1800.0,
+        targetF1Hz: 344.0,
+        targetF2Hz: 2300.0,
+        targetF3Hz: 2000.0,
+        // 新 7 フィールド（Haskell ToJSON wire 形式と同名）
+        spectralCentroidHz: 3600.0,
+        tenseLengthRatio: 1.5,
+        signedF1SdDeviation: 1.4,
+        signedF2SdDeviation: -1.1,
+        signedF3SdDeviation: -0.8,
+        targetSpectralCentroidHz: 4500.0,
+        targetTenseLengthRatio: 1.4,
+      },
+    };
+    const result = ossWorkerSuccessResponseSchema.safeParse({
+      ...workerFixture,
+      findings: [findingWithNewScalars],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const ae = result.data.findings[0]?.acousticEvidence;
+      expect(ae).not.toBeNull();
+      expect(ae?.spectralCentroidHz).toBeCloseTo(3600.0);
+      expect(ae?.tenseLengthRatio).toBeCloseTo(1.5);
+      expect(ae?.signedF1SdDeviation).toBeCloseTo(1.4);
+      expect(ae?.signedF2SdDeviation).toBeCloseTo(-1.1);
+      expect(ae?.signedF3SdDeviation).toBeCloseTo(-0.8);
+      expect(ae?.targetSpectralCentroidHz).toBeCloseTo(4500.0);
+      expect(ae?.targetTenseLengthRatio).toBeCloseTo(1.4);
+    }
+  });
+
+  // M-ADVL-12: response-mapper が新 7 フィールドを AcousticEvidenceDto へ転写すること
+  it("(M-ADVL-12) response-mapper passes through 7 new scalar fields into AcousticEvidenceDto", () => {
+    const engine = makeEngine();
+    const fixtureWithNewScalars = {
+      ...workerFixture,
+      findings: [
+        {
+          ...workerFixture.findings[0],
+          acousticEvidence: {
+            rhoticity: "insufficient",
+            tongueHeight: "tooLow",
+            tongueBackness: "ok",
+            sibilantPlace: null,
+            vowelLength: "ok",
+            measuredF1Hz: 450.0,
+            measuredF2Hz: 1100.0,
+            measuredF3Hz: 1800.0,
+            targetF1Hz: 344.0,
+            targetF2Hz: 2300.0,
+            targetF3Hz: 2000.0,
+            spectralCentroidHz: 3600.0,
+            tenseLengthRatio: 1.5,
+            signedF1SdDeviation: 1.4,
+            signedF2SdDeviation: -1.1,
+            signedF3SdDeviation: -0.8,
+            targetSpectralCentroidHz: 4500.0,
+            targetTenseLengthRatio: 1.4,
+          },
+        },
+      ],
+    };
+    const result = mapOssWorkerResponse({
+      status: 200,
+      rawBody: fixtureWithNewScalars,
+      capturedAt: new Date("2026-01-01T00:00:00Z"),
+      engine,
+      assessmentSchemaVersion: "1",
+      tokenizerVersion: "v1",
+    });
+    expect(result.isOk()).toBe(true);
+    if (result.isOk()) {
+      const ae = result.value.findings[0]?.acousticEvidence;
+      expect(ae).not.toBeNull();
+      expect(ae?.spectralCentroidHz).toBeCloseTo(3600.0);
+      expect(ae?.tenseLengthRatio).toBeCloseTo(1.5);
+      expect(ae?.signedF1SdDeviation).toBeCloseTo(1.4);
+      expect(ae?.signedF2SdDeviation).toBeCloseTo(-1.1);
+      expect(ae?.signedF3SdDeviation).toBeCloseTo(-0.8);
+      expect(ae?.targetSpectralCentroidHz).toBeCloseTo(4500.0);
+      expect(ae?.targetTenseLengthRatio).toBeCloseTo(1.4);
+    }
+  });
+
+  // M-ADVL-12: 新 7 フィールドが absent な旧 worker JSON は parse 成功し null に縮退すること（後方互換）
+  it("(M-ADVL-12) schema degrades 7 new fields to null when absent from acousticEvidence (backward compat)", () => {
+    const findingWithOldAcousticEvidence = {
+      ...workerFixture.findings[0],
+      acousticEvidence: {
+        // 旧フォーマット: 7 フィールドなし
+        rhoticity: "insufficient",
+        tongueHeight: "ok",
+        tongueBackness: "ok",
+        sibilantPlace: null,
+        vowelLength: "ok",
+        measuredF1Hz: 300.0,
+        measuredF2Hz: 900.0,
+        measuredF3Hz: 2100.0,
+        targetF1Hz: 270.0,
+        targetF2Hz: 870.0,
+        targetF3Hz: 2900.0,
+        // 新 7 フィールドは意図的に省略
+      },
+    };
+    const result = ossWorkerSuccessResponseSchema.safeParse({
+      ...workerFixture,
+      findings: [findingWithOldAcousticEvidence],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const ae = result.data.findings[0]?.acousticEvidence;
+      expect(ae).not.toBeNull();
+      // 後方互換: 欠落フィールドは null に縮退
+      expect(ae?.spectralCentroidHz).toBeNull();
+      expect(ae?.tenseLengthRatio).toBeNull();
+      expect(ae?.signedF1SdDeviation).toBeNull();
+      expect(ae?.signedF2SdDeviation).toBeNull();
+      expect(ae?.signedF3SdDeviation).toBeNull();
+      expect(ae?.targetSpectralCentroidHz).toBeNull();
+      expect(ae?.targetTenseLengthRatio).toBeNull();
+    }
+  });
 });

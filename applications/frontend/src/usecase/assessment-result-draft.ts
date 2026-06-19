@@ -156,6 +156,14 @@ export type AcousticEvidenceDraft = Readonly<{
   targetF1Hz: number | null;
   targetF2Hz: number | null;
   targetF3Hz: number | null;
+  /** M-ADVL-13 (ADR-024): 数値スカラー 7 本。AcousticEvidenceDto と同形に保つ。*/
+  spectralCentroidHz: number | null;
+  tenseLengthRatio: number | null;
+  signedF1SdDeviation: number | null;
+  signedF2SdDeviation: number | null;
+  signedF3SdDeviation: number | null;
+  targetSpectralCentroidHz: number | null;
+  targetTenseLengthRatio: number | null;
 }>;
 
 // ---- ArticulatoryEstimate ----

@@ -956,6 +956,10 @@ summary.fold-head { list-style: none; } summary.fold-head::-webkit-details-marke
 .disclaimer .dc-ico { font-family: var(--font-mono); color: var(--enrich-text); flex: none; }
 
 /* ============ 1. 音響音声学診断 acousticEvidence (ADR-018) ============ */
+/* v3 2 カラムグリッド (design-system-v3.html:70-71)。ADR-024 AcousticDiagnosisCard が
+   母音四辺形プロット | 方向ラベル列 の 2 カラムに使用。design-reference からの移植。*/
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
+@media (max-width: 720px) { .grid-2 { grid-template-columns: 1fr; } }
 .acoustic { border: 1px solid var(--border-faint); border-radius: var(--r-lg); background: var(--surface-1); padding: var(--sp-5); }
 .acoustic-head { display: flex; align-items: center; gap: 10px; margin-bottom: var(--sp-4); flex-wrap: wrap; }
 

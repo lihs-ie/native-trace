@@ -180,6 +180,14 @@ const mapSuccessResponse = (
               targetF1Hz: finding.acousticEvidence.targetF1Hz ?? null,
               targetF2Hz: finding.acousticEvidence.targetF2Hz ?? null,
               targetF3Hz: finding.acousticEvidence.targetF3Hz ?? null,
+              // M-ADVL-13 (ADR-024): 数値スカラー 7 本を明示展開（zod strip 対策 ADR-017 再発防止）
+              spectralCentroidHz: finding.acousticEvidence.spectralCentroidHz ?? null,
+              tenseLengthRatio: finding.acousticEvidence.tenseLengthRatio ?? null,
+              signedF1SdDeviation: finding.acousticEvidence.signedF1SdDeviation ?? null,
+              signedF2SdDeviation: finding.acousticEvidence.signedF2SdDeviation ?? null,
+              signedF3SdDeviation: finding.acousticEvidence.signedF3SdDeviation ?? null,
+              targetSpectralCentroidHz: finding.acousticEvidence.targetSpectralCentroidHz ?? null,
+              targetTenseLengthRatio: finding.acousticEvidence.targetTenseLengthRatio ?? null,
             }
           : null,
       // M-AAI-13 (ADR-019): articulatoryEstimate を mapper で転写。欠落時は null（ADR-017 再発防止）。

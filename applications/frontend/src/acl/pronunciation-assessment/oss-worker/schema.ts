@@ -108,7 +108,8 @@ const findingSchema = z.object({
     .nullable()
     .optional()
     .transform((v) => v ?? null),
-  /** M-APD-12 (ADR-018): 音響音声学的証拠。worker が導出した方向ラベル + 実測/目標フォルマント。*/
+  /** M-APD-12 (ADR-018): 音響音声学的証拠。worker が導出した方向ラベル + 実測/目標フォルマント。
+   *  M-ADVL-12 (ADR-024): 数値スカラー 7 本を optional+nullable で追加（後方互換）。*/
   acousticEvidence: z
     .object({
       tongueHeight: z.enum(["tooHigh", "tooLow", "ok"]).nullable().optional(),
@@ -122,6 +123,14 @@ const findingSchema = z.object({
       targetF1Hz: z.number().nullable().optional(),
       targetF2Hz: z.number().nullable().optional(),
       targetF3Hz: z.number().nullable().optional(),
+      /** M-ADVL-12 (ADR-024): 新フィールド欠如時（旧 worker）は null に縮退 (.default(null) で後方互換) */
+      spectralCentroidHz: z.number().nullable().default(null),
+      tenseLengthRatio: z.number().nullable().default(null),
+      signedF1SdDeviation: z.number().nullable().default(null),
+      signedF2SdDeviation: z.number().nullable().default(null),
+      signedF3SdDeviation: z.number().nullable().default(null),
+      targetSpectralCentroidHz: z.number().nullable().default(null),
+      targetTenseLengthRatio: z.number().nullable().default(null),
     })
     .nullable()
     .optional()

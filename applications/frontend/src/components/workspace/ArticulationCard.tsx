@@ -3,21 +3,26 @@
 import { useState, useRef } from "react";
 import type { ArticulationEntry } from "@/lib/articulation-data";
 import type {
+  AcousticEvidenceDto,
   ArticulatoryEstimateDto,
   EngineFindingDto,
   RetryRecordingResponse,
 } from "@/lib/api-types";
+import { AcousticDiagnosisCard } from "@/components/workspace/AcousticDiagnosisCard";
 
 /**
  * M-CRL-3 (ADR-022): Props を entry+finding に拡張（W-4）。
  * finding は MediaRecorder → retry-recordings POST に必要。
  * M-AAI-14 (ADR-019): articulatoryEstimate — EMA オーバーレイ描画に使用。
+ * M-ADVL-1 (ADR-024): acousticEvidence — AcousticDiagnosisCard へ渡す。
  */
 type ArticulationCardProps = {
   entry: ArticulationEntry;
   finding: EngineFindingDto;
   /** M-AAI-14 (ADR-019): EMA 調音推定座標。null または displayEligibility < 0.55 のとき floor のみ描画。*/
   articulatoryEstimate?: ArticulatoryEstimateDto | null;
+  /** M-ADVL-1 (ADR-024): 音響音声学的証拠。null のとき AcousticDiagnosisCard は描画しない。*/
+  acousticEvidence?: AcousticEvidenceDto | null;
 };
 
 type TtsSpeed = 0.5 | 0.85 | 1.0;
@@ -53,6 +58,7 @@ export const ArticulationCard = ({
   entry,
   finding,
   articulatoryEstimate,
+  acousticEvidence,
 }: ArticulationCardProps) => {
   const [ttsSpeed, setTtsSpeed] = useState<TtsSpeed>(0.85);
   const [ttsPlaying, setTtsPlaying] = useState(false);
@@ -505,6 +511,12 @@ export const ArticulationCard = ({
           </div>
         )}
       </div>
+
+      {/* M-ADVL-1 (ADR-024): 音響音声学診断カード — acousticEvidence が null のとき非表示（M-ADVL-2）*/}
+      <AcousticDiagnosisCard
+        acousticEvidence={acousticEvidence ?? null}
+        phonemeLabel={entry.ipaDisplay}
+      />
     </div>
   );
 };

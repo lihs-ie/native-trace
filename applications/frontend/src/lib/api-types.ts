@@ -247,6 +247,14 @@ export type AcousticEvidenceDto = {
   targetF1Hz: number | null;
   targetF2Hz: number | null;
   targetF3Hz: number | null;
+  /** M-ADVL-13 (ADR-024): 数値スカラー 7 本 — frontend での規範定数ハードコード禁止。worker が emit。 */
+  spectralCentroidHz: number | null;
+  tenseLengthRatio: number | null;
+  signedF1SdDeviation: number | null;
+  signedF2SdDeviation: number | null;
+  signedF3SdDeviation: number | null;
+  targetSpectralCentroidHz: number | null;
+  targetTenseLengthRatio: number | null;
 };
 
 /**
