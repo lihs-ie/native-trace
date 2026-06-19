@@ -38,6 +38,8 @@ jobs:
         run: bash scripts/verify-servant-route-handler-parity.sh
       - name: Worker HTTP client explicit responseTimeout (*Client.hs)
         run: bash scripts/verify-worker-http-client-timeout.sh
+      - name: Analyzer/golden-speaker src imports present in Dockerfile pip list
+        run: bash scripts/verify-analyzer-deps.sh
       - name: Allowlist not expired
         run: bash scripts/verify-allowlist-expiry.sh
       - name: Upload policy evidence

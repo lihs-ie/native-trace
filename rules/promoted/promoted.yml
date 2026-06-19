@@ -253,3 +253,53 @@ evidence_required:
 rollback_condition: "n/a (doc-only rubric + 正本。executable gate ではないため FP exit-code は無い)"
 verified_fires: false              # doc-only 昇格 (exit-code firing は無し)
 owner: "@lihs-ie"
+---
+# CAND-b1: python-analyzer / golden-speaker の Dockerfile は pyproject ではなくハードコード pip list で
+# 依存を焼き込む。src が import する third-party が pyproject にあっても Dockerfile の pip 行に無いと
+# image に入らず、起動時 import の ModuleNotFoundError が broad except に握り潰され silent runtime dead-wiring。
+# 既存 wiring rule python-analyzer-pyproject-needs-dockerfile は *ファイル共変更* しか見ず Dockerfile CONTENT を
+# 検査しない (= co-change しても pip 行への追記漏れを通す) ギャップを、import→distribution 解決の content gate で塞ぐ。
+id: analyzer_dockerfile_dep_content_gap
+failure_class: dataflow_unwired      # dep が image に入らず import 失敗が握り潰され機能が runtime で死ぬ
+trigger:
+  repeated_count: 2                  # kokoro 2026-06-12 (memory python-analyzer-dockerfile-hardcoded-pip) + scipy 2026-06-19 (incident ADR-018)
+  sources: ["incident", "runtime_verify", "memory"]
+rule:
+  summary: "applications/{python-analyzer,golden-speaker}/src/**/*.py が import する third-party module の distribution が、同サービス Dockerfile のハードコード pip install 行 (∪ base-image-pip-allowlist) に含まれること。欠ければ exit 1"
+  enforcement:
+    - type: grep_gate
+      detail: "scripts/verify-analyzer-deps.sh が src の top-level import を収集 → stdlib (host python sys.stdlib_module_names、無ければ維持リスト) と first-party (python_analyzer/golden_speaker/相対) を除外 → scripts/module-to-dist.txt で module→distribution 解決 (renaming 含む) → Dockerfile の pip install ブロックを解析した installed 集合と突合。tree 全体を常時検査 (恒常的不変条件)"
+    - type: smoke
+      detail: "scripts/agent-policy-hook.sh が applications/{python-analyzer,golden-speaker}/src/**/*.py 編集時に実行 + CI (.github/workflows/pr-gate.yml policy job の Analyzer/golden-speaker src imports present in Dockerfile pip list step、tree 全体)"
+  no_silent_skip: "stdlib でも first-party でも module-to-dist.txt にも無い module は FAIL (silent-skip すると盲点を再生産する=rollback trap)。新 third-party を import したら module-to-dist.txt に 1 行追加が必須"
+evidence_required:
+  - changed_files
+  - grep_output
+allowlist: "scripts/base-image-pip-allowlist.txt は base image / stdlib 隣接 / 明示 pin 済 transitive のみ (各行に理由コメント必須、無期限 allowlist 禁止)。現状 golden-speaker の numpy / praat-parselmouth (rvc-python==0.1.5 の pinned transitive) のみ"
+rollback_condition: "false_positive_rate > 0.15"   # 超過時は module-to-dist.txt の mapping を拡充するか、誤検出 distribution を理由付きで base-image-pip-allowlist.txt に narrow 追加 (silent-skip には絶対戻さない)
+verified_fires: true               # clean: 両サービス OK で exit 0。synthetic violation (python-analyzer Dockerfile から scipy pip 行を一時削除): exit 1 で scipy のみを正確に指摘 (他 dep に FP なし)。restore → exit 0。未登録 third-party import probe → exit 1 (silent-skip しない=rollback trap 防御) を実コマンドで確認
+owner: "@lihs-ie"
+---
+# CAND-b2: worker の let/where 束縛を計算したが construction site が literal Nothing/default のまま →
+# 束縛が unused で機能が dead だが、-Wunused-local-binds / -Wunused-matches は -Wall に含まれるが
+# warning 止まりで cabal build/test が緑を通過する。-Werror=missing-fields の前例に倣い build error 化する。
+id: haskell_unused_local_binding_dead_wiring
+failure_class: dataflow_unwired      # 計算済み束縛を construction site で消費せず literal default のまま=機能が build 緑で死ぬ
+trigger:
+  repeated_count: 1                  # ADR-018 GOP-site dead-Nothing (incident 2026-06-19、event 1: acousticEvidence を let で計算したが GOP 構築が = Nothing)。precedent: -Werror=missing-fields は P0 で 1 回昇格済の同型クラス
+  sources: ["incident", "static_verify"]
+rule:
+  summary: "applications/backend/native-trace-worker.cabal の ghc-options に -Werror=unused-local-binds と -Werror=unused-matches があること (計算したが construction site で使われない let/where 束縛を build error 化)"
+  enforcement:
+    - type: grep_gate
+      detail: "scripts/verify-haskell-warnings.sh が worker cabal に両 flag を grep。欠ければ exit 1。-Werror=missing-fields (全 cabal) と同 script に統合"
+    - type: smoke
+      detail: "scripts/agent-policy-hook.sh が *.cabal 編集時に verify-haskell-warnings.sh を実行 + CI (.github/workflows/pr-gate.yml policy job の Haskell cabal warnings hardened step)。fitness hook の cabal test (-Werror) でも編集ごとに発火"
+  precondition_sweep: "flag 追加前に cabal build all で既存 unused-local-binds/unused-matches warning を sweep → ゼロを確認 (clean tree。test-suite 含め scope 縮小不要だったため common warnings に追加)"
+evidence_required:
+  - changed_files
+  - grep_output
+rollback_condition: "false_positive_rate > 0.15"   # 超過時 (legit unused が test-suite 等に出る場合) は library stanza のみに scope を縮小。現状 common warnings (全 stanza 共有) で build all 緑なので FP リスク極小
+verified_fires: true               # flag 追加後 cabal build all 緑 (exit 0、unused warning ゼロ)。synthetic violation (tokenize where に unused let unusedProbe=(42::Int) を挿入): fitness hook の cabal test が GHC-40910 [-Wunused-local-binds, Werror=unused-local-binds] Defined but not used で build error → 編集ブロック。除去 → 緑。verify-haskell-warnings.sh: flag 有り exit 0、flag 一時削除 exit 1、restore exit 0 を実コマンドで確認
+residual: "pre-existing (本タスク外・ADR-018 uncommitted 作業由来): Scoring.hs L1136 schwaPhonemes が -Wunused-top-binds (top-level、本昇格の対象外 class)、L83 WordPair が -Wunused-imports。test-suite に -Wmissing-home-modules (GoldenSpeakerSpec/ShadowingLagSpec が other-modules 未登録)。いずれも build を壊さず本 flag の対象外"
+owner: "@lihs-ie"

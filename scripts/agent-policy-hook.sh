@@ -73,6 +73,24 @@ $out"
     ;;
 esac
 
+# python-analyzer / golden-speaker の src の *.py を編集したら、その src が import する
+# third-party 依存が Dockerfile のハードコード pip list に含まれているかを tree 全体で検査する
+# (incident 2026-06-19-adr018-scipy-dockerfile-runtime-dead-wiring / kokoro 2026-06-12)。
+# verify-analyzer-deps.sh は単一ファイル引数ではなく両サービスの src/Dockerfile を常に読む設計のため、
+# トリガーは「編集ファイルがそれら src 配下の *.py か否か」で判定する。
+case "$rel" in
+  applications/python-analyzer/src/*.py | \
+    applications/golden-speaker/src/*.py)
+    if [ -f scripts/verify-analyzer-deps.sh ]; then
+      if ! out="$(bash scripts/verify-analyzer-deps.sh 2>&1)"; then
+        violations="${violations}
+== verify-analyzer-deps.sh ==
+$out"
+      fi
+    fi
+    ;;
+esac
+
 if [ -n "$violations" ]; then
   {
     echo "agent-policy 違反があります。修正してください:"

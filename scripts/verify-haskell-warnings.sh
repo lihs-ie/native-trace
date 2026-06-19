@@ -12,7 +12,14 @@ set -euo pipefail
 repository_root="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 cd "$repository_root"
 
-required_flag='-Werror=missing-fields'
+# 全 *.cabal に必須: partial record construction を build error 化する (incident 2026-06-13)。
+required_flags='-Werror=missing-fields'
+# worker cabal に必須: 「計算したが construction site で使われない let/where 束縛」(dead wiring) を
+#   build error 化する。-Wunused-local-binds / -Wunused-matches は -Wall に含まれるが warning 止まりで
+#   cabal build/test が緑を通過する (incident 2026-06-19 ADR-018 GOP-site dead-Nothing: acousticEvidence を
+#   let で計算したが construction site が literal Nothing のまま → 機能が死んでいるのに build/test 緑)。
+worker_required_flags='-Werror=unused-local-binds -Werror=unused-matches'
+worker_cabal='applications/backend/native-trace-worker.cabal'
 backend_dir="applications/backend"
 
 if [ ! -d "$backend_dir" ]; then
@@ -27,18 +34,32 @@ fi
 missing=""
 while IFS= read -r cabal; do
   [ -z "$cabal" ] && continue
-  if ! grep -qF -- "$required_flag" "$cabal"; then
-    missing="${missing}  $cabal (ghc-options に $required_flag が無い)
+  for flag in $required_flags; do
+    if ! grep -qF -- "$flag" "$cabal"; then
+      missing="${missing}  $cabal (ghc-options に $flag が無い)
 "
-  fi
+    fi
+  done
 done <<< "$cabal_files"
 
+# worker cabal だけに課す unused-binds/unused-matches 系 (dead wiring 防止)。
+if [ -f "$worker_cabal" ]; then
+  for flag in $worker_required_flags; do
+    if ! grep -qF -- "$flag" "$worker_cabal"; then
+      missing="${missing}  $worker_cabal (ghc-options に $flag が無い)
+"
+    fi
+  done
+fi
+
 if [ -n "$missing" ]; then
-  echo "POLICY VIOLATION: cabal warning 設定に $required_flag がありません。" >&2
+  echo "POLICY VIOLATION: cabal warning 設定に必須 flag がありません。" >&2
   printf '%s' "$missing" >&2
-  echo "common warnings (または各 ghc-options) に $required_flag を追加してください。" >&2
-  echo "理由: レコードフィールド追加時の builder 漏れ (partial record construction) は warning では" >&2
-  echo "      build/test 緑を通過し、ToJSON 等の強制評価で runtime thunk crash になります。" >&2
+  echo "common warnings (または各 ghc-options) に上記 flag を追加してください。" >&2
+  echo "理由: -Werror=missing-fields はレコードフィールド追加時の builder 漏れ (partial record construction) を," >&2
+  echo "      -Werror=unused-local-binds / -Werror=unused-matches は計算したが construction site で使われない" >&2
+  echo "      let/where 束縛 (dead wiring) を build error 化します。どちらも warning 止まりだと build/test 緑を" >&2
+  echo "      通過し runtime で死にます (前者: thunk crash / 後者: literal Nothing で機能が死ぬ)。" >&2
   exit 1
 fi
 echo "verify-haskell-warnings: OK"
