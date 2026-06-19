@@ -9,7 +9,11 @@ import wave
 from dataclasses import replace
 
 from python_analyzer.domain.audio import AudioInput
-from python_analyzer.domain.measurement import PhonemeGopMeasurement, RawMeasurementResult
+from python_analyzer.domain.measurement import (
+    PhonemeAcousticMeasurement,
+    PhonemeGopMeasurement,
+    RawMeasurementResult,
+)
 from python_analyzer.domain.phoneme import AlignmentBoundary
 from python_analyzer.usecase.ports import AlignerPort, G2PPort, ProsodyPort, SpeechRatePort
 
@@ -45,6 +49,7 @@ class AnalyzePronunciationUseCase:
         reference_text: str,
         target_accent: str,
         include_reference_f0: bool = True,
+        speaker_sex: str = "unknown",
     ) -> RawMeasurementResult:
         """発音解析を実行し生計測結果を返す。
 
@@ -57,6 +62,14 @@ class AnalyzePronunciationUseCase:
 
         Returns:
             RawMeasurementResult。per_phoneme_gop が空の場合は呼び出し元で 500 を返す。
+
+        Args:
+            audio: 解析対象の音声入力。
+            reference_text: 参照テキスト（"Hello, world." 等）。
+            target_accent: アクセント指定（例: "generalAmerican"）。
+            include_reference_f0: True のとき reference_text を Kokoro TTS で合成して
+                reference F0 を抽出する。False のときスキップして None を返す（default True）。
+            speaker_sex: 話者性別 'F' | 'M' | 'unknown'（M-APD-4 maximum_formant_hz 選択用）。
         """
         # g2p で期待 IPA を生成する
         expected_ipa = self._g2p.convert(reference_text, target_accent)
@@ -82,6 +95,8 @@ class AnalyzePronunciationUseCase:
         rhythm = None
         weak_form_realizations = ()
         syllables = ()
+        # M-APD-5: phoneme_acoustics を初期化する（prosody_port が None の場合は空 tuple のまま）
+        phoneme_acoustics: tuple[PhonemeAcousticMeasurement, ...] = ()
 
         if self._prosody is not None:
             # 単語分割と境界情報を導出する
@@ -94,6 +109,11 @@ class AnalyzePronunciationUseCase:
             # C1-b F0 輪郭（PCM バイト列が必要）
             pcm_bytes = _extract_pcm_bytes(audio)
             sample_rate = _estimate_sample_rate(audio)
+            # M-APD-5: per-phoneme 音響計測（ADR-018 D1–D3）
+            # pcm_bytes :95 取得後・f0_contour :97 計測前に挿入（spec 指定位置）
+            phoneme_acoustics = self._prosody.measure_phoneme_acoustics(
+                pcm_bytes, boundaries, sample_rate, speaker_sex
+            )
             f0_contour = self._prosody.measure_f0_contour(pcm_bytes, sample_rate)
 
             # C1-c 語強勢（espeak 強勢記号 + F0 ヒューリスティック）
@@ -158,6 +178,7 @@ class AnalyzePronunciationUseCase:
             weak_form_realizations=weak_form_realizations,
             syllables=syllables,
             reference_f0_contour=reference_f0_contour,
+            phoneme_acoustics=phoneme_acoustics,
         )
 
 

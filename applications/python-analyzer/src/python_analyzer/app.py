@@ -27,6 +27,7 @@ from python_analyzer.interface.schema import (
     InsertedVowelResponse,
     InterWordSilenceResponse,
     NBestCandidateResponse,
+    PhonemeAcousticResponse,
     PhonemeGopResponse,
     RhythmResponse,
     SchwaRealizationResponse,
@@ -139,6 +140,7 @@ def create_app() -> FastAPI:
                 reference_text=meta.referenceText,
                 target_accent=meta.targetAccent,
                 include_reference_f0=meta.includeReferenceF0,
+                speaker_sex=meta.speakerSex,
             )
         except Exception as execution_error:
             logger.error("発音解析エラー: %s", execution_error, exc_info=True)
@@ -279,6 +281,22 @@ def create_app() -> FastAPI:
                 )
                 for syl in result.syllables
             ],
+            # M-APD-7: per-phoneme 音響計測を AnalysisResponse にマップする（ADR-018 D1）
+            phonemeAcoustics=[
+                PhonemeAcousticResponse(
+                    phoneme=acoustic_measurement.phoneme,
+                    startMs=acoustic_measurement.start_milliseconds,
+                    endMs=acoustic_measurement.end_milliseconds,
+                    f1Hz=acoustic_measurement.f1_hz,
+                    f2Hz=acoustic_measurement.f2_hz,
+                    f3Hz=acoustic_measurement.f3_hz,
+                    spectralCentroidHz=acoustic_measurement.spectral_centroid_hz,
+                    durationMs=acoustic_measurement.duration_milliseconds,
+                )
+                for acoustic_measurement in result.phoneme_acoustics
+            ],
+            # M-APD-6 / M-APD-11: speakerSex を echo する（worker が Hillenbrand ノルム照合に使用）
+            speakerSex=meta.speakerSex,
         )
 
     return application

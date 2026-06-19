@@ -8,12 +8,14 @@ import logging
 
 from python_analyzer.domain.measurement import (
     F0Contour,
+    PhonemeAcousticMeasurement,
     RhythmMeasurement,
     SyllableMeasurement,
     WeakFormRealization,
     WordStressMeasurement,
 )
 from python_analyzer.domain.phoneme import AlignmentBoundary
+from python_analyzer.infrastructure import parselmouth_formant
 from python_analyzer.infrastructure.kokoro_tts import synthesize_speech
 from python_analyzer.infrastructure.parselmouth_prosody import (
     extract_f0_contour,
@@ -83,6 +85,26 @@ class ProsodyAnalyzer:
             word_boundaries=word_boundaries,
             expected_ipa_per_word=expected_ipa_per_word,
             alignment_boundaries=alignment_boundaries,
+        )
+
+    def measure_phoneme_acoustics(
+        self,
+        audio_bytes: bytes,
+        boundaries: tuple[AlignmentBoundary, ...],
+        sample_rate: int,
+        speaker_sex: str,
+    ) -> tuple[PhonemeAcousticMeasurement, ...]:
+        """音素ごとのフォルマント・スペクトル重心・持続時間を計測する（ADR-018 D1–D3）。
+
+        speaker_sex が 'F' のとき maximum_formant_hz=6500、
+        'M' または 'unknown' のとき 5500 を parselmouth_formant に渡す。
+        """
+        maximum_formant_hz = 6500.0 if speaker_sex == "F" else 5500.0
+        return parselmouth_formant.extract_phoneme_acoustics(
+            audio_bytes=audio_bytes,
+            boundaries=boundaries,
+            sample_rate=sample_rate,
+            maximum_formant_hz=maximum_formant_hz,
         )
 
     def extract_reference_f0_contour(self, reference_text: str) -> F0Contour | None:

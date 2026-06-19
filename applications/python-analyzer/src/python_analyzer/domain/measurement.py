@@ -116,6 +116,27 @@ class SchwaRealization:
 
 
 @dataclass(frozen=True)
+class PhonemeAcousticMeasurement:
+    """1 音素あたりのフォルマント・スペクトル重心・持続時間計測値。
+
+    計測値のみを保持し、偏差・採点はしない（採点は Haskell worker, ADR-004 / ADR-018 D1–D3）。
+    外部ライブラリ依存なし（純 dataclass）。
+    """
+
+    phoneme: str
+    start_milliseconds: int
+    end_milliseconds: int
+    # フォルマント周波数 Hz。40ms 未満区間ではサンプリングをスキップして None。
+    f1_hz: float | None
+    f2_hz: float | None
+    f3_hz: float | None
+    # スペクトル重心 Hz。30ms 未満区間では None。
+    spectral_centroid_hz: float | None
+    # 持続時間は境界差分で常に算出（ガードなし）。
+    duration_milliseconds: int
+
+
+@dataclass(frozen=True)
 class RawMeasurementResult:
     """HTTP レスポンスの骨格となる生計測結果。
 
@@ -141,3 +162,6 @@ class RawMeasurementResult:
     # M-F0REF-a: referenceText の Kokoro TTS 音声から抽出した F0 輪郭。
     # 抽出不可時は None（学習者 f0_contour 経路を壊さない）。
     reference_f0_contour: F0Contour | None = None
+    # M-APD-1: 音素ごとのフォルマント・スペクトル重心・持続時間計測値（ADR-018 D1）。
+    # 計測不可時は ()（後方互換）。偏差・採点はしない（採点は Haskell worker）。
+    phoneme_acoustics: tuple[PhonemeAcousticMeasurement, ...] = field(default_factory=tuple)
