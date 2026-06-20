@@ -123,3 +123,23 @@ rules:
       - "compose.yaml"
     reason: "ArticulatoryInversionResponse スキーマ変更は compose.yaml の aai サービス定義と一致させる（worker が HTTP contract に合わせる）"
     smoke: "grep 'ArticulatoryInversionResponse' applications/aai/src/aai/interface/schema.py"
+
+  # full-cycle 配線エッジ（ADR-031 D3/D5/M-FCH-8）
+  # practice-attempts と retry-recordings の smoke は tier-1 full-cycle driver で実行する。
+  # CI コスト: cold analyzer start_period=180s のため local-first 前提。
+  # fullcycle.yml label-gated CI は後続 (ADR-031 Non-goals)。
+  - id: practice-attempts-fullcycle-smoke
+    when: "applications/frontend/src/app/api/v1/sections/*/practice-attempts/route.ts"
+    require_one_of:
+      - "applications/frontend/test/fullcycle/driver.ts"
+      - "applications/frontend/test/fullcycle/cases/gop-delta.case.ts"
+    reason: "practice-attempts route の変更は full-cycle driver (tier-1 smoke) で回帰検証する"
+    smoke: "pnpm test:fullcycle gop-delta"
+
+  - id: retry-recordings-fullcycle-smoke
+    when: "applications/frontend/src/app/api/v1/findings/*/retry-recordings/route.ts"
+    require_one_of:
+      - "applications/frontend/test/fullcycle/driver.ts"
+      - "applications/frontend/test/fullcycle/cases/gop-delta.case.ts"
+    reason: "retry-recordings route の変更は full-cycle driver (tier-1 smoke) で回帰検証する"
+    smoke: "pnpm test:fullcycle gop-delta"

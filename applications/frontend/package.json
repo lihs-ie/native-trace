@@ -16,7 +16,10 @@
     "format:check": "prettier --check .",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "fitness": "ast-grep scan && eslint --rule 'import/no-restricted-paths: error' src/"
+    "fitness": "ast-grep scan && eslint --rule 'import/no-restricted-paths: error' src/ && bash ../../scripts/verify-no-harness-import-in-prod.sh",
+    "test:fullcycle": "node --experimental-strip-types test/fullcycle/driver.ts",
+    "fullcycle:up": "docker compose up -d --build --wait worker analyzer",
+    "fullcycle:down": "docker compose down"
   },
   "dependencies": {
     "better-sqlite3": "^11.9.1",

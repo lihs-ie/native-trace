@@ -15,7 +15,14 @@ import path from "path";
 
 // ---- DB path ----
 // Next.js は CWD=applications/frontend で起動するため DB_PATH もその相対パス
-const DB_PATH = process.env.DB_PATH ?? path.resolve(__dirname, "../../data/native-trace.db");
+// import.meta.dirname は Node 24 / ESM で利用可能 (--experimental-strip-types + Playwright TS transform 両対応)
+const _dirname =
+  typeof __dirname !== "undefined"
+    ? __dirname
+    : // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore — Node 24 ESM の import.meta.dirname
+      ((import.meta as { dirname?: string }).dirname ?? process.cwd());
+const DB_PATH = process.env.DB_PATH ?? path.resolve(_dirname, "../../data/native-trace.db");
 
 // ---- Seed identifiers (固定 ULID-like; E2E run ごとに一意にしたい場合は randomUUID に替えてよい) ----
 export type SeedIdentifiers = {

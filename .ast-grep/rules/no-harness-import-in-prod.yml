@@ -1,0 +1,27 @@
+# agent-policy: 本番 TypeScript (applications/frontend/src/**) が
+# test/fullcycle/ または test/selfeval/ を import することを禁止する。
+# harness/fixture 層を本番コードから分離し、誤った依存の混入を機械強制する。
+# (ADR-031 D7 / M-FCH-8)
+id: no-harness-import-in-prod
+language: typescript
+severity: error
+message: |
+  本番コード (src/) から test/fullcycle/ または test/selfeval/ を import してはいけない。
+  harness/fixture コードはテストスコープ専用 (ADR-031 D7)。
+files:
+  - applications/frontend/src/**/*.ts
+  - applications/frontend/src/**/*.tsx
+rule:
+  any:
+    - pattern: import $$$  from "../../test/fullcycle/$$$"
+    - pattern: import $$$  from "../test/fullcycle/$$$"
+    - pattern: import $$$  from "./test/fullcycle/$$$"
+    - pattern: import $$$  from "../../test/selfeval/$$$"
+    - pattern: import $$$  from "../test/selfeval/$$$"
+    - pattern: import $$$  from "./test/selfeval/$$$"
+    - pattern: require("../../test/fullcycle/$$$")
+    - pattern: require("../test/fullcycle/$$$")
+    - pattern: require("./test/fullcycle/$$$")
+    - pattern: require("../../test/selfeval/$$$")
+    - pattern: require("../test/selfeval/$$$")
+    - pattern: require("./test/selfeval/$$$")

@@ -15,7 +15,8 @@
     "format": "pnpm --filter @native-trace/frontend format",
     "backend:build": "cabal build --project-dir=applications/backend",
     "backend:test": "cabal test --project-dir=applications/backend",
-    "fitness": "bash scripts/fitness/check.sh"
+    "fitness": "bash scripts/fitness/check.sh",
+    "test:fullcycle": "pnpm --filter @native-trace/frontend test:fullcycle"
   },
   "devDependencies": {
     "@ast-grep/cli": "^0.43.0"
