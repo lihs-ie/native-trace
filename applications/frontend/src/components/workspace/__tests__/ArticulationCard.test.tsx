@@ -14,8 +14,9 @@
  * - TTS ボタンが図解と同一カード内に存在すること（M-HOW-10 Kocjancic 2025 制約）
  */
 
-import { render, screen } from "@testing-library/react";
-import { describe, it, expect } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { ArticulationEntry } from "@/lib/articulation-data";
 import type { EngineFindingDto, RetryRecordingResponse } from "@/lib/api-types";
 import { ArticulationCard } from "../ArticulationCard";
@@ -78,6 +79,9 @@ const buildRetryState = (
   deltaSignal: "improved",
   boundarySignal: "crossedMajor",
   qualityStatus: "normal",
+  retrySeverity: "major",
+  retryConfidence: 0.87,
+  retryRecordingAttemptIdentifier: "01ATTEMPT000001",
   ...overrides,
 });
 
@@ -656,6 +660,256 @@ describe("ADR-019 D6: ミニマルペアボタン (M-AAI-21c)", () => {
       btn.textContent?.includes("ミニマルペア"),
     );
     expect(minimalPairButton).toBeUndefined();
+  });
+});
+
+// ---- M-CRL-14/15/16/13 (ADR-022 D13-16): AFTER-panel integration tests ----
+
+/**
+ * AFTER-panel テスト用ヘルパー:
+ * MediaRecorder / getUserMedia / fetch をモックし、録音→API応答→retryState 設定のフローを
+ * userEvent + waitFor で駆動する。
+ *
+ * テストダブルはこのファイル（テスト層）に限定。本番コードには一切入れない。
+ */
+
+const buildRetryApiResponse = (
+  overrides: Partial<RetryRecordingResponse> = {},
+): { data: RetryRecordingResponse } => ({
+  data: {
+    findingIdentifier: "finding-test-01",
+    phoneme: "/l/",
+    originalGop: -15.3,
+    retryGop: -9.8,
+    gopDelta: 5.5,
+    deltaSignal: "improved",
+    boundarySignal: "crossedMajor",
+    qualityStatus: "normal",
+    retrySeverity: "minor",
+    retryConfidence: 0.7,
+    retryRecordingAttemptIdentifier: "retry-attempt-01",
+    ...overrides,
+  },
+});
+
+/**
+ * renderAndTriggerAfterPanel: ArticulationCard をレンダリングし、
+ * 録音ボタンをクリック（start）→ 再クリック（stop）→ fetch 応答を待ち、
+ * AFTER panel が描画されるまで waitFor する。
+ *
+ * MediaRecorder を class 構文でモックする（vi.fn() の arrow-function は new できないため）。
+ */
+const renderAndTriggerAfterPanel = async (
+  retryResponseOverrides: Partial<RetryRecordingResponse> = {},
+  findingOverrides: Partial<EngineFindingDto> = {},
+  latestRecordingAttemptIdentifier?: string | null,
+) => {
+  // class 構文でモック — vi.fn() with arrow-function は new ターゲットにできない
+  class FakeMediaRecorder {
+    ondataavailable: ((event: { data: Blob }) => void) | null = null;
+    onstop: (() => void) | null = null;
+    mimeType = "audio/webm";
+    start() {}
+    stop() {
+      if (this.ondataavailable) {
+        this.ondataavailable({ data: new Blob(["x"], { type: "audio/webm" }) });
+      }
+      if (this.onstop) {
+        this.onstop();
+      }
+    }
+  }
+
+  vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
+  vi.stubGlobal("navigator", {
+    mediaDevices: {
+      getUserMedia: vi.fn().mockResolvedValue({
+        getTracks: () => [{ stop: vi.fn() }],
+      }),
+    },
+  });
+
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => buildRetryApiResponse(retryResponseOverrides),
+  });
+  vi.stubGlobal("fetch", fetchMock);
+
+  const user = userEvent.setup();
+  const { container } = render(
+    <ArticulationCard
+      entry={buildEntry()}
+      finding={buildFinding(findingOverrides)}
+      latestRecordingAttemptIdentifier={latestRecordingAttemptIdentifier}
+    />,
+  );
+
+  // start recording
+  const recBtn = container.querySelector(".rec-btn") as HTMLButtonElement;
+  await user.click(recBtn);
+
+  // stop recording — triggers mediaRecorder.stop() → onstop → submitRetryRecording → fetch → setRetryState
+  await user.click(recBtn);
+
+  // wait for retryState to be set (AFTER panel visible)
+  await waitFor(() => {
+    expect(container.querySelector(".gop-delta")).toBeInTheDocument();
+  });
+
+  return { container };
+};
+
+describe("ArticulationCard BEFORE panel (M-CRL-14) — initial render", () => {
+  it("BEFORE: finding.severity badge が存在する", () => {
+    const { container } = render(
+      <ArticulationCard entry={buildEntry()} finding={buildFinding({ severity: "critical" })} />,
+    );
+    const lp = container.querySelector(".lp-panel");
+    expect(lp).toBeInTheDocument();
+    const badge = lp?.querySelector(".badge--critical");
+    expect(badge).toBeInTheDocument();
+  });
+
+  it("BEFORE: 4-step トラッカー（聞く/比べる/出す/測る）が描画される", () => {
+    const { container } = render(
+      <ArticulationCard entry={buildEntry()} finding={buildFinding()} />,
+    );
+    expect(container.querySelector(".loop-steps")).toBeInTheDocument();
+    const steps = container.querySelectorAll(".loop-step .ls-k");
+    const labels = Array.from(steps).map((el) => el.textContent);
+    expect(labels).toContain("聞く");
+    expect(labels).toContain("比べる");
+    expect(labels).toContain("出す");
+    expect(labels).toContain("測る");
+  });
+
+  it("BEFORE: AFTER panel placeholder が描画される（retryState null）", () => {
+    const { container } = render(
+      <ArticulationCard entry={buildEntry()} finding={buildFinding()} />,
+    );
+    // AFTER panel should show placeholder text when no retryState
+    expect(container.querySelector(".gop-delta")).not.toBeInTheDocument();
+    expect(container.innerHTML).toContain("再録音後に GOP デルタが表示されます");
+  });
+});
+
+describe("ArticulationCard AFTER panel (M-CRL-14/15/16/13) — post-retry render", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("AFTER: retrySeverity=minor → .badge--minor が描画される", async () => {
+    const { container } = await renderAndTriggerAfterPanel({ retrySeverity: "minor" });
+    const afterPanel = container.querySelectorAll(".lp-panel")[1];
+    expect(afterPanel?.querySelector(".badge--minor")).toBeInTheDocument();
+  });
+
+  it("AFTER: phenomenon が AFTER panel にも複製される (M-CRL-12)", async () => {
+    const { container } = await renderAndTriggerAfterPanel({}, { phenomenon: "substitution" });
+    const afterPanel = container.querySelectorAll(".lp-panel")[1];
+    // phenomenon は phen クラスで表示される
+    expect(afterPanel?.querySelector(".phen")).toBeInTheDocument();
+  });
+
+  it("AFTER: confidence indicator が retryConfidence=0.7 を表示する (M-CRL-12)", async () => {
+    const { container } = await renderAndTriggerAfterPanel({ retryConfidence: 0.7 });
+    const afterPanel = container.querySelectorAll(".lp-panel")[1];
+    expect(afterPanel?.querySelector(".conf")).toBeInTheDocument();
+    expect(afterPanel?.innerHTML).toContain("0.70");
+  });
+
+  it("AFTER: GOP X→Y 形式 — originalGop/retryGop が gop-delta に表示される", async () => {
+    const { container } = await renderAndTriggerAfterPanel({
+      originalGop: -15.3,
+      retryGop: -9.8,
+    });
+    const afterPanel = container.querySelectorAll(".lp-panel")[1];
+    expect(afterPanel?.innerHTML).toContain("-15.3");
+    expect(afterPanel?.innerHTML).toContain("-9.8");
+  });
+
+  it("AFTER: deltaSignal=improved → .gd-signal--improved クラスが付く", async () => {
+    const { container } = await renderAndTriggerAfterPanel({ deltaSignal: "improved" });
+    const afterPanel = container.querySelectorAll(".lp-panel")[1];
+    expect(afterPanel?.querySelector(".gd-signal--improved")).toBeInTheDocument();
+  });
+
+  it("AFTER: deltaSignal=regressed → .gd-signal--regressed クラスが付く", async () => {
+    const { container } = await renderAndTriggerAfterPanel({ deltaSignal: "regressed" });
+    const afterPanel = container.querySelectorAll(".lp-panel")[1];
+    expect(afterPanel?.querySelector(".gd-signal--regressed")).toBeInTheDocument();
+  });
+
+  it("AFTER: boundarySignal=crossedMinor → 「minor を脱しました」が表示される", async () => {
+    const { container } = await renderAndTriggerAfterPanel({ boundarySignal: "crossedMinor" });
+    const afterPanel = container.querySelectorAll(".lp-panel")[1];
+    expect(afterPanel?.innerHTML).toContain("minor を脱しました");
+  });
+
+  it("AFTER: boundarySignal=crossedMajor → 「major を脱しました」が表示される", async () => {
+    const { container } = await renderAndTriggerAfterPanel({ boundarySignal: "crossedMajor" });
+    const afterPanel = container.querySelectorAll(".lp-panel")[1];
+    expect(afterPanel?.innerHTML).toContain("major を脱しました");
+  });
+
+  it("AFTER: drill-verdict チップが 1 つだけ存在し retry GOP echo を含む", async () => {
+    const { container } = await renderAndTriggerAfterPanel({ retryGop: -9.8 });
+    const afterPanel = container.querySelectorAll(".lp-panel")[1];
+    const drillVerdicts = afterPanel?.querySelectorAll(".drill-verdict");
+    expect(drillVerdicts?.length).toBe(1);
+    expect(drillVerdicts?.[0]?.innerHTML).toContain("-9.8");
+    // retention / NBest chip は存在しない
+    expect(afterPanel?.querySelector(".nbest-chip")).not.toBeInTheDocument();
+  });
+
+  it("AFTER: 2-signal 注記テキストが存在する (M-CRL-14)", async () => {
+    const { container } = await renderAndTriggerAfterPanel();
+    const afterPanel = container.querySelectorAll(".lp-panel")[1];
+    expect(afterPanel?.querySelector(".note")).toBeInTheDocument();
+    expect(afterPanel?.innerHTML).toContain("2 signal");
+  });
+
+  it("AFTER: 「⇄ 再録音と聞き比べ」ボタンが存在する (M-CRL-13)", async () => {
+    const { container } = await renderAndTriggerAfterPanel({}, {}, "original-attempt-01");
+    const afterPanel = container.querySelectorAll(".lp-panel")[1];
+    const btn = Array.from(afterPanel?.querySelectorAll("button") ?? []).find((b) =>
+      b.textContent?.includes("⇄ 再録音と聞き比べ"),
+    );
+    expect(btn).toBeDefined();
+  });
+
+  it("AFTER: latestRecordingAttemptIdentifier=null のとき 「⇄」ボタンは disabled", async () => {
+    const { container } = await renderAndTriggerAfterPanel({}, {}, null);
+    const afterPanel = container.querySelectorAll(".lp-panel")[1];
+    const btn = Array.from(afterPanel?.querySelectorAll("button") ?? []).find((b) =>
+      b.textContent?.includes("⇄ 再録音と聞き比べ"),
+    ) as HTMLButtonElement | undefined;
+    expect(btn).toBeDefined();
+    expect(btn?.disabled).toBe(true);
+  });
+
+  it("AFTER: qualityStatus=low_quality → 「品質が低い録音の測定値です」が表示される (M-CRL-16)", async () => {
+    const { container } = await renderAndTriggerAfterPanel({ qualityStatus: "low_quality" });
+    const afterPanel = container.querySelectorAll(".lp-panel")[1];
+    expect(afterPanel?.innerHTML).toContain("品質が低い録音の測定値です");
+  });
+
+  it("AFTER: qualityStatus=normal → 「品質が低い録音の測定値です」が表示されない (M-CRL-16)", async () => {
+    const { container } = await renderAndTriggerAfterPanel({ qualityStatus: "normal" });
+    const afterPanel = container.querySelectorAll(".lp-panel")[1];
+    expect(afterPanel?.innerHTML).not.toContain("品質が低い録音の測定値です");
+  });
+
+  it("AFTER: UI コピーに「改善が加速」「see improvement」相当が含まれない (RISK-3)", async () => {
+    const { container } = await renderAndTriggerAfterPanel();
+    expect(container.innerHTML).not.toContain("改善が加速");
+    expect(container.innerHTML).not.toContain("improvement accelerat");
+    expect(container.innerHTML).not.toContain("see improvement");
   });
 });
 

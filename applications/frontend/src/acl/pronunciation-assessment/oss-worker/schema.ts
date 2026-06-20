@@ -218,6 +218,19 @@ const perPhonemeGopEntrySchema = z.object({
   heat: z.number().int().min(0).max(4),
 });
 
+/**
+ * M-CRL-16 (ADR-022 D17): diagnosticPerPhonemeGop エントリスキーマ。
+ * worker AssessmentResponse.diagnosticPerPhonemeGop の各エントリ。
+ * normal / low_quality の両分岐で常時 populate される（heatmap の perPhonemeGop とは別フィールド）。
+ * zod は unknown keys を strip するため明示的に定義する（ORPHAN-2 対策）。
+ */
+const diagnosticPerPhonemeGopEntrySchema = z.object({
+  phoneme: z.string(),
+  gop: z.number(),
+  startMs: z.number(),
+  endMs: z.number(),
+});
+
 const focusSoundSchema = z.object({
   pair: z.string(),
   phenomenon: z
@@ -324,6 +337,17 @@ export const ossWorkerSuccessResponseSchema = z.object({
     .nullable()
     .optional()
     .transform((v) => v ?? null),
+  /**
+   * M-CRL-16 (ADR-022 D17): diagnosticPerPhonemeGop — normal / low_quality の両分岐で常時 populate。
+   * worker AssessmentResponse.diagnosticPerPhonemeGop に対応。
+   * heatmap perPhonemeGop（low_quality で[]）とは別フィールド。
+   * nullable().optional() → 古い worker（フィールド未実装）との後方互換のため default []。
+   */
+  diagnosticPerPhonemeGop: z
+    .array(diagnosticPerPhonemeGopEntrySchema)
+    .nullable()
+    .optional()
+    .transform((v) => v ?? []),
 });
 
 export type OssWorkerSuccessResponse = z.infer<typeof ossWorkerSuccessResponseSchema>;

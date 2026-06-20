@@ -50,7 +50,10 @@ import { type EntropyProvider } from "../port/entropy-provider";
 import { type Clock } from "../port/clock";
 import { type Logger } from "../port/logger";
 import { TOKENIZER_VERSION } from "../shared/tokenizer";
-import { type AssessmentResultDraft } from "../assessment-result-draft";
+import {
+  type AssessmentResultDraft,
+  type DiagnosticPerPhonemeGopDraft,
+} from "../assessment-result-draft";
 import {
   type ImprovementMessageGenerator,
   type FeedbackLayersOutput,
@@ -91,6 +94,12 @@ export type RunAssessmentJobOutput = Readonly<{
     | AnalysisJobQueued
     | AssessmentResultCreated
   >;
+  /**
+   * M-CRL-16 (ADR-022 D17): diagnosticPerPhonemeGop — in-memory pass-through のみ（永続化なし）。
+   * normal / low_quality の両経路で populate。route がこれを使って retryGop を導出する。
+   * 非 retry caller（main assessment フロー）はこのフィールドを無視してよい（additive/optional）。
+   */
+  diagnosticPerPhonemeGop: ReadonlyArray<DiagnosticPerPhonemeGopDraft>;
 }>;
 
 // ---- Dependencies ----
@@ -210,6 +219,7 @@ const handleJobFailure = (
   errorMessage: string | null,
   failureKind: "retryable" | "nonRetryable",
   now: Date,
+  diagnosticPerPhonemeGop: ReadonlyArray<DiagnosticPerPhonemeGopDraft> = [],
 ): ResultAsync<RunAssessmentJobOutput, DomainError> => {
   const retryResult = retryAnalysisJob(job, failureKind, now);
 
@@ -238,6 +248,7 @@ const handleJobFailure = (
         result: null,
         retryScheduled: true,
         events: [...retryEvents] as RunAssessmentJobOutput["events"],
+        diagnosticPerPhonemeGop,
       }));
   }
 
@@ -271,6 +282,7 @@ const handleJobFailure = (
       result: null,
       retryScheduled: false,
       events: [...failEvents] as RunAssessmentJobOutput["events"],
+      diagnosticPerPhonemeGop,
     }));
 };
 
@@ -300,6 +312,7 @@ export const createRunAssessmentJob =
             result: null,
             retryScheduled: false,
             events: [],
+            diagnosticPerPhonemeGop: [],
           } satisfies RunAssessmentJobOutput);
         }
 
@@ -325,11 +338,19 @@ export const createRunAssessmentJob =
                 result: null,
                 retryScheduled: false,
                 events: [...cancelEvents] as RunAssessmentJobOutput["events"],
+                diagnosticPerPhonemeGop: [],
               }));
             }
 
             // running 状態へ遷移
             const { analysisJob: runningJob } = startAnalysisJob(leasedJob, now);
+
+            // M-CRL-16: diagnosticPerPhonemeGop in-memory pass-through。
+            // andThen((draft) => {...}) の内部で代入し、後段の .map() で読む。
+            // let を使う理由: draft のスコープが .andThen コールバック内に閉じており、
+            // fromPromise(...).andThen(...) で生成した ResultAsync チェーンの .map コールバックでは
+            // 別の実行コンテキストになるため const capturedXxx では到達できない（運行時 ReferenceError）。
+            let jobDiagnosticPerPhonemeGop: ReadonlyArray<DiagnosticPerPhonemeGopDraft> = [];
 
             // 3. RecordingAttempt / AudioFile / Section を取得
             return dependencies.analysisRunRepository
@@ -370,6 +391,7 @@ export const createRunAssessmentJob =
                                         events: [
                                           ...cancelEvents,
                                         ] as RunAssessmentJobOutput["events"],
+                                        diagnosticPerPhonemeGop: [],
                                       }));
                                   }
 
@@ -450,6 +472,12 @@ export const createRunAssessmentJob =
                                       assessmentSchemaVersion: ASSESSMENT_SCHEMA_VERSION,
                                     })
                                     .andThen((draft) => {
+                                      // M-CRL-16: diagnosticPerPhonemeGop を外側スコープの let 変数に書き出す。
+                                      // jobDiagnosticPerPhonemeGop は runningJob スコープで宣言済み。
+                                      // このコールバック内の draft はここでのみ参照可能なため、
+                                      // 後段の .map(() => {...}) では jobDiagnosticPerPhonemeGop 経由で読む。
+                                      jobDiagnosticPerPhonemeGop = draft.diagnosticPerPhonemeGop;
+
                                       // 7a. low_quality 早期返却: errAsync で orElse パスに乗せる
                                       if (draft.status === "low_quality") {
                                         dependencies.logger.info(
@@ -979,6 +1007,7 @@ export const createRunAssessmentJob =
                                               events: [
                                                 ...cancelEvents,
                                               ] as RunAssessmentJobOutput["events"],
+                                              diagnosticPerPhonemeGop: [],
                                             }));
                                         }
 
@@ -1045,6 +1074,9 @@ export const createRunAssessmentJob =
                                               },
                                               retryScheduled: false,
                                               events: allEvents,
+                                              // M-CRL-16: diagnosticPerPhonemeGop は in-memory pass-through（永続化なし）
+                                              // jobDiagnosticPerPhonemeGop は runningJob スコープで let 宣言済み。
+                                              diagnosticPerPhonemeGop: jobDiagnosticPerPhonemeGop,
                                             } satisfies RunAssessmentJobOutput;
                                           });
                                       });
@@ -1076,6 +1108,7 @@ export const createRunAssessmentJob =
                                         extractReason(engineOrSchemaError),
                                         failureKind,
                                         now,
+                                        jobDiagnosticPerPhonemeGop,
                                       );
                                     });
                                 }),

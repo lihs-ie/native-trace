@@ -158,6 +158,7 @@ const makeDraft = (): AssessmentResultDraft => ({
   focusSounds: null,
   prosody: null,
   engineSummaryMessageJa: null,
+  diagnosticPerPhonemeGop: [],
 });
 
 let ulidCounter = 0;

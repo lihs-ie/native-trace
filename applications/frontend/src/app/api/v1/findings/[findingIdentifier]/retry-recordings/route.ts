@@ -5,7 +5,9 @@
  *
  * 正常録音の閉ループ: submitPracticeAttempt → runAssessmentJob(30s poll) →
  * per-phoneme GOP heatmap から retryGop 取得 → worker /v1/gop-delta → RetryRecordingResponse 200。
- * low_quality retry → 422「もう一度はっきり録音してください」。
+ * low_quality retry（M-CRL-16）:
+ *   - diagnosticPerPhonemeGop が非空 → 200 + qualityStatus='low_quality' + gopDelta
+ *   - diagnosticPerPhonemeGop が空  → 422「もう一度はっきり録音してください」
  *
  * Body: multipart/form-data
  *   - audio: File（録音音声）
@@ -14,8 +16,8 @@
  *   - expectedPhonemeIpa: string（対象音素 IPA）
  *   - expectedAudioRangeStartMs: number（finding.audioRange.startMilliseconds）
  *
- * Response 200: RetryRecordingResponse（qualityStatus は常に 'normal'）
- * Response 422: { message: "もう一度はっきり録音してください" }（low_quality / GOP 取得不可）
+ * Response 200: RetryRecordingResponse（qualityStatus は 'normal' または 'low_quality'）
+ * Response 422: { message: "もう一度はっきり録音してください" }（low_quality + 診断 GOP なし / GOP 取得不可）
  *
  * ADR-004: 採点は既存 worker 契約再利用。新採点経路を作らない。
  * ADR-008: progress_snapshots への書き込みは行わない。
@@ -25,11 +27,12 @@
  *   1. multipart バリデーション
  *   2. ensureFindingRetrySectionExists — per-finding 合成 Section を取得または作成
  *   3. submitPracticeAttempt(oss_worker_only) — audio を analysis キューに投入
- *   4. runAssessmentJob を 30s polling — AssessmentResult 識別子取得
- *      low_quality → 422
- *   5. AssessmentResult.perPhonemeGop から対象音素 GOP を取得
+ *   4. runAssessmentJob を 30s polling — AssessmentResult 識別子 or low_quality 診断取得
+ *      low_quality + 診断 GOP 空 → 422
+ *   5. normal: AssessmentResult.perPhonemeGop から対象音素 GOP を取得
+ *      low_quality: diagnosticPerPhonemeGop から対象音素 GOP を取得
  *      GOP 取得不可 → 422
- *   6. worker /v1/gop-delta ACL → gopDelta / deltaSignal / boundarySignal
+ *   6. worker /v1/gop-delta ACL → gopDelta / deltaSignal / boundarySignal / retrySeverity / retryConfidence
  *   7. RetryRecordingResponse 200
  */
 
@@ -39,8 +42,8 @@ import { normalizeAudioMimeType } from "../../../../../../lib/mime";
 import { ensureFindingRetrySectionExists } from "../../../../../../infrastructure/training/finding-retry-section-fixture";
 import { createGopDeltaAdaptor } from "../../../../../../acl/gop-delta/create-gop-delta-adaptor";
 import type { RetryRecordingResponse } from "../../../../../../lib/api-types";
-import type { PerPhonemeGopEntry } from "../../../../../../domain/assessment-result";
 import { createAssessmentResultIdentifier } from "../../../../../../domain/assessment-result";
+import type { DiagnosticPerPhonemeGopDraft } from "../../../../../../usecase/assessment-result-draft";
 
 type RouteContext = {
   params: Promise<{ findingIdentifier: string }>;
@@ -82,7 +85,7 @@ const badRequestResponse = (field: string, reason: string): Response =>
 
 type PollResult =
   | { kind: "succeeded"; assessmentResultIdentifier: string }
-  | { kind: "low_quality" }
+  | { kind: "low_quality"; diagnosticPerPhonemeGop: ReadonlyArray<DiagnosticPerPhonemeGopDraft> }
   | { kind: "timeout" };
 
 /**
@@ -111,11 +114,14 @@ const pollForAssessmentResult = async (
 
       // low_quality / 非 retryable: retryScheduled=false, result=null, job.state="failed"
       if (output.job !== null && output.job.state === "failed" && !output.retryScheduled) {
-        return { kind: "low_quality" };
+        return {
+          kind: "low_quality",
+          diagnosticPerPhonemeGop: output.diagnosticPerPhonemeGop,
+        };
       }
     } else {
       // errAsync — unexpected error（low_quality は ok パスに乗る）
-      return { kind: "low_quality" };
+      return { kind: "low_quality", diagnosticPerPhonemeGop: [] };
     }
 
     await new Promise<void>((resolve) => setTimeout(resolve, ANALYSIS_POLL_INTERVAL_MS));
@@ -131,7 +137,9 @@ const pollForAssessmentResult = async (
 const readPerPhonemeGop = async (
   container: ReturnType<typeof getContainer>,
   assessmentResultIdentifier: string,
-): Promise<ReadonlyArray<PerPhonemeGopEntry> | null> => {
+): Promise<ReadonlyArray<
+  Readonly<{ word: string; phoneme: string; gop: number; heat: number }>
+> | null> => {
   const identifier = createAssessmentResultIdentifier(assessmentResultIdentifier);
   if (!identifier) return null;
 
@@ -147,9 +155,12 @@ const readPerPhonemeGop = async (
  * S-CRL-1: 単語内に同一 IPA が複数回出現する場合、audioRange.startMs に最も近い
  * エントリを選ぶ（D5 — 音素マッチング）。
  * startMs がない / 単一エントリの場合は最初のマッチを返す。
+ *
+ * 引数型: phoneme / gop のみを使うため、PerPhonemeGopEntry と DiagnosticPerPhonemeGopDraft
+ * の両方を受け付けられるよう構造的最小型で受け取る。
  */
 const selectTargetPhonemeGop = (
-  perPhonemeGop: ReadonlyArray<PerPhonemeGopEntry>,
+  perPhonemeGop: ReadonlyArray<Readonly<{ phoneme: string; gop: number }>>,
   expectedPhonemeIpa: string,
   _expectedAudioRangeStartMs: number,
 ): number | null => {
@@ -251,29 +262,42 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
     return badRequestResponse("audio", submitResult.error.type);
   }
 
+  // M-CRL-13: retry RecordingAttempt の識別子を捕捉（A/B 比較再生に使用）
+  const retryRecordingAttemptIdentifier = submitResult.value.recordingAttempt.identifier;
+
   // ---- 4. runAssessmentJob を 30s polling ----
   const pollResult = await pollForAssessmentResult(container);
-
-  if (pollResult.kind === "low_quality") {
-    return unprocessableResponse("もう一度はっきり録音してください");
-  }
 
   if (pollResult.kind === "timeout") {
     return unprocessableResponse("もう一度はっきり録音してください");
   }
 
-  // ---- 5. AssessmentResult.perPhonemeGop から対象音素 GOP 取得 ----
-  const perPhonemeGop = await readPerPhonemeGop(container, pollResult.assessmentResultIdentifier);
+  // ---- 5. 対象音素 GOP 取得（normal / low_quality 共通パス）----
+  let retryGop: number | null;
+  let qualityStatus: "normal" | "low_quality";
 
-  if (!perPhonemeGop || perPhonemeGop.length === 0) {
-    return unprocessableResponse("もう一度はっきり録音してください");
+  if (pollResult.kind === "low_quality") {
+    // M-CRL-16: diagnosticPerPhonemeGop が空なら 422、非空なら GOP を抽出して 200
+    if (pollResult.diagnosticPerPhonemeGop.length === 0) {
+      return unprocessableResponse("もう一度はっきり録音してください");
+    }
+    retryGop = selectTargetPhonemeGop(
+      pollResult.diagnosticPerPhonemeGop,
+      expectedPhonemeIpa,
+      expectedAudioRangeStartMs,
+    );
+    qualityStatus = "low_quality";
+  } else {
+    // normal path: AssessmentResult.perPhonemeGop から対象音素 GOP 取得
+    const perPhonemeGop = await readPerPhonemeGop(container, pollResult.assessmentResultIdentifier);
+
+    if (!perPhonemeGop || perPhonemeGop.length === 0) {
+      return unprocessableResponse("もう一度はっきり録音してください");
+    }
+
+    retryGop = selectTargetPhonemeGop(perPhonemeGop, expectedPhonemeIpa, expectedAudioRangeStartMs);
+    qualityStatus = "normal";
   }
-
-  const retryGop = selectTargetPhonemeGop(
-    perPhonemeGop,
-    expectedPhonemeIpa,
-    expectedAudioRangeStartMs,
-  );
 
   if (retryGop === null) {
     return unprocessableResponse("もう一度はっきり録音してください");
@@ -289,6 +313,8 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
     gopDelta: number;
     deltaSignal: "improved" | "unchanged" | "regressed";
     boundarySignal: "crossedMajor" | "crossedMinor" | "none";
+    retrySeverity: "critical" | "major" | "minor" | "suggestion" | "none";
+    retryConfidence: number;
   };
   try {
     gopDeltaResult = await gopDeltaAdaptor.computeGopDelta({ originalGop, retryGop });
@@ -305,7 +331,10 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
     gopDelta: gopDeltaResult.gopDelta,
     deltaSignal: gopDeltaResult.deltaSignal,
     boundarySignal: gopDeltaResult.boundarySignal,
-    qualityStatus: "normal",
+    qualityStatus,
+    retrySeverity: gopDeltaResult.retrySeverity,
+    retryConfidence: gopDeltaResult.retryConfidence,
+    retryRecordingAttemptIdentifier,
   };
 
   // ADR-008: progress_snapshots への書き込みは行わない。

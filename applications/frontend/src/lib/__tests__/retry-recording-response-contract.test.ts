@@ -14,7 +14,7 @@ import { describe, it, expect, expectTypeOf } from "vitest";
 import type { RetryRecordingResponse } from "../api-types";
 
 describe("RetryRecordingResponse 型契約 (M-CRL-6)", () => {
-  it("8 フィールドすべてが型として存在する", () => {
+  it("11 フィールドすべてが型として存在する (M-CRL-11/13 追加後)", () => {
     // compile-time assertion: 型構造のみ検証
     expectTypeOf<RetryRecordingResponse>().toHaveProperty("findingIdentifier");
     expectTypeOf<RetryRecordingResponse>().toHaveProperty("phoneme");
@@ -24,6 +24,11 @@ describe("RetryRecordingResponse 型契約 (M-CRL-6)", () => {
     expectTypeOf<RetryRecordingResponse>().toHaveProperty("deltaSignal");
     expectTypeOf<RetryRecordingResponse>().toHaveProperty("boundarySignal");
     expectTypeOf<RetryRecordingResponse>().toHaveProperty("qualityStatus");
+    // M-CRL-11
+    expectTypeOf<RetryRecordingResponse>().toHaveProperty("retrySeverity");
+    expectTypeOf<RetryRecordingResponse>().toHaveProperty("retryConfidence");
+    // M-CRL-13
+    expectTypeOf<RetryRecordingResponse>().toHaveProperty("retryRecordingAttemptIdentifier");
   });
 
   it("deltaSignal が 'improved' | 'unchanged' | 'regressed' の 3 値 enum", () => {
@@ -65,6 +70,9 @@ describe("RetryRecordingResponse 型契約 (M-CRL-6)", () => {
       deltaSignal: "improved",
       boundarySignal: "crossedMajor",
       qualityStatus: "normal",
+      retrySeverity: "major",
+      retryConfidence: 0.87,
+      retryRecordingAttemptIdentifier: "01ATTEMPT000001",
     };
 
     expect(response.findingIdentifier).toBe("finding-01");
@@ -75,6 +83,9 @@ describe("RetryRecordingResponse 型契約 (M-CRL-6)", () => {
     expect(response.deltaSignal).toBe("improved");
     expect(response.boundarySignal).toBe("crossedMajor");
     expect(response.qualityStatus).toBe("normal");
+    expect(response.retrySeverity).toBe("major");
+    expect(response.retryConfidence).toBe(0.87);
+    expect(response.retryRecordingAttemptIdentifier).toBe("01ATTEMPT000001");
   });
 
   it("deltaSignal と boundarySignal が別フィールドで同時表示可能", () => {
@@ -87,6 +98,9 @@ describe("RetryRecordingResponse 型契約 (M-CRL-6)", () => {
       deltaSignal: "improved",
       boundarySignal: "crossedMinor",
       qualityStatus: "normal",
+      retrySeverity: "minor",
+      retryConfidence: 0.75,
+      retryRecordingAttemptIdentifier: "01ATTEMPT000002",
     };
     // 両 signal が同時に非 'none' / 非 'unchanged' になれる（独立した 3 enum）
     expect(response.deltaSignal).toBe("improved");

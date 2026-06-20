@@ -178,6 +178,8 @@ const mapValidatedResponse = (
     focusSounds: null,
     prosody: null,
     engineSummaryMessageJa: null,
+    // OpenAI は diagnosticPerPhonemeGop を返さない（oss_worker 専用フィールド）
+    diagnosticPerPhonemeGop: [],
   };
 
   return ok(draft);

@@ -137,6 +137,19 @@ export type PerPhonemeGopDraft = Readonly<{
   heat: number;
 }>;
 
+/**
+ * M-CRL-16 (ADR-022 D17): diagnosticPerPhonemeGop エントリ Draft 型。
+ * worker AssessmentResponse.diagnosticPerPhonemeGop に対応。
+ * normal / low_quality の両分岐で常時 populate される。
+ * D5 (S-CRL-1): startMs/endMs は最近傍境界選択用（Non-goal のため optional 扱い）。
+ */
+export type DiagnosticPerPhonemeGopDraft = Readonly<{
+  phoneme: string;
+  gop: number;
+  startMs: number;
+  endMs: number;
+}>;
+
 // ---- AcousticEvidence ----
 
 /**
@@ -297,4 +310,10 @@ export type AssessmentResultDraft = Readonly<{
   prosody: ProsodyDraft | null;
   /** C3-c: エンジンサマリー文 (M-107b) */
   engineSummaryMessageJa: string | null;
+  /**
+   * M-CRL-16 (ADR-022 D17): diagnosticPerPhonemeGop — normal / low_quality の両分岐で常時 populate。
+   * heatmap perPhonemeGop（low_quality で null）とは別フィールド。
+   * route がこれを読んで低品質録音の retryGop を導出する（in-memory pass-through、永続化なし）。
+   */
+  diagnosticPerPhonemeGop: ReadonlyArray<DiagnosticPerPhonemeGopDraft>;
 }>;

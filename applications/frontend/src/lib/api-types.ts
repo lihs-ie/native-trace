@@ -341,7 +341,9 @@ export type EngineResultDto = {
 /**
  * M-CRL-6 (ADR-022): finding-level retry 録音の評価結果。
  * EngineResultDto の兄弟 export（フィールドとして追加しない）。
- * qualityStatus は 200 レスポンスでは常に 'normal'（low_quality retry は 422 で処理）。
+ * qualityStatus は 200 レスポンスで 'normal' または 'low_quality'（M-CRL-16 以降）。
+ * M-CRL-11: retrySeverity / retryConfidence を worker GopDeltaResponse から追加（AFTER パネルスライス）。
+ * M-CRL-13: retryRecordingAttemptIdentifier を追加（retry クリップ保持）。
  */
 export type RetryRecordingResponse = {
   findingIdentifier: string;
@@ -352,6 +354,12 @@ export type RetryRecordingResponse = {
   deltaSignal: "improved" | "unchanged" | "regressed";
   boundarySignal: "crossedMajor" | "crossedMinor" | "none";
   qualityStatus: "normal" | "low_quality";
+  /** M-CRL-11 (ADR-022 D14): worker 由来の retry GOP 再採点 severity（5 値 enum）。none = しきい値内。*/
+  retrySeverity: "critical" | "major" | "minor" | "suggestion" | "none";
+  /** M-CRL-11 (ADR-022 D14): worker 由来の retry GOP 再採点 confidence（0–1）。*/
+  retryConfidence: number;
+  /** M-CRL-13 (ADR-022 D15): 永続化した retry RecordingAttempt の識別子。A/B 比較再生に使用。*/
+  retryRecordingAttemptIdentifier: string;
 };
 
 export type WorkspaceDto = {

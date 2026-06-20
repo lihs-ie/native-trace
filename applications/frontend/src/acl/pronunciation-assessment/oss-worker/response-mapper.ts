@@ -8,6 +8,7 @@ import { ok, err, type Result } from "neverthrow";
 import {
   type AssessmentResultDraft,
   type AssessmentEngineMetadataDraft,
+  type DiagnosticPerPhonemeGopDraft,
   RawEngineResponseProvider,
   createAssessmentSchemaVersion,
   createScoringRubricVersion,
@@ -225,6 +226,15 @@ const mapSuccessResponse = (
         }
       : null,
     engineSummaryMessageJa: response.engineSummaryMessageJa,
+    // M-CRL-16 (ADR-022 D17): diagnosticPerPhonemeGop は schema で [] にデフォルト化済み。
+    diagnosticPerPhonemeGop: (response.diagnosticPerPhonemeGop ?? []).map(
+      (entry): DiagnosticPerPhonemeGopDraft => ({
+        phoneme: entry.phoneme,
+        gop: entry.gop,
+        startMs: entry.startMs,
+        endMs: entry.endMs,
+      }),
+    ),
   };
 
   return ok(draft);

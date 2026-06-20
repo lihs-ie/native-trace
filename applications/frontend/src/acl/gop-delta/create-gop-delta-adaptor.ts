@@ -11,9 +11,12 @@
  *   POST {workerBaseUrl}/v1/gop-delta
  *   request:  { "originalGop": number, "retryGop": number }
  *   response: { "gopDelta": number, "deltaSignal": "improved"|"unchanged"|"regressed",
- *               "boundarySignal": "crossedMajor"|"crossedMinor"|"none" }
+ *               "boundarySignal": "crossedMajor"|"crossedMinor"|"none",
+ *               "retrySeverity": "critical"|"major"|"minor"|"suggestion"|"none",
+ *               "retryConfidence": number }
  *
- * frontend は deltaSignal / boundarySignal を受け取るだけで threshold を再導出しない。
+ * frontend は deltaSignal / boundarySignal / retrySeverity / retryConfidence を受け取るだけで
+ * threshold を再導出しない。
  * -8 / -12 / gopMinorThreshold / gopMajorThreshold 相当の数値はこのファイルに現れない。
  */
 
@@ -23,6 +26,10 @@ const gopDeltaResponseSchema = z.object({
   gopDelta: z.number(),
   deltaSignal: z.enum(["improved", "unchanged", "regressed"]),
   boundarySignal: z.enum(["crossedMajor", "crossedMinor", "none"]),
+  /** M-CRL-11 (ADR-022 D14): worker 由来の retry GOP 再採点 severity。none = しきい値内。*/
+  retrySeverity: z.enum(["critical", "major", "minor", "suggestion", "none"]),
+  /** M-CRL-11 (ADR-022 D14): worker 由来の retry GOP 再採点 confidence（0–1）。*/
+  retryConfidence: z.number(),
 });
 
 export type GopDeltaResponse = z.infer<typeof gopDeltaResponseSchema>;
@@ -75,9 +82,7 @@ export const createGopDeltaAdaptor = (
     const rawBody = await (response.json() as Promise<unknown>);
     const parsed = gopDeltaResponseSchema.safeParse(rawBody);
     if (!parsed.success) {
-      throw new Error(
-        `worker /v1/gop-delta response schema mismatch: ${parsed.error.message}`,
-      );
+      throw new Error(`worker /v1/gop-delta response schema mismatch: ${parsed.error.message}`);
     }
 
     return parsed.data;

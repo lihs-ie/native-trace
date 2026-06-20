@@ -481,6 +481,7 @@ export const DetailPanelV2 = ({
             finding={finding}
             articulatoryEstimate={finding.articulatoryEstimate ?? null}
             acousticEvidence={finding.acousticEvidence ?? null}
+            latestRecordingAttemptIdentifier={latestRecordingAttemptIdentifier}
           />
         </div>
       )}
