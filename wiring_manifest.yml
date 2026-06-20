@@ -143,3 +143,18 @@ rules:
       - "applications/frontend/test/fullcycle/cases/gop-delta.case.ts"
     reason: "retry-recordings route の変更は full-cycle driver (tier-1 smoke) で回帰検証する"
     smoke: "pnpm test:fullcycle gop-delta"
+
+  # drift sentinel 配線エッジ（ADR-031 D12 Stage-3 / M-DRIFT-WIRING）
+  - id: drift-check
+    when: "applications/python-analyzer/test/selfeval/drift_check.py"
+    require_one_of:
+      - "package.json"
+    reason: "drift_check.py は package.json の test:drift スクリプトから呼び出される。test:drift が宣言されていなければ drift sentinel は孤立する"
+    smoke: "python3 applications/python-analyzer/test/selfeval/drift_check.py --analyzer-url http://localhost:8788"
+
+  - id: drift-compute-fingerprint
+    when: "applications/python-analyzer/test/selfeval/compute_fingerprint.py"
+    require_one_of:
+      - "applications/python-analyzer/test/fixtures/corpus/manifest.json"
+    reason: "compute_fingerprint.py --write は manifest.json の analyzerCommit を更新する。manifest への書き込み経路が宣言されていなければ fingerprint pin が死に続ける"
+    smoke: "python3 applications/python-analyzer/test/selfeval/compute_fingerprint.py --write"

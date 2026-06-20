@@ -37,7 +37,12 @@
           "noiseMonotonicity": {
             "relation": "median(GOP) non-increasing over SNR ladder {clean,20dB,10dB,5dB} within ε",
             "epsilon": 0.05,
-            "snrLadderDb": [null, 20, 10, 5]
+            "snrLadderDb": [
+              null,
+              20,
+              10,
+              5
+            ]
           },
           "flipDirectionality": {
             "relation": "gain drop crossing -36dBFS triggers low_quality; floor-staying control keeps GOP invariant",
@@ -49,12 +54,15 @@
         "_comment": [
           "observed ブロック: 実測値（band）と analyzerCommit pin。",
           "gop.band は帯域（min/max）で pin する — float == 禁止。",
-          "analyzerCommit: 2026-06-20 first-run。TODO: pin exact image digest at next pinned run."
+          "analyzerCommit: live 指紋 docker:<image-id>|pip:<dockerfile-pip-hash>（compute_fingerprint.py --write で再生成）。drift_check.py がこの pin と live を比較する（ADR-031 D12 Stage-3）。"
         ],
-        "analyzerCommit": "2026-06-20-first-run — TODO: replace with `docker inspect native-trace-analyzer --format '{{.Id}}'` at next pinned run",
+        "analyzerCommit": "docker:0a696a5670ab4864daf96ded333d161754c060ac0414e24929d7fdedf000541e|pip:d2402f761be1dc7c24be5a8c02b3f5692fecadcead90acc70a8d5cd09cbe1f06",
         "gop": {
-          "band": {"min": -16.0, "max": -5.0},
-          "note": "GOP は aligner の非決定性により bit-exact でない。帯域（min/max）で pin する。初回実測: hello world 8音素、概ね -6.6 〜 -8.0 range。"
+          "band": {
+            "min": -14.64,
+            "max": -2.01
+          },
+          "note": "GOP は aligner の非決定性により bit-exact でない。帯域（min/max）で pin する。live 実測（image 0a696a…）: per-phoneme gop 範囲 ~-13.64〜-3.01、±1.0 余裕で band 化。drift_check が符号反転 / ε=2.0 超過を regression 判定する。"
         },
         "gainInvariance": {
           "observedMaxGopDelta": 0.0242,
@@ -65,14 +73,24 @@
         "noiseMonotonicity": {
           "knownDefect": true,
           "loopBTracked": true,
-          "snrLadderDb": [null, 20, 10, 5],
+          "snrLadderDb": [
+            null,
+            20,
+            10,
+            5
+          ],
           "observedEstimatedSnrDb": {
             "clean": 2.13,
             "20dB": 2.05,
             "10dB": 1.27,
             "5dB": -0.15
           },
-          "observedAllMedians": [-6.6132, -7.2542, -7.9242, -6.8914],
+          "observedAllMedians": [
+            -6.6132,
+            -7.2542,
+            -7.9242,
+            -6.8914
+          ],
           "_note": [
             "Loop-B fix disabled, defect re-opened pending per-clip-relative redesign (ADR-032 D4補正-2)。",
             "Scoring.hs の SNR ゲートが無効化されたため、production は低 SNR 音声でも GOP を返す。",
@@ -84,13 +102,28 @@
         },
         "severity": {
           "band": "major",
-          "validValues": ["critical", "major", "minor", "suggestion", "none"],
+          "validValues": [
+            "critical",
+            "major",
+            "minor",
+            "suggestion",
+            "none"
+          ],
           "_note": "初回実測: hello world → severity=major"
         },
         "findingFires": true,
         "topNBest": {
-          "phonemes": ["h", "ə", "l", "oʊ", "w", "ɜː", "l", "d"],
-          "note": "nBest top-1 phoneme list（初回実測 2026-06-20）。/v1/analyze から直接取得（ORPHAN-1: DB heatmap は nBest を strip）。"
+          "phonemes": [
+            "v",
+            "n",
+            "l",
+            "w",
+            "w",
+            "ɹ",
+            "l",
+            "n"
+          ],
+          "note": "live nBest top-1 phoneme list（image 0a696a… で実測、3-run flicker=0 で決定論的）。旧 pin [h,ə,l,oʊ,w,ɜː,l,d] は reference IPA に一致しており実測 top-1 ではない mis-pin だった（rawTop1Conf=0.0142 の diffuse CTC では top-1 はこの通り散らばる）。この top-1 が garbage に見えるのは diffuse CTC の既知の品質課題（confidenceMeasurement で別途追跡）であり drift ではない。drift_check はこの baseline からの FUTURE 変化を majority-gated advisory（変化位置 >= ceil(N/2)=4 で escalate、minority は記録のみ）で検出する。/v1/analyze から直接取得（ORPHAN-1: DB heatmap は nBest を strip）。"
         },
         "confidenceMeasurement": {
           "_schemaNote": [
@@ -106,8 +139,14 @@
           "nearTiedCount": 1,
           "meanEntropy": 0.6459,
           "minMargin": 0.0194,
-          "entropyRange": {"min": 0.0528, "max": 1.0976},
-          "marginRange": {"min": 0.0194, "max": 0.9871},
+          "entropyRange": {
+            "min": 0.0528,
+            "max": 1.0976
+          },
+          "marginRange": {
+            "min": 0.0194,
+            "max": 0.9871
+          },
           "_repinDate": "2026-06-20",
           "_repinReason": "renormalize fix: entropy/margin are now shape-based (renormalized top-k), not raw-prob-based. near_tied_count drops 8→1 (h phoneme: entropy=1.0976 near ln(3)=1.099).",
           "note": "production confidence（severityToConfidence）は音響的情報ゼロ。entropy/margin は正規化後（形状）、rawTop1Conf は CTC 絶対値（diffuseness 信号）。mean_rawTop1Conf=0.0142 ← 拡散 CTC posterior の実態。"
