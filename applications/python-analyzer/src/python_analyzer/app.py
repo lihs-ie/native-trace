@@ -233,6 +233,7 @@ def create_app() -> FastAPI:
             ],
             speechRatePhonemePerSecond=result.speech_rate_phoneme_per_second,
             meanDbfs=result.mean_dbfs,
+            estimatedSnrDb=result.estimated_snr_db,
             speechDurationSeconds=result.speech_duration_seconds,
             # C1-b F0
             f0Contour=f0_contour_response,

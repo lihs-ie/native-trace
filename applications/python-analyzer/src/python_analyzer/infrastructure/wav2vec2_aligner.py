@@ -26,6 +26,7 @@ from python_analyzer.domain.phoneme import (
 from python_analyzer.infrastructure.audio_energy import (
     compute_speech_active_rms,
     compute_speech_duration_seconds_from_energy,
+    compute_wada_snr,
 )
 
 logger = logging.getLogger(__name__)
@@ -288,11 +289,11 @@ class Wav2Vec2Aligner:
                         token_ids.append(char_id)
         return token_ids
 
-    def measure_audio_quality(self, audio: AudioInput) -> tuple[float, float]:
+    def measure_audio_quality(self, audio: AudioInput) -> tuple[float, float, float]:
         """録音品質を計測する。
 
         16kHz モノラル waveform の発話区間フレーム RMS から mean dBFS を計算し、
-        エネルギーベース VAD で実音声長（秒）を計測する。
+        エネルギーベース VAD で実音声長（秒）と WADA-SNR 推定値（dB）を計測する。
 
         mean_dbfs = 20 * log10(speech_active_rms)。
         発話区間フレームが 0 件（no-speech）の場合は -100.0 dBFS を返す（番兵値）。
@@ -301,9 +302,10 @@ class Wav2Vec2Aligner:
         全区間 RMS の代わりに発話区間 RMS を使うことで、語間ポーズや末尾無音による
         ラウドネス希釈を除去し、明瞭発話の誤棄却を防ぐ（ADR-015 D1）。
         speechDurationSeconds: compute_speech_duration_seconds_from_energy で算出する。
+        estimated_snr_db: compute_wada_snr で算出する（ADR-032 D1）。
 
         Returns:
-            (mean_dbfs, speech_duration_seconds)
+            (mean_dbfs, speech_duration_seconds, estimated_snr_db)
         """
         waveform = self._load_audio_tensor(audio)
         waveform_numpy = waveform.numpy()
@@ -315,8 +317,9 @@ class Wav2Vec2Aligner:
             mean_dbfs = 20.0 * math.log10(speech_active_rms)
 
         speech_duration_seconds = compute_speech_duration_seconds_from_energy(waveform_numpy)
+        estimated_snr_db = compute_wada_snr(waveform_numpy, _TARGET_SAMPLE_RATE)
 
-        return mean_dbfs, speech_duration_seconds
+        return mean_dbfs, speech_duration_seconds, estimated_snr_db
 
     def _compute_boundaries_and_gop(
         self,

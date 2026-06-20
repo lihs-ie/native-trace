@@ -85,8 +85,8 @@ class AnalyzePronunciationUseCase:
             boundaries, audio.duration_milliseconds
         )
 
-        # 録音品質計測（dBFS / 実音声長）
-        mean_dbfs, speech_duration_seconds = self._aligner.measure_audio_quality(audio)
+        # 録音品質計測（dBFS / 実音声長 / WADA-SNR）
+        mean_dbfs, speech_duration_seconds, estimated_snr_db = self._aligner.measure_audio_quality(audio)
 
         # C1 韻律計測（prosody_port が注入されている場合のみ実行する）
         f0_contour = None
@@ -172,6 +172,7 @@ class AnalyzePronunciationUseCase:
             alignment_boundaries=boundaries,
             mean_dbfs=mean_dbfs,
             speech_duration_seconds=speech_duration_seconds,
+            estimated_snr_db=estimated_snr_db,
             f0_contour=f0_contour,
             word_stresses=word_stresses,
             rhythm=rhythm,

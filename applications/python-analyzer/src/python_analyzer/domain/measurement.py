@@ -153,6 +153,8 @@ class RawMeasurementResult:
     # 録音品質計測値。低品質判定は採点層(Haskell worker)が行う。
     mean_dbfs: float = 0.0
     speech_duration_seconds: float = 0.0
+    # WADA-SNR 推定値（dB）。ADR-032 D1。低品質判定（SNR-floor ゲート）は Haskell worker が行う。
+    estimated_snr_db: float = 0.0
     # C1 追加フィールド (pronunciation-feedback-v2)
     f0_contour: F0Contour | None = None
     word_stresses: tuple[WordStressMeasurement, ...] = field(default_factory=tuple)

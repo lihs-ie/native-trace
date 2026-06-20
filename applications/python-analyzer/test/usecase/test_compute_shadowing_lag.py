@@ -108,8 +108,8 @@ class _FixedAligner:
     def detect_ipa(self, audio: AudioInput) -> IpaSequence:
         return IpaSequence(phonemes=(PhonemeLabel("h"),))
 
-    def measure_audio_quality(self, audio: AudioInput) -> tuple[float, float]:
-        return -20.0, 0.5
+    def measure_audio_quality(self, audio: AudioInput) -> tuple[float, float, float]:
+        return -20.0, 0.5, 30.0
 
 
 # ---------------------------------------------------------------------------

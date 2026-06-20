@@ -220,6 +220,14 @@ class AnalysisResponse(BaseModel):
             "発話区間フレームが 0 件（no-speech）の場合は -100.0 dBFS（番兵値）。"
         ),
     )
+    estimatedSnrDb: float = Field(
+        description=(
+            "WADA-SNR（Kim & Stern 2008）による reference-free SNR 推定値（dB）。"
+            "発話区間サンプルの振幅分布形状（Gamma shape）から加性ガウス雑音下での SNR を推定する。"
+            "発話区間フレームが 0 件（no-speech）の場合は -120.0（番兵値）。"
+            "worker が audioQualityMinSnrDb ゲートで使用する（ADR-032 D2）。"
+        ),
+    )
     speechDurationSeconds: float = Field(
         default=0.0, description="forced_align 非 blank フレームから推定した実音声長（秒）"
     )
