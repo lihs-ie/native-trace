@@ -17,10 +17,12 @@ import NativeTrace.Worker.AnalyzerClient (
   SyllableInfo (..),
   WeakFormRealization (..),
  )
+import NativeTrace.Worker.Assessment (buildAssessmentResponseFromGop)
 import NativeTrace.Worker.Scoring (
   ScoringInput (..),
   aaiDisplayEligibilityThreshold,
   articulatoryDisplayGuardrail,
+  audioQualityMinSnrDb,
   buildAssessmentScores,
   checkAudioQuality,
   classifyGopDelta,
@@ -35,7 +37,10 @@ import NativeTrace.Worker.Types (
   AcousticEvidence (..),
   ArticulatoryEstimate (..),
   AssessmentFinding (..),
+  AssessmentRequest (..),
+  AssessmentResponse (..),
   AssessmentScores (..),
+  AudioMetadata (..),
   BoundarySignal (..),
   CefrScore (..),
   DeltaSignal (..),
@@ -86,7 +91,8 @@ fixtureAnalyzerResult =
       analyzedWeakFormRealizations = [],
       analyzedSyllables = [],
       analyzedPhonemeAcoustics = [],
-      analyzerSpeakerSex = "unknown"
+      analyzerSpeakerSex = "unknown",
+      analyzedEstimatedSnrDb = 30.0
     }
 
 -- | NBest 付き高 FL finding を持つフィクスチャ（M-111 intelligibility テスト用）。
@@ -134,6 +140,10 @@ rangeTuples = map ((\r -> (startChar r, endChar r)) . findingTextRange)
 defaultQualityParams :: (Double, Int, Int, Int, [Double])
 defaultQualityParams = (-20.0, 10000, 9, 10, [-5.0])
 
+-- | SNR デフォルト値（audioQualityMinSnrDb を十分超える値）。
+defaultEstimatedSnrDb :: Double
+defaultEstimatedSnrDb = 30.0
+
 spec :: Spec
 spec = do
   describe "articulatoryDisplayGuardrail (ADR-019 D4 / M-AAI-11)" $ do
@@ -176,31 +186,39 @@ spec = do
   describe "checkAudioQuality" $ do
     it "returns False (normal) when all criteria are satisfied" $ do
       let (meanDbfs, durationMs, detected, expected, gopValues) = defaultQualityParams
-      checkAudioQuality meanDbfs durationMs detected expected gopValues `shouldBe` False
+      checkAudioQuality meanDbfs durationMs detected expected gopValues defaultEstimatedSnrDb `shouldBe` False
 
     it "returns True (low_quality) when meanDbfs is below threshold (-36.0, speech-active RMS, ADR-015)" $ do
       let (_, durationMs, detected, expected, gopValues) = defaultQualityParams
-      checkAudioQuality (-37.0) durationMs detected expected gopValues `shouldBe` True
+      checkAudioQuality (-37.0) durationMs detected expected gopValues defaultEstimatedSnrDb `shouldBe` True
 
     it "returns True (low_quality) when recording duration is below threshold (1000ms)" $ do
       let (meanDbfs, _, detected, expected, gopValues) = defaultQualityParams
-      checkAudioQuality meanDbfs 500 detected expected gopValues `shouldBe` True
+      checkAudioQuality meanDbfs 500 detected expected gopValues defaultEstimatedSnrDb `shouldBe` True
 
     it "returns False (normal) when recording duration is sufficient despite pausey recording (10s)" $ do
       let (meanDbfs, _, detected, expected, gopValues) = defaultQualityParams
-      checkAudioQuality meanDbfs 10000 detected expected gopValues `shouldBe` False
+      checkAudioQuality meanDbfs 10000 detected expected gopValues defaultEstimatedSnrDb `shouldBe` False
 
     it "returns True (low_quality) when phoneme detection rate is below threshold (0.25)" $ do
       let (meanDbfs, durationMs, _, _, gopValues) = defaultQualityParams
-      checkAudioQuality meanDbfs durationMs 2 10 gopValues `shouldBe` True
+      checkAudioQuality meanDbfs durationMs 2 10 gopValues defaultEstimatedSnrDb `shouldBe` True
 
     it "returns True (low_quality) when median GOP is below threshold (-18.0)" $ do
       let (meanDbfs, durationMs, detected, expected, _) = defaultQualityParams
-      checkAudioQuality meanDbfs durationMs detected expected [-20.0, -19.0] `shouldBe` True
+      checkAudioQuality meanDbfs durationMs detected expected [-20.0, -19.0] defaultEstimatedSnrDb `shouldBe` True
 
     it "returns True (low_quality) when gopValues list is empty" $ do
       let (meanDbfs, durationMs, detected, expected, _) = defaultQualityParams
-      checkAudioQuality meanDbfs durationMs detected expected [] `shouldBe` True
+      checkAudioQuality meanDbfs durationMs detected expected [] defaultEstimatedSnrDb `shouldBe` True
+
+    it "returns True (low_quality) when estimatedSnrDb is below threshold (WADA floor 0.5, ADR-032 M-SNR-7)" $ do
+      let (meanDbfs, durationMs, detected, expected, gopValues) = defaultQualityParams
+      checkAudioQuality meanDbfs durationMs detected expected gopValues (-1.0) `shouldBe` True
+
+    it "returns False (normal) when estimatedSnrDb is exactly at threshold (WADA floor 0.5)" $ do
+      let (meanDbfs, durationMs, detected, expected, gopValues) = defaultQualityParams
+      checkAudioQuality meanDbfs durationMs detected expected gopValues audioQualityMinSnrDb `shouldBe` False
 
   describe "generateFindingsFromGop" $ do
     it "produces at least one finding for non-empty body text with low GOP phonemes" $ do
@@ -842,6 +860,31 @@ spec = do
         let result = classifyGopDelta (-15) (-7)
         gopDeltaResponseBoundarySignal result `shouldBe` BoundarySignalCrossedMajor
 
+    -- M-CRL-17 / ADR-022: retrySeverity and retryConfidence
+    describe "retrySeverity and retryConfidence (M-CRL-17)" $ do
+      it "retryGop=-15 → retrySeverity=Just FindingSeverityMajor, retryConfidence=0.8" $ do
+        let result = classifyGopDelta (-20) (-15)
+        gopDeltaResponseRetrySeverity result `shouldBe` Just FindingSeverityMajor
+        gopDeltaResponseRetryConfidence result `shouldBe` 0.8
+
+      it "retryGop=-10 → retrySeverity=Just FindingSeverityMinor, retryConfidence=0.7" $ do
+        let result = classifyGopDelta (-20) (-10)
+        gopDeltaResponseRetrySeverity result `shouldBe` Just FindingSeverityMinor
+        gopDeltaResponseRetryConfidence result `shouldBe` 0.7
+
+      it "retryGop=-6 → retrySeverity=Nothing, retryConfidence=0.6" $ do
+        let result = classifyGopDelta (-20) (-6)
+        gopDeltaResponseRetrySeverity result `shouldBe` Nothing
+        gopDeltaResponseRetryConfidence result `shouldBe` 0.6
+
+      it "retryGop=-8 → Nothing (strict <; -8 is not minor)" $ do
+        let result = classifyGopDelta (-20) (-8)
+        gopDeltaResponseRetrySeverity result `shouldBe` Nothing
+
+      it "retryGop=-12 → Just FindingSeverityMinor (strict <; -12 is not major)" $ do
+        let result = classifyGopDelta (-20) (-12)
+        gopDeltaResponseRetrySeverity result `shouldBe` Just FindingSeverityMinor
+
   -- ADR-018 音響証拠 unit tests
   -- M-APD-10: hillenbrandGaVowelFormants ノルム map のキー検証
   describe "hillenbrandGaVowelFormants (M-APD-10)" $ do
@@ -1417,3 +1460,43 @@ spec = do
       encoded `shouldContain` "targetTenseLengthRatio"
     it "emits value 3600 for \"spectralCentroidHz\" (value mapping lock)" $
       encoded `shouldContain` "\"spectralCentroidHz\":3600"
+
+  -- M-CRL-16 / ADR-022: buildAssessmentResponseFromGop diagnosticPerPhonemeGop on low_quality
+  describe "buildAssessmentResponseFromGop low_quality gate (M-CRL-16 / ADR-022 D17)" $ do
+    let lowQualityAudio =
+          AudioMetadata
+            { audioMimeType = "audio/webm",
+              audioByteLength = 1000,
+              -- audioDurationMilliseconds is not the quality trigger (meanDbfs drives it)
+              audioDurationMilliseconds = 700
+            }
+        lowQualityRequest =
+          AssessmentRequest
+            { analysisJob = "job-001",
+              analysisRun = "run-001",
+              recordingAttempt = "attempt-001",
+              requestSection = "section-001",
+              sectionBodyText = "hello world",
+              expectedLanguage = "en",
+              targetAccent = "GA",
+              requestedMetrics = [],
+              assessmentSchemaVersion = "1",
+              tokenizerVersion = "v1",
+              requestAudio = lowQualityAudio
+            }
+        -- meanDbfs = -40.0 is below audioQualityMinMeanDbfs (-36.0) → triggers low_quality
+        lowQualityAnalyzerResult =
+          fixtureAnalyzerResult
+            { analyzedMeanDbfs = -40.0,
+              analyzedPerPhonemeGop =
+                [ PhonemeGop {gopPhoneme = "h", gopValue = -5.0, gopStartMs = 0, gopEndMs = 100, gopNBest = [], gopWordPosition = Nothing},
+                  PhonemeGop {gopPhoneme = "ɛ", gopValue = -13.0, gopStartMs = 100, gopEndMs = 200, gopNBest = [], gopWordPosition = Nothing}
+                ]
+            }
+        result = buildAssessmentResponseFromGop lowQualityRequest lowQualityAnalyzerResult
+
+    it "responseDiagnosticPerPhonemeGop is non-empty on low_quality path" $
+      length (responseDiagnosticPerPhonemeGop result) `shouldSatisfy` (> 0)
+
+    it "responsePerPhonemeGop is [] on low_quality path (M-CRL-16 gate not loosened)" $
+      length (responsePerPhonemeGop result) `shouldBe` 0

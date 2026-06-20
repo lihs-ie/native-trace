@@ -329,7 +329,10 @@ data AnalyzerResult = AnalyzerResult
     -- | 音素ごとの音響計測値リスト（ADR-018 D1）。analyzer が返さない場合は空リスト。
     analyzedPhonemeAcoustics :: [PhonemeAcoustic],
     -- | 話者性別（ADR-018 D2）。analyzer が返さない場合は "unknown"。値は "M" / "F" / "unknown"。
-    analyzerSpeakerSex :: Text
+    analyzerSpeakerSex :: Text,
+    -- | 推定 SNR（dB）。python-analyzer が計測して付与する（ADR-032 M-SNR-3）。
+    -- 旧 analyzer イメージとのローリング再ビルド期間中は 0.0 にフォールバックする。
+    analyzedEstimatedSnrDb :: Double
   }
   deriving (Show, Eq)
 
@@ -351,6 +354,7 @@ instance FromJSON AnalyzerResult where
     syllables <- o .:? "syllables" .!= []
     phonemeAcoustics <- o .:? "phonemeAcoustics" .!= []
     speakerSex <- o .:? "speakerSex" .!= "unknown"
+    estimatedSnrDb <- o .:? "estimatedSnrDb" .!= 0.0
     pure
       AnalyzerResult
         { analyzedExpectedIpa = expectedIpa,
@@ -368,7 +372,8 @@ instance FromJSON AnalyzerResult where
           analyzedWeakFormRealizations = weakFormRealizations,
           analyzedSyllables = syllables,
           analyzedPhonemeAcoustics = phonemeAcoustics,
-          analyzerSpeakerSex = speakerSex
+          analyzerSpeakerSex = speakerSex,
+          analyzedEstimatedSnrDb = estimatedSnrDb
         }
 
 -- | python-analyzer の POST /v1/shadowing-lag レスポンス（M-SHL-3 / ADR-013）。

@@ -36,6 +36,8 @@ module NativeTrace.Worker.Types (
   DeltaSignal (..),
   BoundarySignal (..),
   GopDeltaResponse (..),
+  -- Diagnostic per-phoneme GOP (M-CRL-16 / ADR-022)
+  DiagnosticPhonemeGopEntry (..),
 )
 where
 
@@ -267,6 +269,7 @@ data FindingSeverity
   | FindingSeverityMajor
   | FindingSeverityMinor
   | FindingSeveritySuggestion
+  deriving (Show, Eq)
 
 instance ToJSON FindingSeverity where
   toJSON FindingSeverityCritical = "critical"
@@ -578,7 +581,9 @@ data AssessmentResponse = AssessmentResponse
     -- | Focus sounds リスト（C3-c, M-112）。
     responseFocusSounds :: [FocusSound],
     -- | 韻律生データ（C3-c, M-114）。Nothing の場合は analyzer が未対応。
-    responseProsody :: Maybe ProsodyOutput
+    responseProsody :: Maybe ProsodyOutput,
+    -- | 診断用全音素 GOP 系列（M-CRL-16 / ADR-022 D17）。low_quality 分岐でも常時 populate する。
+    responseDiagnosticPerPhonemeGop :: [DiagnosticPhonemeGopEntry]
   }
 
 instance ToJSON AssessmentResponse where
@@ -594,7 +599,8 @@ instance ToJSON AssessmentResponse where
         "metadata" .= responseMetadata response,
         "perPhonemeGop" .= responsePerPhonemeGop response,
         "focusSounds" .= responseFocusSounds response,
-        "prosody" .= responseProsody response
+        "prosody" .= responseProsody response,
+        "diagnosticPerPhonemeGop" .= responseDiagnosticPerPhonemeGop response
       ]
 
 -- ---- Error Response ----
@@ -746,10 +752,17 @@ instance ToJSON BoundarySignal where
   toJSON BoundarySignalNone = "none"
 
 -- | POST /v1/gop-delta レスポンス。
+-- M-CRL-11 (ADR-022 D14): retrySeverity / retryConfidence を追加。
+-- retrySeverity wire enum は {critical,major,minor,suggestion,none} の 5 値。
+-- Nothing → "none" に変換する。
 data GopDeltaResponse = GopDeltaResponse
   { gopDeltaResponseGopDelta :: Double,
     gopDeltaResponseDeltaSignal :: DeltaSignal,
-    gopDeltaResponseBoundarySignal :: BoundarySignal
+    gopDeltaResponseBoundarySignal :: BoundarySignal,
+    -- | retry GOP から再採点した severity。None の場合は "none" を wire する。
+    gopDeltaResponseRetrySeverity :: Maybe FindingSeverity,
+    -- | retry GOP から再採点した confidence (calibratable)。
+    gopDeltaResponseRetryConfidence :: Double
   }
   deriving (Show, Eq)
 
@@ -758,5 +771,27 @@ instance ToJSON GopDeltaResponse where
     object
       [ "gopDelta" .= gopDeltaResponseGopDelta response,
         "deltaSignal" .= gopDeltaResponseDeltaSignal response,
-        "boundarySignal" .= gopDeltaResponseBoundarySignal response
+        "boundarySignal" .= gopDeltaResponseBoundarySignal response,
+        "retrySeverity" .= maybe (toJSON ("none" :: Text)) toJSON (gopDeltaResponseRetrySeverity response),
+        "retryConfidence" .= gopDeltaResponseRetryConfidence response
+      ]
+
+-- | 診断用の全音素 GOP エントリ（M-CRL-16 / ADR-022 D17）。
+-- heatmap (PhonemeHeatEntry) とは別で、low_quality 分岐でも常時 populate する。
+-- wire keys: phoneme / gop / startMs / endMs。
+data DiagnosticPhonemeGopEntry = DiagnosticPhonemeGopEntry
+  { diagPhoneme :: Text,
+    diagGop :: Double,
+    diagStartMs :: Int,
+    diagEndMs :: Int
+  }
+  deriving (Show, Eq)
+
+instance ToJSON DiagnosticPhonemeGopEntry where
+  toJSON entry =
+    object
+      [ "phoneme" .= diagPhoneme entry,
+        "gop" .= diagGop entry,
+        "startMs" .= diagStartMs entry,
+        "endMs" .= diagEndMs entry
       ]

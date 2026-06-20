@@ -18,6 +18,7 @@ module NativeTrace.Worker.Scoring (
   audioQualityMinRecordingDurationMs,
   audioQualityMinPhonemeDetectionRate,
   audioQualityMaxMedianGop,
+  audioQualityMinSnrDb,
   -- 新規 export
   buildPerPhonemeHeatmap,
   buildFocusSounds,
@@ -246,14 +247,26 @@ audioQualityMinPhonemeDetectionRate = 0.25
 audioQualityMaxMedianGop :: Double
 audioQualityMaxMedianGop = -18.0
 
+-- | SNR 下限（WADA 推定器スケール）。
+-- WADA estimator-scale floor (NOT true dB). Rebased per ADR-032 runtime sweep:
+-- WADA absolute scale is ~20 dB low/compressed on real speech, so a true-dB (5,10] floor is invalid;
+-- 0.5 separates the confident-misdecode regime from valid on the measured ladder.
+-- Measured on hello_world.wav: clean=2.13, 20dB=2.05, 10dB=1.27, 5dB=-0.15, 0dB=-2.74 (estimator units).
+-- 0.5 gates the confident-misdecode regime (true-SNR ≤5 dB reads ≤ -0.15) while passing valid
+-- (true-SNR ≥10 dB reads ≥ 1.27); 0.5 sits between with margin.
+-- PROVISIONAL — needs multi-real-clip validation before production.
+audioQualityMinSnrDb :: Double
+audioQualityMinSnrDb = 0.5
+
 -- | 音声品質チェック。低品質なら True を返す。
 checkAudioQuality ::
-  Double -> Int -> Int -> Int -> [Double] -> Bool
-checkAudioQuality meanDbfs durationMilliseconds detectedPhonemeCount expectedPhonemeCount gopValues =
+  Double -> Int -> Int -> Int -> [Double] -> Double -> Bool
+checkAudioQuality meanDbfs durationMilliseconds detectedPhonemeCount expectedPhonemeCount gopValues estimatedSnrDb =
   meanDbfs < audioQualityMinMeanDbfs
     || durationMilliseconds < audioQualityMinRecordingDurationMs
     || isLowPhonemeDetectionRate detectedPhonemeCount expectedPhonemeCount
     || isLowMedianGop gopValues
+    || estimatedSnrDb < audioQualityMinSnrDb
 
 isLowPhonemeDetectionRate :: Int -> Int -> Bool
 isLowPhonemeDetectionRate detectedCount expectedCount
@@ -1666,10 +1679,7 @@ gopDeltaRegressionThreshold = -2.0
 -- | GOP 値から severity を判定する。strict < を使う（== は境界を跨がない）。
 -- gop == -8 は minor ではなく none、gop == -12 は major ではなく minor。
 gopSeverity :: Double -> Maybe FindingSeverity
-gopSeverity gop
-  | gop < gopMajorThreshold = Just FindingSeverityMajor
-  | gop < gopMinorThreshold = Just FindingSeverityMinor
-  | otherwise = Nothing
+gopSeverity = gopToSeverity
 
 -- | (originalGop, retryGop) から boundarySignal を計算する。
 -- major→(minor|none) = crossedMajor、(major|minor)→none = crossedMinor、それ以外 = none。
@@ -1682,7 +1692,9 @@ classifyBoundarySignal originalGop retryGop =
     _ -> BoundarySignalNone
 
 -- | GOP delta 分類の純粋関数（M-CRL-7 / ADR-022）。
--- originalGop と retryGop を受け取り gopDelta / deltaSignal / boundarySignal を返す。
+-- originalGop と retryGop を受け取り gopDelta / deltaSignal / boundarySignal /
+-- retrySeverity / retryConfidence を返す（M-CRL-11 / ADR-022 D14）。
+-- retryConfidence の none ケース PIN: none → 0.6（severityToConfidence の最下位 tier 再利用、calibratable）。
 classifyGopDelta :: Double -> Double -> GopDeltaResponse
 classifyGopDelta originalGop retryGop =
   let gopDelta = retryGop - originalGop
@@ -1691,8 +1703,12 @@ classifyGopDelta originalGop retryGop =
         | gopDelta < gopDeltaRegressionThreshold = DeltaSignalRegressed
         | otherwise = DeltaSignalUnchanged
       boundarySignal = classifyBoundarySignal originalGop retryGop
+      retrySeverity = gopToSeverity retryGop
+      retryConfidence = maybe 0.6 severityToConfidence retrySeverity
    in GopDeltaResponse
         { gopDeltaResponseGopDelta = gopDelta,
           gopDeltaResponseDeltaSignal = deltaSignal,
-          gopDeltaResponseBoundarySignal = boundarySignal
+          gopDeltaResponseBoundarySignal = boundarySignal,
+          gopDeltaResponseRetrySeverity = retrySeverity,
+          gopDeltaResponseRetryConfidence = retryConfidence
         }

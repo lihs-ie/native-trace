@@ -41,6 +41,7 @@ import NativeTrace.Worker.Types (
   AudioMetadata (..),
   AudioRange (..),
   CefrScore (..),
+  DiagnosticPhonemeGopEntry (..),
   TextRange (..),
   WorkerResponseMetadata (..),
  )
@@ -138,6 +139,7 @@ buildAssessmentResponseFromGop request analyzerResult =
   let durationMs = audioDurationMilliseconds (requestAudio request)
       bodyText = sectionBodyText request
       meanDbfs = analyzedMeanDbfs analyzerResult
+      estimatedSnrDb = analyzedEstimatedSnrDb analyzerResult
       detectedPhonemeCount = length (Text.words (analyzedDetectedIpa analyzerResult))
       expectedPhonemeCount = length (Text.words (analyzedExpectedIpa analyzerResult))
       gopValues = map gopValue (analyzedPerPhonemeGop analyzerResult)
@@ -166,7 +168,7 @@ buildAssessmentResponseFromGop request analyzerResult =
             cefrSegmental = CefrScore {cefrScoreValue = 0, cefrBand = "A2"},
             cefrProsodic = CefrScore {cefrScoreValue = 0, cefrBand = "A2"}
           }
-   in if checkAudioQuality meanDbfs durationMs detectedPhonemeCount expectedPhonemeCount gopValues
+   in if checkAudioQuality meanDbfs durationMs detectedPhonemeCount expectedPhonemeCount gopValues estimatedSnrDb
         then
           AssessmentResponse
             { responseAssessmentSchemaVersion = assessmentSchemaVersion request,
@@ -179,7 +181,8 @@ buildAssessmentResponseFromGop request analyzerResult =
               responseMetadata = meta,
               responsePerPhonemeGop = [],
               responseFocusSounds = [],
-              responseProsody = Nothing
+              responseProsody = Nothing,
+              responseDiagnosticPerPhonemeGop = map toDiagnosticEntry (analyzedPerPhonemeGop analyzerResult)
             }
         else
           let baseScoringOutput = scoreAssessment (ScoringInput bodyText (ByteString.length "") durationMs)
@@ -210,8 +213,19 @@ buildAssessmentResponseFromGop request analyzerResult =
                   responseMetadata = meta,
                   responsePerPhonemeGop = heatmap,
                   responseFocusSounds = focusSounds,
-                  responseProsody = prosodyOutput
+                  responseProsody = prosodyOutput,
+                  responseDiagnosticPerPhonemeGop = map toDiagnosticEntry (analyzedPerPhonemeGop analyzerResult)
                 }
+
+-- | PhonemeGop から DiagnosticPhonemeGopEntry への変換。
+toDiagnosticEntry :: PhonemeGop -> DiagnosticPhonemeGopEntry
+toDiagnosticEntry pg =
+  DiagnosticPhonemeGopEntry
+    { diagPhoneme = gopPhoneme pg,
+      diagGop = gopValue pg,
+      diagStartMs = gopStartMs pg,
+      diagEndMs = gopEndMs pg
+    }
 
 -- | トークンリストから Segment を生成する。
 -- audioRange は duration を均等割り当てする。
