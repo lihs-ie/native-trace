@@ -76,13 +76,13 @@ _GAIN_INVARIANCE_GOP_TOLERANCE = 0.05
 # ここに列挙されたケースは SELFEVAL FAIL[KNOWN] として報告されるが exit code に影響しない。
 # 不具合を隠蔽しないこと — FAIL 行は必ず出力する。
 # Loop-B 対応が完了したら該当エントリを削除すること。
-_KNOWN_FAILURES: dict[str, str] = {}
-
-# Worker SNR floor（estimator scale）。
-# Scoring.hs の audioQualityMinSnrDb = 0.5 と対応する。
-# この閾値を下回る estimatedSnrDb を持つレベルは worker 側で low_quality ゲートされるため、
-# noise_monotonicity の単調性チェックから除外する（GOP が信頼できないため）。
-_SNR_FLOOR = 0.5  # Scoring.hs audioQualityMinSnrDb（estimator scale）
+_KNOWN_FAILURES: dict[str, str] = {
+    "noise_monotonicity": (
+        "Loop-B fix (ADR-032 SNR gate) DISABLED pending redesign — "
+        "fixed WADA floor invalidated by 13-clip validation (D4補正-2); "
+        "noise non-monotonicity is an OPEN production defect tracked for the per-clip-relative redesign"
+    ),
+}
 
 # noise 単調性: 許容 ε（median GOP が非増加の判定幅、aligner 境界揺れ考慮）
 _NOISE_MONOTONICITY_EPSILON = 0.05
@@ -227,18 +227,17 @@ def run_noise_monotonicity(analyzer_url: str, base_wav: np.ndarray, sample_rate:
     SNR ラダー {clean, 20dB, 10dB, 5dB} で /v1/analyze を呼び出し、
     各レベルの estimatedSnrDb と median(per-phoneme GOP) を収集する。
 
-    SNR-aware gating（ADR-032 D4/D5 補正）:
-        estimatedSnrDb < _SNR_FLOOR（0.5）のレベルは worker 側で low_quality ゲートされるため
-        GOP が信頼できない。これらのレベルを単調性チェックから除外し、
-        非ゲートレベルのみで median GOP が非増加（± ε）であることをアサートする。
+    production SNR gate DISABLED (ADR-032 D4補正-2) — noise non-monotonicity is an OPEN defect;
+    checked over ALL levels, reported as FAIL[KNOWN] until the redesign.
 
-        _SNR_FLOOR = 0.5 は Scoring.hs の audioQualityMinSnrDb（estimator scale）と対応する。
-        runtime sweep: clean=2.13, 20dB=2.05, 10dB=1.27 → 非ゲート（≥ 0.5）; 5dB=-0.15 → ゲート（< 0.5）。
-        5dB GOP の逆転（-6.89 vs 10dB の -7.92）は CTC-overconfidence-under-noise に起因するが、
-        production では low_quality ゲートにより到達しないため、単調性チェックから正当に除外できる。
+    全レベルを検査する（estimatedSnrDb による除外なし）。Scoring.hs の SNR ゲートが無効化されたため、
+    production は低 SNR 音声でも GOP を返す。5dB レベルの GOP 逆転（CTC overconfidence under noise）は
+    production で観測可能な未修正の不具合であり、FAIL[KNOWN] として正直に報告する。
 
-    SELFEVAL metamorphic noise_monotonicity PASS|FAIL
-        observed=medians_nongated:<list>,excluded_lowSNR:<list>
+    estimatedSnrDb は観測文字列に含めて可視性を確保するが、除外判定には使用しない。
+
+    SELFEVAL metamorphic noise_monotonicity PASS|FAIL[KNOWN]
+        observed=medians_all:<list>
     """
     family = "metamorphic"
     case = "noise_monotonicity"
@@ -269,38 +268,22 @@ def run_noise_monotonicity(analyzer_url: str, base_wav: np.ndarray, sample_rate:
             _emit(family, case, False, f"empty_gop:snr={label}")
             return False
 
-        # estimatedSnrDb を読み取る（worker floor 判定に使用）
-        estimated_snr_db = float(response.get("estimatedSnrDb", _SNR_FLOOR - 1.0))
+        # estimatedSnrDb を観測値として記録する（除外判定には使用しない）
+        estimated_snr_db = float(response.get("estimatedSnrDb", 0.0))
         median_gop = float(np.median(gop_values))
         all_results.append((label, estimated_snr_db, median_gop))
 
-    # SNR-aware gating: estimatedSnrDb < _SNR_FLOOR のレベルを除外する
-    # production で low_quality ゲートされるため GOP は信頼できない
-    nongated: list[tuple[str, float, float]] = [
-        (lbl, snr_est, med) for lbl, snr_est, med in all_results if snr_est >= _SNR_FLOOR
-    ]
-    excluded: list[tuple[str, float, float]] = [
-        (lbl, snr_est, med) for lbl, snr_est, med in all_results if snr_est < _SNR_FLOOR
-    ]
-
-    if not nongated:
-        _emit(family, case, False, "all_levels_gated:no_nongated_levels_remain")
-        return False
-
-    # 非ゲートレベルのみで非増加チェック（ε 許容）: medians[i] >= medians[i+1] - ε
-    nongated_medians = [med for _, _, med in nongated]
+    # 全レベルで非増加チェック（ε 許容）: medians[i] >= medians[i+1] - ε
+    # SNR ゲート無効化により低 SNR レベルも含む全梯子を検査する
+    all_medians = [med for _, _, med in all_results]
     passed = True
-    for i in range(len(nongated_medians) - 1):
-        if nongated_medians[i] < nongated_medians[i + 1] - _NOISE_MONOTONICITY_EPSILON:
+    for i in range(len(all_medians) - 1):
+        if all_medians[i] < all_medians[i + 1] - _NOISE_MONOTONICITY_EPSILON:
             passed = False
             break
 
-    formatted_nongated = [f"{lbl}@{snr_est:.2f}dBSNR:{med:.4f}" for lbl, snr_est, med in nongated]
-    formatted_excluded = [f"{lbl}@{snr_est:.2f}" for lbl, snr_est, _ in excluded]
-    observed = (
-        f"medians_nongated:{formatted_nongated},"
-        f"excluded_lowSNR:{formatted_excluded}"
-    )
+    formatted_all = [f"{lbl}@{snr_est:.2f}dBSNR:{med:.4f}" for lbl, snr_est, med in all_results]
+    observed = f"medians_all:{formatted_all}"
     known_fail_reason = _KNOWN_FAILURES.get(case)
     _emit(family, case, passed, observed, known_fail=known_fail_reason if not passed else None)
     return passed
@@ -651,7 +634,7 @@ def main() -> int:
     ece_passed = run_calibration_ece(analyzer_url, base_wav, sample_rate)
 
     # KNOWN_FAILURES を除いた pass/fail 判定
-    # noise_monotonicity は ADR-032 D5 SNR-aware gating で修正済み — 全ケースが blocking
+    # noise_monotonicity は ADR-032 D4補正-2 で FAIL[KNOWN] に再登録 — SNR ゲート無効化で未修正不具合
     noise_case = "noise_monotonicity"
     noise_is_known = noise_case in _KNOWN_FAILURES
 

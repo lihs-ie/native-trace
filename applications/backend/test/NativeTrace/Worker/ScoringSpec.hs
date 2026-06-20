@@ -212,11 +212,14 @@ spec = do
       let (meanDbfs, durationMs, detected, expected, _) = defaultQualityParams
       checkAudioQuality meanDbfs durationMs detected expected [] defaultEstimatedSnrDb `shouldBe` True
 
-    it "returns True (low_quality) when estimatedSnrDb is below threshold (WADA floor 0.5, ADR-032 M-SNR-7)" $ do
+    -- ADR-032 D4補正-2 (2026-06-20): SNR gate DISABLED — 13-clip validation proved the fixed WADA
+    -- floor is not clip-portable (false-rejects 6/13 clean clips). These tests now assert the
+    -- DISABLED state: low estimatedSnrDb does NOT cause low_quality on its own.
+    it "returns False (gate disabled) when estimatedSnrDb is below old threshold (WADA floor 0.5, ADR-032 SNR gate DISABLED)" $ do
       let (meanDbfs, durationMs, detected, expected, gopValues) = defaultQualityParams
-      checkAudioQuality meanDbfs durationMs detected expected gopValues (-1.0) `shouldBe` True
+      checkAudioQuality meanDbfs durationMs detected expected gopValues (-1.0) `shouldBe` False
 
-    it "returns False (normal) when estimatedSnrDb is exactly at threshold (WADA floor 0.5)" $ do
+    it "returns False (gate disabled) when estimatedSnrDb is exactly at old threshold (WADA floor 0.5, ADR-032 SNR gate DISABLED)" $ do
       let (meanDbfs, durationMs, detected, expected, gopValues) = defaultQualityParams
       checkAudioQuality meanDbfs durationMs detected expected gopValues audioQualityMinSnrDb `shouldBe` False
 

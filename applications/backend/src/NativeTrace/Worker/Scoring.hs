@@ -254,19 +254,27 @@ audioQualityMaxMedianGop = -18.0
 -- Measured on hello_world.wav: clean=2.13, 20dB=2.05, 10dB=1.27, 5dB=-0.15, 0dB=-2.74 (estimator units).
 -- 0.5 gates the confident-misdecode regime (true-SNR ≤5 dB reads ≤ -0.15) while passing valid
 -- (true-SNR ≥10 dB reads ≥ 1.27); 0.5 sits between with margin.
--- PROVISIONAL — needs multi-real-clip validation before production.
+--
+-- DISABLED 2026-06-20: ADR-032 D4補正-2
+-- 13-clip validation proved the fixed WADA floor is not clip-portable (false-rejects 6/13 clean clips).
+-- The SNR gate does NOT fire pending the ADR-032 redesign (per-clip-relative drop gate).
+-- estimatedSnrDb measurement plumbing (analyzer + AnalyzerClient decode) is retained for that redesign.
+-- Exported to prevent unused-binding error; referenced by self-eval harness and tests documentation.
 audioQualityMinSnrDb :: Double
 audioQualityMinSnrDb = 0.5
 
 -- | 音声品質チェック。低品質なら True を返す。
 checkAudioQuality ::
   Double -> Int -> Int -> Int -> [Double] -> Double -> Bool
-checkAudioQuality meanDbfs durationMilliseconds detectedPhonemeCount expectedPhonemeCount gopValues estimatedSnrDb =
+checkAudioQuality meanDbfs durationMilliseconds detectedPhonemeCount expectedPhonemeCount gopValues _estimatedSnrDb =
+  -- NOTE: SNR gate DISABLED 2026-06-20 (ADR-032 D4補正-2) — 13-clip validation proved the fixed
+  -- WADA floor is not clip-portable (false-rejects 6/13 clean clips). The || estimatedSnrDb <
+  -- audioQualityMinSnrDb clause has been removed. estimatedSnrDb plumbing is retained for the
+  -- per-clip-relative redesign.
   meanDbfs < audioQualityMinMeanDbfs
     || durationMilliseconds < audioQualityMinRecordingDurationMs
     || isLowPhonemeDetectionRate detectedPhonemeCount expectedPhonemeCount
     || isLowMedianGop gopValues
-    || estimatedSnrDb < audioQualityMinSnrDb
 
 isLowPhonemeDetectionRate :: Int -> Int -> Bool
 isLowPhonemeDetectionRate detectedCount expectedCount

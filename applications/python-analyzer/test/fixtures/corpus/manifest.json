@@ -63,26 +63,23 @@
           "_note": "ADR-031 D12-(3): 初回実測 max_gop_delta=0.0242。帯域 ±0.05 に band-calibrate 済み。"
         },
         "noiseMonotonicity": {
-          "knownDefect": false,
-          "loopBTracked": false,
+          "knownDefect": true,
+          "loopBTracked": true,
           "snrLadderDb": [null, 20, 10, 5],
-          "snrFloor": 0.5,
           "observedEstimatedSnrDb": {
             "clean": 2.13,
             "20dB": 2.05,
             "10dB": 1.27,
             "5dB": -0.15
           },
-          "nonGatedLevels": ["clean", "20dB", "10dB"],
-          "excludedLowSnrLevels": ["5dB"],
-          "observedNonGatedMedians": [-6.6132, -7.2542, -7.9242],
+          "observedAllMedians": [-6.6132, -7.2542, -7.9242, -6.8914],
           "_note": [
-            "ADR-032 D4/D5 SNR-aware gating で修正済み（2026-06-20）。",
-            "estimatedSnrDb < 0.5 のレベルを単調性チェックから除外する。",
-            "runtime sweep: clean=2.13, 20dB=2.05, 10dB=1.27 → 非ゲート（≥ 0.5）",
-            "5dB=-0.15 → ゲート（< 0.5）、worker で low_quality 判定のため GOP 不信頼。",
-            "非ゲートレベル（clean/20dB/10dB）の medians: -6.61 > -7.25 > -7.92 → 単調減少 PASS。",
-            "_SNR_FLOOR = 0.5 は Scoring.hs audioQualityMinSnrDb（estimator scale）と対応。"
+            "Loop-B fix disabled, defect re-opened pending per-clip-relative redesign (ADR-032 D4補正-2)。",
+            "Scoring.hs の SNR ゲートが無効化されたため、production は低 SNR 音声でも GOP を返す。",
+            "5dB レベル（estimatedSnrDb=-0.15）で GOP 逆転（-6.89 > 10dB の -7.92）が発生する。",
+            "これは CTC overconfidence under noise に起因する未修正の不具合。",
+            "self-eval は全レベルを検査し FAIL[KNOWN] として正直に報告する。",
+            "per-clip-relative SNR 推定の再設計が完了したら knownDefect を false に戻すこと。"
           ]
         },
         "severity": {
