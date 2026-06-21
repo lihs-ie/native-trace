@@ -6,6 +6,7 @@ runtime-verifier が使う。「コードが存在する」ではなく「入口
 | 判定項目 | チェック内容 | 必要証拠 |
 |---|---|---|
 | 入口接続 | UI 操作 / CLI / HTTP route / job scheduler / event publish のいずれかが feature 入口として登録されているか | route 一覧 / UI test step / CLI help / job 定義 |
+| entrypoint 逐語実行 | runtime evidence の各コマンドは `wiring_manifest.yml` の real_entrypoint / `package.json` 宣言 script を**逐語実行**しているか。convenience 引数 (例 `--repo-root` の明示)・mock 依存・実ツールが出さない理想 payload fixture で**代替していないか**。代替した緑は entrypoint 到達の証拠にしない | commands.txt の各行 vs 宣言 entrypoint の引数差分 / real entrypoint 実行ログ |
 | 中継接続 | controller/handler から service/usecase へ **実呼び出し** があるか | grep/call graph / unit・feature test / 実行ログ |
 | 出口接続 | repository / external adapter / queue / DB write / UI state update のいずれかが実際に呼ばれたか | DB state diff / contract result / UI assertion (HTTP mock ではなく) |
 | 設定接続 | env/config/DI registration/feature flag が正しい値で配線されるか | config 読み込みログ / container binding / 起動ログ |
@@ -27,6 +28,19 @@ runtime-verifier が使う。「コードが存在する」ではなく「入口
 
 > 「成功 toast が出る」は証拠にならない。**reload 後 / read-back / DB state diff** まで確認する。
 > 「E2E が緑」も、seed が derived 値を直焼きしているなら導出の証拠にならない。導出を走らせる経路を別途 assert する。
+
+## 便利引数で entrypoint 到達を偽装しない (entrypoint 逐語実行)
+- runtime evidence のコマンドが **wired entrypoint が渡さない引数を足している** と、便利パスだけ緑になり、
+  本番が通る default-arg パスは未実行のまま false-green になる (incident 2026-06-20 drift-stage3:
+  `compute_fingerprint.py --repo-root <abs>` を毎コマンドで明示 → 5-dot off-by-one の default パス crash を
+  全コマンド緑が隠蔽。同型 5×: scipy dead-wiring / markdown-fence / v2 worker-crash / v2 pip-parselmouth)。
+- runtime-verifier は **宣言 entrypoint を逐語実行**する: `wiring_manifest.yml` の real_entrypoint /
+  `package.json` の宣言 script を、引数を足さずにそのまま叩いて観測する。`pnpm test:drift` が `--repo-root` を
+  渡さないなら、verification も渡してはいけない。mock 依存・実ツールが出さない理想 payload fixture で
+  代替した緑も entrypoint 到達の証拠にしない。
+- これは「しばしば捏造される wiring-map に依存する静的 arg-diff grep」が脆いため **rubric (実行時 yes/no) で
+  強制**する。commands.txt の各行と宣言 entrypoint の引数を突き合わせ、追加引数があれば「entrypoint 未到達・
+  continue」とする。
 
 ## real_entrypoint を下流サービスのパスと取り違えない
 - worker の **inbound real entrypoint** は `POST :8787/v1/pronunciation-assessments` (Servant `WorkerApi`)。

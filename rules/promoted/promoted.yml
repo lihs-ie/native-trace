@@ -331,3 +331,57 @@ evidence_required:
 rollback_condition: "n/a (doc-only rubric。exit-code firing が無いため FP exit-code も無い)"
 verified_fires: false              # doc-only 昇格 (exit-code firing は無し)、他の rubric-only エントリと同様
 owner: "@lihs-ie"
+---
+# CAND-2: pinned fixture/baseline の再 pin を「未コミット working-tree 編集」だけで行うと、acceptance sim の
+# `git checkout -- <file>` cleanup が INDEX 版 (= placeholder の HEAD) を復元して再 pin を黙って巻き戻す。
+# working-tree sim は全緑だが committed artifact は placeholder のまま → fresh clone で sentinel が壊れる。
+# PRIMARY = fail-closed な静的 gate (verify-committed-baseline.sh)。
+id: committed_baseline_head_placeholder
+failure_class: dataflow_unwired      # 再 pin が committed artifact に届かず、本番 (fresh clone) で baseline が placeholder のまま死ぬ
+trigger:
+  repeated_count: 3                  # (1) incident 2026-06-20 drift-stage3 (manifest TODO-at-HEAD、sim git checkout が 2 回再 pin を巻き戻し) (2) memory verify-scripts-skip-untracked (untracked/uncommitted false-green) (3) memory drizzle-migration-regenerate-after-schema / v2 migration-未生成 (schema 緑だが migration が committed されず実機 no such table)
+  sources: ["incident", "memory"]
+rule:
+  summary: "pinned baseline/fixture (corpus manifest 等) の committed/index 値は live でなければならない。placeholder (TODO|DUMMY|PLACEHOLDER|first-run|replace with) が committed pin に残る / wiring-map が re-pin/impl target と宣言したファイルが untracked (git checkout で巻き戻る) なら FAIL"
+  enforcement:
+    - type: grep_gate
+      detail: "scripts/verify-committed-baseline.sh — Check A: in-scope fixture (applications/python-analyzer/test/fixtures/corpus/manifest.json) の committed/index 値 (git show :<file> = git checkout 復元先) の pinned フィールド (analyzerCommit/gop.band/topNBest/expected*) を jq で抽出し placeholder token を検出。Check B: .agent-evidence/**/wiring-map.json が re-pin/baseline/pin と宣言した file が git ls-files --error-unmatch で untracked なら FAIL。default モードは working-tree-aware (verify-scripts-skip-untracked 修正と一貫)"
+    - type: smoke
+      detail: "scripts/agent-evidence-gate.sh (Stop hook、.agent-evidence/.active 時のみ) が verify-committed-baseline.sh を実行し非ゼロなら exit 2 で完了をブロック + CI .github/workflows/pr-gate.yml の policy job に step 追加"
+    - type: short_rule
+      detail: "正本 agent-policy.md §3: 『patch/restore sim を回す baseline は先に stage/commit する。git checkout -- <file> cleanup を使うなら HEAD/index が live 値を持つこと。cp-backup restore なら可。pinned fixture/migration/baseline は git show HEAD: (committed) 値で充足判定する』 (→ kit 再適用で AGENTS.md/CLAUDE.md に伝播)"
+    - type: rubric_item
+      detail: "rubric/core/spec.md 証拠品質 item: 『pinned fixture/migration/baseline を含む Must は git show HEAD:(committed) 値で充足判定。working-tree-only の緑を証拠にしない』"
+scope_narrow:
+  reason: "FP=rollback target なので scope を NARROW に限定。Check A は corpus manifest.json のみ (in-scope fixture allowlist)。Check B は wiring-map が明示的に re-pin/baseline/pin と宣言した file のみ。pinned 値は jq で抽出して走査するため、_comment / _calibrationNote のドキュメント文に placeholder 語があっても誤検出しない"
+evidence_required:
+  - changed_files
+  - grep_output     # committed/index pinned value or untracked re-pin target
+rollback_condition: "false_positive_rate > 0.15 — 超過時は (a) in-scope fixture allowlist を絞る (b) Check B の re-pin 検出語 (re-pin|baseline|pin) を narrow にする (c) memory に戻す。無期限 allowlist は作らない"
+verified_fires: true               # Check A: index に TODO/DUMMY 置換 (git add) → exit 1 + file flagged、52c4b24 から git checkout で live pin 復元 → exit 0。Check B: wiring-map が untracked file を re-pin 宣言 → exit 1、git add で stage → exit 0。Stop hook: active marker + placeholder index → exit 2 を実コマンドで確認。manifest は committed live pin に復元 (git status clean)
+owner: "@lihs-ie"
+---
+# CAND-1: verification が wired entrypoint の渡さない便利引数 (例 --repo-root の明示) を足したため、便利パスだけ
+# 緑になり本番 (default-arg) パスが未実行のまま false-green。wired path は crash していたが全コマンド緑だった。
+# miner が静的 arg-diff grep を「しばしば捏造される wiring-map に依存し脆い」と flag → grep gate は作らず
+# rubric (実行時 yes/no) + 正本 に昇格する。
+id: entrypoint_verbatim_execution
+failure_class: dataflow_unwired      # 宣言 entrypoint を逐語実行せず便利引数で代替 → 本番パス未実行の false-green
+trigger:
+  repeated_count: 5                  # corpus spine 5×: drift-stage3 (--repo-root で 5-dot off-by-one default crash を隠蔽) / scipy dead-wiring / markdown-fence / v2 worker-crash / v2 pip-parselmouth。いずれも「実ツールが出さない理想 payload / 便利引数 / mock で代替した緑」が entrypoint 未到達を隠した
+  sources: ["incident", "code_review"]
+rule:
+  summary: "runtime evidence の各コマンドは wiring_manifest.yml の real_entrypoint / package.json 宣言 script を逐語実行する。convenience 引数 (--repo-root の明示等)・mock 依存・実ツールが出さない理想 payload fixture で代替した緑は entrypoint 到達の証拠にしない"
+  enforcement:
+    - type: rubric_item
+      detail: "rubric/core/wiring.md に yes/no item『entrypoint 逐語実行』+ 『便利引数で entrypoint 到達を偽装しない』節を追加。runtime-verifier が commands.txt の各行 vs 宣言 entrypoint の引数差分を突き合わせ、追加引数/mock/理想 fixture があれば『entrypoint 未到達・continue』"
+    - type: short_rule
+      detail: "正本 agent-policy.md §3: 『観測 assert は宣言 entrypoint を逐語実行する。便利引数・mock 依存・理想 fixture で代替した緑は entrypoint 到達の証拠にしない』 (→ kit 再適用で AGENTS.md/CLAUDE.md に伝播)"
+no_grep_gate:
+  reason: "miner が静的 arg-diff grep を fragile と flag: しばしば捏造される wiring-map に依存し、entrypoint 宣言と実コマンドの照合は引数フォーマットの揺れで FP/FN が大きい。実行時 rubric (実 entrypoint を逐語実行して観測) の方が信頼でき、CAND-2 (committed-baseline) と違い静的判定が確実でない。よって grep gate は作らず rubric + 正本 のみ"
+evidence_required:
+  - runtime_command_log    # commands.txt の各行
+  - entrypoint_declaration # wiring_manifest.yml real_entrypoint / package.json script
+rollback_condition: "n/a (doc/rubric-only。exit-code firing が無いため FP exit-code も無い)。rubric が過剰に continue を返すなら matcher を『宣言 entrypoint と引数が異なるコマンドのみ』に narrow"
+verified_fires: false              # rubric + 正本 昇格 (exit-code firing は無し)。grep gate は意図的に非採用 (fragile)
+owner: "@lihs-ie"

@@ -37,4 +37,20 @@ if [ -n "$missing" ]; then
   exit 2
 fi
 
+# committed-baseline gate (CAND-2 / agent-policy §3): pinned baseline/fixture の committed/index 値が
+# placeholder のまま / re-pin が untracked (git checkout で巻き戻る) なら完了をブロックする。
+# proven-done 実行中マーカーがある時だけここまで来るので、active セッションでのみ発火する。
+gate="$repository_root/scripts/verify-committed-baseline.sh"
+if [ -x "$gate" ] || [ -f "$gate" ]; then
+  if ! out="$(bash "$gate" 2>&1)"; then
+    {
+      echo "完了報告をブロックしました (committed-baseline ゲート / CAND-2)。"
+      echo "$out"
+      echo ""
+      echo "working-tree が緑でも committed artifact が placeholder だと fresh clone で壊れます (incident 2026-06-20)。"
+    } >&2
+    exit 2
+  fi
+fi
+
 exit 0

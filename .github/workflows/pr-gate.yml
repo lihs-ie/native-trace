@@ -32,6 +32,10 @@ jobs:
         run: bash scripts/verify-wiring.sh
       - name: No unwired placeholder stub
         run: bash scripts/verify-no-stub-placeholder.sh
+      - name: Committed baseline carries live pin (no HEAD-placeholder / no untracked re-pin)
+        env:
+          BASE_REF: origin/${{ github.base_ref }}
+        run: bash scripts/verify-committed-baseline.sh
       - name: Haskell cabal warnings hardened (-Werror=missing-fields)
         run: bash scripts/verify-haskell-warnings.sh
       - name: Servant route/handler parity (Api.hs <-> Application.hs)

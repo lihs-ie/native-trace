@@ -12,6 +12,7 @@ spec-grader が使う。仕様違反は diff の品質問題ではなく **contr
 | 依存制約 | 未承認 dependency を追加していないか | lockfile diff / dependency policy |
 | 文書整合 | 仕様・docs・設定手順が更新されているか | docs diff / runbook diff |
 | 証拠品質 | 成功主張が tool result / runtime-verify と一致するか | logs / trace / exit code / screenshots |
+| committed 証拠品質 | pinned fixture/migration/baseline を含む Must は `git show HEAD:`(committed) 値で充足判定したか。working-tree-only の緑を証拠にしていないか | `git show HEAD:<file>` 出力 / committed-baseline gate ログ |
 | 可逆性/安全性 | destructive change が approval なしで入っていないか | migration plan / review decision |
 
 ## 判定原則
@@ -22,6 +23,13 @@ spec-grader が使う。仕様違反は diff の品質問題ではなく **contr
 - **worker feature の spec は受入条件の real entrypoint を `POST /v1/pronunciation-assessments` (port 8787)
   と明記する**。worker が呼ぶ下流サービス (`/v1/analyze` (analyzer :8788) / `/v1/convert` (golden) 等) の
   route を worker の inbound entrypoint と取り違えない (incident 2026-06-14 + spec draft で 2 回)。
+- **pinned fixture/migration/baseline を含む Must は `git show HEAD:`(committed) 値で充足判定する。**
+  working-tree-only の緑は証拠にしない。re-pin (corpus manifest の analyzerCommit / gop.band / topNBest、
+  drizzle migration、golden baseline 等) を patch/restore sim とともに行うとき、sim の
+  `git checkout -- <file>` cleanup は INDEX 版を復元するため、未コミットの再 pin は黙って巻き戻る
+  (incident 2026-06-20 drift-stage3: working-tree 5 緑だが committed は placeholder で fresh clone が壊れた)。
+  committed-baseline gate (`scripts/verify-committed-baseline.sh`) が決定論ラインだが、spec-grader も
+  pinned-baseline Must の充足を **committed 値**で確認する。
 - **受入条件 (acceptance) に E2E (Playwright 等) を含む Must は、`.agent-evidence/` に E2E の実行ログ
   (pass 結果 / trace) を必須証拠とする。** テストファイルの存在・空テストの緑・「E2E スキップで unit 緑」は
   Must の充足証拠にしない。E2E が未実行なら PASS ではなく FAIL ("missing evidence") とする (FC-4)。
