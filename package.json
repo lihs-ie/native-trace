@@ -18,6 +18,6 @@
     "fitness": "bash scripts/fitness/check.sh"
   },
   "devDependencies": {
-    "@ast-grep/cli": "^0.43.0"
+    "@ast-grep/cli": "^0.44.0"
   }
 }
