@@ -8,11 +8,6 @@
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/fitness/hook.sh",
             "timeout": 600
-          },
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/agent-policy-hook.sh",
-            "timeout": 120
           }
         ]
       },
@@ -36,14 +31,6 @@
       }
     ],
     "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/agent-evidence-gate.sh"
-          }
-        ]
-      },
       {
         "hooks": [
           {
