@@ -1,10 +1,18 @@
 #!/usr/bin/env bash
+# KIT_VERSION: 1.1.0
 # agent-policy: wiring_manifest.yml に基づき「実装に対し配線が追随しているか」を検出する。
 # 各 rule: 変更ファイルが `when` glob にマッチしたら、`require_one_of` のいずれかにも
 # 変更ファイルがマッチしていなければ FAIL (未配線の疑い)。
 # waiver: .agent-evidence/wiring-waivers.txt に rule id を 1 行書くと、その rule をスキップ
 #         (= 配線不要の理由を証跡として残した、とみなす)。
 # smoke は v1 では宣言のみ (実行しない)。
+#
+# working-tree blind-spot best-of merge (agent-policy-kit-sync spec Task A):
+#   (a) BASE_REF 未設定かつ committed diff (base...HEAD) が空のときだけ working-tree
+#       (staged ∪ unstaged ∪ untracked) にフォールバックする (proven-done 実行中の
+#       未コミット変更を見逃さない — incident 2026-06-13 補正2)。
+#   (b) BASE_REF を明示指定した呼び出し (CI 等) は committed diff のみを意図するので、
+#       diff が空でも working-tree へは拡張しない (recall-paper 版の意味論)。
 set -euo pipefail
 
 repository_root="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
@@ -15,12 +23,28 @@ if [ ! -f "$manifest" ]; then
   echo "verify-wiring: $manifest not found (skip)"; exit 0
 fi
 
+base_ref_was_set=0
+[ -n "${BASE_REF:-}" ] && base_ref_was_set=1
 base="${BASE_REF:-$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@refs/remotes/@@')}"
 [ -z "${base:-}" ] && base="origin/main"
 if git rev-parse --verify "$base" >/dev/null 2>&1; then
   changed="$(git diff --name-only --diff-filter=ACMRT "$base"...HEAD)"
 else
   changed="$(git diff --name-only --diff-filter=ACMRT HEAD~1 2>/dev/null || true)"
+fi
+# committed diff が空のときだけ working tree (staged ∪ unstaged ∪ untracked) を採用する。
+# BASE_REF を明示指定した呼び出し (CI 等) は committed のみを意図するので拡張しない。
+if [ -z "$changed" ] && [ "$base_ref_was_set" -eq 0 ]; then
+  working_tree="$(
+    { git diff --name-only --diff-filter=ACMRT HEAD 2>/dev/null || true
+      git diff --name-only --diff-filter=ACMRT --cached 2>/dev/null || true
+      git ls-files --others --exclude-standard 2>/dev/null || true
+    } | sort -u
+  )"
+  if [ -n "$working_tree" ]; then
+    changed="$working_tree"
+    echo "verify-wiring: committed diff empty; inspecting working tree (staged ∪ unstaged ∪ untracked)"
+  fi
 fi
 [ -z "$changed" ] && { echo "verify-wiring: no changes (OK)"; exit 0; }
 

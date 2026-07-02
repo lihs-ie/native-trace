@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# KIT_VERSION: 1.1.0
 # agent-policy: Stop hook 証跡完了ゲート。
 # proven-done 実行中マーカー (.agent-evidence/.active) がある時だけ発火し、
 # 完了報告に必要な証跡が揃っていなければ exit 2 で停止をブロックする。

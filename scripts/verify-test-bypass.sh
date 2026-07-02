@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# KIT_VERSION: 1.1.0
 # agent-policy: 本番経路に test-only bypass が無いか検出する。
 # 例: if (process.env.NODE_ENV === 'test') return fake; / NODE_ENV==='test' 分岐 /
 #     APP_ENV == "test" / isTest ショートサーキット / Haskell の isTestEnv 分岐。
@@ -17,6 +18,11 @@ else
     changed="$(git diff --name-only --diff-filter=ACMRT "$base"...HEAD)"
   else
     changed="$(git diff --name-only --diff-filter=ACMRT HEAD~1 2>/dev/null || git ls-files)"
+  fi
+  if [ -z "$changed" ]; then
+    # no committed diff vs base — fall back to working-tree changes so uncommitted/untracked
+    # work is not vacuously passed (CI always has a committed diff, so this branch is CI-inert).
+    changed="$(git diff --name-only --diff-filter=ACMRT HEAD 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null)"
   fi
 fi
 
