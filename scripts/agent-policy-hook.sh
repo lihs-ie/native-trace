@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# KIT_VERSION: 1.1.0
 # agent-policy: PostToolUse(Write|Edit) hook。編集された 1 ファイルに対し
 # no-prod-doubles / test-bypass を即時チェックし、違反なら exit 2 で編集をブロックする。
 # 既存の fitness hook (scripts/fitness/hook.sh) とは独立に、追加 hook として共存させる。
