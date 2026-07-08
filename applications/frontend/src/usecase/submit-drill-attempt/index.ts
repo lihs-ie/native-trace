@@ -28,10 +28,6 @@
 import { type ResultAsync, errAsync, okAsync } from "neverthrow";
 import { type DomainError, validationFailed } from "../../domain/shared";
 import {
-  type TrainingSessionIdentifier,
-  type HvptTrialIdentifier,
-  type StimulusIdentifier,
-  type PhonemeContrast,
   createHvptTrialIdentifier,
   createTrainingSessionIdentifier,
   createStimulusIdentifier,
@@ -45,6 +41,7 @@ import {
   type AssessmentFinding,
   SEVERITY_ORDER,
 } from "../../domain/assessment-result";
+import { generateIdentifier } from "../shared/identifier";
 import { type TrainingSessionRepository } from "../port/training-session-repository";
 import { type HvptTrialRepository } from "../port/hvpt-trial-repository";
 import { type AssessmentResultRepository } from "../port/assessment-result-repository";
@@ -266,7 +263,7 @@ export const createSubmitDrillAttempt =
   (input: SubmitDrillAttemptInput): ResultAsync<SubmitDrillAttemptOutput, DomainError> => {
     const trainingSessionIdentifier = createTrainingSessionIdentifier(
       input.trainingSessionIdentifier,
-    ) as TrainingSessionIdentifier;
+    );
     if (!trainingSessionIdentifier) {
       return errAsync(
         validationFailed("trainingSessionIdentifier", "不正な訓練セッション識別子です"),
@@ -312,29 +309,25 @@ export const createSubmitDrillAttempt =
             const { verdict, reasonJa } = determineVerdict(targetFindings, input.scoringConfig);
 
             // 5. HvptTrial として記録する（産出ドリル trial は DD-203 集約を再利用）
-            const trialIdentifierRaw = dependencies.entropyProvider.generateUlid();
-            const trialIdentifier = createHvptTrialIdentifier(
-              trialIdentifierRaw,
-            ) as HvptTrialIdentifier;
-            if (!trialIdentifier) {
-              return errAsync(
-                validationFailed("trialIdentifier", "HvptTrial 識別子の生成に失敗しました"),
-              );
+            const trialIdentifierResult = generateIdentifier(
+              dependencies.entropyProvider,
+              createHvptTrialIdentifier,
+              "trialIdentifier",
+            );
+            if (trialIdentifierResult.isErr()) {
+              return errAsync(trialIdentifierResult.error);
             }
+            const trialIdentifier = trialIdentifierResult.value;
 
             // 産出ドリルの stimulus = trainingSessionIdentifier（例文の代替識別子）
-            const stimulusIdentifier = createStimulusIdentifier(
-              input.trainingSessionIdentifier,
-            ) as StimulusIdentifier;
+            const stimulusIdentifier = createStimulusIdentifier(input.trainingSessionIdentifier);
             if (!stimulusIdentifier) {
               return errAsync(
                 validationFailed("stimulusIdentifier", "Stimulus 識別子の生成に失敗しました"),
               );
             }
 
-            const contrast = createPhonemeContrast(
-              String(trainingSession.contrast),
-            ) as PhonemeContrast;
+            const contrast = createPhonemeContrast(String(trainingSession.contrast));
             if (!contrast) {
               return errAsync(validationFailed("contrast", "対立文字列が不正です"));
             }

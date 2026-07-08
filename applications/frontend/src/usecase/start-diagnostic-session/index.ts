@@ -14,10 +14,10 @@ import { type ResultAsync, errAsync } from "neverthrow";
 import { type DomainError, validationFailed } from "../../domain/shared";
 import {
   type DiagnosticSession,
-  type DiagnosticSessionIdentifier,
   createDiagnosticSessionIdentifier,
   createLearnerIdentifier,
 } from "../../domain/training";
+import { generateIdentifier } from "../shared/identifier";
 import { type DiagnosticSessionRepository } from "../port/diagnostic-session-repository";
 import { type EntropyProvider } from "../port/entropy-provider";
 import { type Clock } from "../port/clock";
@@ -58,15 +58,15 @@ export const createStartDiagnosticSession =
       return errAsync(validationFailed("learnerIdentifier", "不正な学習者識別子です"));
     }
 
-    const sessionIdentifierRaw = dependencies.entropyProvider.generateUlid();
-    const sessionIdentifier = createDiagnosticSessionIdentifier(
-      sessionIdentifierRaw,
-    ) as DiagnosticSessionIdentifier;
-    if (!sessionIdentifier) {
-      return errAsync(
-        validationFailed("sessionIdentifier", "診断セッション識別子の生成に失敗しました"),
-      );
+    const sessionIdentifierResult = generateIdentifier(
+      dependencies.entropyProvider,
+      createDiagnosticSessionIdentifier,
+      "sessionIdentifier",
+    );
+    if (sessionIdentifierResult.isErr()) {
+      return errAsync(sessionIdentifierResult.error);
     }
+    const sessionIdentifier = sessionIdentifierResult.value;
 
     const now = dependencies.clock.now();
 

@@ -16,15 +16,8 @@
  */
 
 import { type ResultAsync, errAsync, okAsync } from "neverthrow";
+import { type DomainError, validationFailed, createNonEmptyList } from "../../domain/shared";
 import {
-  type DomainError,
-  type NonEmptyList,
-  validationFailed,
-  createNonEmptyList,
-} from "../../domain/shared";
-import {
-  type DiagnosticSessionIdentifier,
-  type WeaknessProfileIdentifier,
   type WeaknessProfile,
   type LearnerIdentifier,
   type FocusSound,
@@ -44,6 +37,7 @@ import {
 } from "../../domain/assessment-result";
 import { getAllCatalogEntries } from "../../domain/error-catalog";
 import { canonicalizePhoneme } from "../../domain/error-catalog/phoneme-canonicalization";
+import { generateIdentifier } from "../shared/identifier";
 import { type DiagnosticSessionRepository } from "../port/diagnostic-session-repository";
 import { type WeaknessProfileRepository } from "../port/weakness-profile-repository";
 import { type AssessmentResultRepository } from "../port/assessment-result-repository";
@@ -344,9 +338,7 @@ export const createCompleteDiagnosticSession =
   (
     input: CompleteDiagnosticSessionInput,
   ): ResultAsync<CompleteDiagnosticSessionOutput, DomainError> => {
-    const sessionIdentifier = createDiagnosticSessionIdentifier(
-      input.diagnosticSessionIdentifier,
-    ) as DiagnosticSessionIdentifier;
+    const sessionIdentifier = createDiagnosticSessionIdentifier(input.diagnosticSessionIdentifier);
     if (!sessionIdentifier) {
       return errAsync(
         validationFailed("diagnosticSessionIdentifier", "不正な診断セッション識別子です"),
@@ -366,9 +358,15 @@ export const createCompleteDiagnosticSession =
       (id) => id as AssessmentResultIdentifier,
     );
 
-    const nonEmptyAssessmentResults = createNonEmptyList(
-      assessmentResultIdentifiers,
-    ) as NonEmptyList<AssessmentResultIdentifier>;
+    const nonEmptyAssessmentResults = createNonEmptyList(assessmentResultIdentifiers);
+    if (!nonEmptyAssessmentResults) {
+      return errAsync(
+        validationFailed(
+          "assessmentResultIdentifiers",
+          "WeaknessProfile 生成には1件以上の AssessmentResult 識別子が必要です",
+        ),
+      );
+    }
 
     // 1. DiagnosticSession を取得
     return dependencies.diagnosticSessionRepository.find(sessionIdentifier).andThen((session) => {
@@ -430,15 +428,19 @@ export const createCompleteDiagnosticSession =
           }
 
           // 4. WeaknessProfile を初期生成
-          const profileIdentifierRaw = dependencies.entropyProvider.generateUlid();
-          const profileIdentifier = createWeaknessProfileIdentifier(
-            profileIdentifierRaw,
-          ) as WeaknessProfileIdentifier;
+          const profileIdentifierResult = generateIdentifier(
+            dependencies.entropyProvider,
+            createWeaknessProfileIdentifier,
+            "weaknessProfileIdentifier",
+          );
+          if (profileIdentifierResult.isErr()) {
+            return errAsync(profileIdentifierResult.error);
+          }
 
           const now = dependencies.clock.now();
 
           const initResult = initializeWeaknessProfile(
-            profileIdentifier,
+            profileIdentifierResult.value,
             session.learner as LearnerIdentifier,
             sessionIdentifier,
             focusSoundCandidates as FocusSound[],

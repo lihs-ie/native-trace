@@ -12,6 +12,7 @@ import {
   createSection,
   createSectionIdentifier,
   createSectionBodyText,
+  createSectionVersion,
   type SectionCreated,
 } from "../../domain/section";
 import { type SectionSeriesRepository } from "../port/section-series-repository";
@@ -157,11 +158,17 @@ export const createRevisePracticeSection =
                       );
                     }
 
-                    // createSectionVersion は Result を返すが、値は計算済みなので cast
+                    // latestVersion + 1 は常に正整数だが、cast で迂回せず
+                    // createSectionVersion の Result を正しく伝播する
+                    const nextVersionResult = createSectionVersion(nextVersion);
+                    if (nextVersionResult.isErr()) {
+                      return errAsync(nextVersionResult.error);
+                    }
+
                     const { section: newSection, events: sectionEvents } = createSection({
                       identifier: sectionIdentifierResult,
                       sectionSeries: revisedSeries.identifier,
-                      version: nextVersion as never,
+                      version: nextVersionResult.value,
                       bodyText: newBodyText!,
                       now,
                     });

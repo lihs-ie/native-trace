@@ -10,10 +10,7 @@
 
 import { type ResultAsync, errAsync } from "neverthrow";
 import { type DomainError, validationFailed } from "../../domain/shared";
-import {
-  type DiagnosticSessionIdentifier,
-  createDiagnosticSessionIdentifier,
-} from "../../domain/training";
+import { createDiagnosticSessionIdentifier } from "../../domain/training";
 import { type DiagnosticSessionRepository } from "../port/diagnostic-session-repository";
 import { type WeaknessProfileRepository } from "../port/weakness-profile-repository";
 import { type AssessmentResultRepository } from "../port/assessment-result-repository";
@@ -77,9 +74,7 @@ export type ViewDiagnosticResultInput = Readonly<{
 export const createViewDiagnosticResult =
   (dependencies: ViewDiagnosticResultDependencies) =>
   (input: ViewDiagnosticResultInput): ResultAsync<DiagnosticResultOutput, DomainError> => {
-    const sessionIdentifier = createDiagnosticSessionIdentifier(
-      input.diagnosticSessionIdentifier,
-    ) as DiagnosticSessionIdentifier;
+    const sessionIdentifier = createDiagnosticSessionIdentifier(input.diagnosticSessionIdentifier);
     if (!sessionIdentifier) {
       return errAsync(
         validationFailed("diagnosticSessionIdentifier", "不正な診断セッション識別子です"),

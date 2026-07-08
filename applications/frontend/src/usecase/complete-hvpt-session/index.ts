@@ -28,12 +28,8 @@
 import { type ResultAsync, errAsync, okAsync } from "neverthrow";
 import { type DomainError, validationFailed, createNonEmptyList } from "../../domain/shared";
 import {
-  type LearnerIdentifier,
-  type TrainingSessionIdentifier,
   type SpacingSchedule,
-  type SpacingScheduleIdentifier,
   type WeaknessProfileIdentifier,
-  type PhonemeContrast,
   type Accuracy0To1,
   type SpacingSchedulerConfig,
   createTrainingSessionIdentifier,
@@ -49,6 +45,7 @@ import {
   captureProgressSnapshot,
 } from "../../domain/training";
 import { toScore0To100, deriveFocusScoresFromWeaknessProfile } from "../shared/focus-score";
+import { generateIdentifier } from "../shared/identifier";
 import { type TrainingSessionRepository } from "../port/training-session-repository";
 import { type HvptTrialRepository } from "../port/hvpt-trial-repository";
 import { type SpacingScheduleRepository } from "../port/spacing-schedule-repository";
@@ -109,14 +106,14 @@ export const createCompleteHvptSession =
   (input: CompleteHvptSessionInput): ResultAsync<CompleteHvptSessionOutput, DomainError> => {
     const trainingSessionIdentifier = createTrainingSessionIdentifier(
       input.trainingSessionIdentifier,
-    ) as TrainingSessionIdentifier;
+    );
     if (!trainingSessionIdentifier) {
       return errAsync(
         validationFailed("trainingSessionIdentifier", "不正な訓練セッション識別子です"),
       );
     }
 
-    const learner = createLearnerIdentifier(input.learnerIdentifier) as LearnerIdentifier;
+    const learner = createLearnerIdentifier(input.learnerIdentifier);
     if (!learner) {
       return errAsync(validationFailed("learnerIdentifier", "不正な学習者識別子です"));
     }
@@ -141,7 +138,10 @@ export const createCompleteHvptSession =
           );
         }
 
-        const contrast = createPhonemeContrast(String(trainingSession.contrast)) as PhonemeContrast;
+        const contrast = createPhonemeContrast(String(trainingSession.contrast));
+        if (!contrast) {
+          return errAsync(validationFailed("contrast", "訓練セッションの対立文字列が不正です"));
+        }
 
         // 2. セッション内の HvptTrial 全件を取得して正答率を算出する（DD-266、read-only）
         return dependencies.hvptTrialRepository
@@ -182,13 +182,17 @@ export const createCompleteHvptSession =
                   schedule = existingSchedule;
                 } else {
                   // 初回セッション: SpacingSchedule を新規作成する
-                  const scheduleIdentifierRaw = dependencies.entropyProvider.generateUlid();
-                  const scheduleIdentifier = createSpacingScheduleIdentifier(
-                    scheduleIdentifierRaw,
-                  ) as SpacingScheduleIdentifier;
+                  const scheduleIdentifierResult = generateIdentifier(
+                    dependencies.entropyProvider,
+                    createSpacingScheduleIdentifier,
+                    "spacingScheduleIdentifier",
+                  );
+                  if (scheduleIdentifierResult.isErr()) {
+                    return errAsync(scheduleIdentifierResult.error);
+                  }
 
                   schedule = {
-                    identifier: scheduleIdentifier,
+                    identifier: scheduleIdentifierResult.value,
                     learner,
                     focusSound: weaknessProfileIdentifier,
                     contrast,
@@ -214,17 +218,15 @@ export const createCompleteHvptSession =
                 return dependencies.weaknessProfileRepository
                   .find(weaknessProfileIdentifier)
                   .andThen((weaknessProfile) => {
-                    const snapshotIdentifierRaw = dependencies.entropyProvider.generateUlid();
-                    const snapshotIdentifier =
-                      createProgressSnapshotIdentifier(snapshotIdentifierRaw);
-                    if (!snapshotIdentifier) {
-                      return errAsync(
-                        validationFailed(
-                          "progressSnapshotIdentifier",
-                          "ProgressSnapshot 識別子の生成に失敗しました",
-                        ),
-                      );
+                    const snapshotIdentifierResult = generateIdentifier(
+                      dependencies.entropyProvider,
+                      createProgressSnapshotIdentifier,
+                      "progressSnapshotIdentifier",
+                    );
+                    if (snapshotIdentifierResult.isErr()) {
+                      return errAsync(snapshotIdentifierResult.error);
                     }
+                    const snapshotIdentifier = snapshotIdentifierResult.value;
 
                     // CEFR スコア: HVPT は分節スコアを正答率から近似
                     // accuracy 0-1 → 0-100 スコア変換（honest empty、実 CEFR 計算は産出ドリルで行う）

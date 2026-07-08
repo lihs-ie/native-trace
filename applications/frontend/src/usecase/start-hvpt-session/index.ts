@@ -21,11 +21,10 @@
  * LLM 呼び出しなし（ADR-007）。
  */
 
-import { type ResultAsync, errAsync, okAsync } from "neverthrow";
+import { type Result, type ResultAsync, err, errAsync, ok, okAsync } from "neverthrow";
 import { type DomainError, validationFailed } from "../../domain/shared";
 import {
   type TrainingSession,
-  type TrainingSessionIdentifier,
   type LearnerIdentifier,
   type PhonemeContrast,
   type StimulusIdentifier,
@@ -36,6 +35,7 @@ import {
   createStimulusIdentifier,
   createResponseLabel,
 } from "../../domain/training";
+import { generateIdentifier } from "../shared/identifier";
 import { type WeaknessProfileRepository } from "../port/weakness-profile-repository";
 import { type TrainingSessionRepository } from "../port/training-session-repository";
 import { type SpacingScheduleRepository } from "../port/spacing-schedule-repository";
@@ -100,16 +100,18 @@ export type StartHvptSessionDependencies = Readonly<{
  * REQ-122: 応答ラベルは綴り/キーワード/IPA のいずれか (DD-245)。
  * ここでは spelling ラベルで正解語 + 対立語を生成する。
  * 対立語は刺激セット内の対向 word を使用する。存在しない場合は word として contrast の対向音素を使う。
+ * createResponseLabel は word が非空なら必ず ok（失敗時は偽 ResponseLabel を捏造せず
+ * Result のエラーとして伝播する）。
  */
 const buildChoicesForStimulus = (
   stimulus: StimulusRecord,
   allStimuli: ReadonlyArray<StimulusRecord>,
-): { choices: ReadonlyArray<ResponseLabel>; correctLabel: ResponseLabel } => {
+): Result<{ choices: ReadonlyArray<ResponseLabel>; correctLabel: ResponseLabel }, DomainError> => {
   const correctLabelResult = createResponseLabel("spelling", stimulus.word);
-  // createResponseLabel は word が非空なら必ず ok
-  const correctLabel = correctLabelResult.isOk()
-    ? correctLabelResult.value
-    : ({ type: "spelling", value: stimulus.word } as ResponseLabel);
+  if (correctLabelResult.isErr()) {
+    return err(correctLabelResult.error);
+  }
+  const correctLabel = correctLabelResult.value;
 
   // 同じ contrast で異なる word を対立語として選ぶ
   const contrastWords = allStimuli
@@ -130,15 +132,16 @@ const buildChoicesForStimulus = (
         })();
 
   const distractorLabelResult = createResponseLabel("spelling", distractorWord);
-  const distractorLabel = distractorLabelResult.isOk()
-    ? distractorLabelResult.value
-    : ({ type: "spelling", value: distractorWord } as ResponseLabel);
+  if (distractorLabelResult.isErr()) {
+    return err(distractorLabelResult.error);
+  }
+  const distractorLabel = distractorLabelResult.value;
 
   // 選択肢はランダム順にしない（順序は固定: 正解, 対立語）
   // 実際の提示順はフロントエンドがシャッフルする
   const choices: ReadonlyArray<ResponseLabel> = [correctLabel, distractorLabel];
 
-  return { choices, correctLabel };
+  return ok({ choices, correctLabel });
 };
 
 // ---- Implementation ----
@@ -210,24 +213,20 @@ export const createStartHvptSession =
                 }
 
                 // 4. TrainingSession(in_progress, kind=hvpt_identification) を生成する
-                const sessionIdentifierRaw = dependencies.entropyProvider.generateUlid();
-                const sessionIdentifier = createTrainingSessionIdentifier(
-                  sessionIdentifierRaw,
-                ) as TrainingSessionIdentifier;
-                if (!sessionIdentifier) {
-                  return errAsync(
-                    validationFailed(
-                      "sessionIdentifier",
-                      "訓練セッション識別子の生成に失敗しました",
-                    ),
-                  );
+                const sessionIdentifierResult = generateIdentifier(
+                  dependencies.entropyProvider,
+                  createTrainingSessionIdentifier,
+                  "sessionIdentifier",
+                );
+                if (sessionIdentifierResult.isErr()) {
+                  return errAsync(sessionIdentifierResult.error);
                 }
 
                 const now = dependencies.clock.now();
 
                 const trainingSession: TrainingSession = {
                   type: "in_progress",
-                  identifier: sessionIdentifier,
+                  identifier: sessionIdentifierResult.value,
                   learner: learner as LearnerIdentifier,
                   kind: "hvpt_identification",
                   contrast: capturedContrast,
@@ -235,32 +234,35 @@ export const createStartHvptSession =
                 };
 
                 // 5. 刺激に選択肢を付加する
-                const stimuliWithChoices: HvptStimulusWithChoices[] = stimuliRecords.map(
-                  (record) => {
-                    const { choices, correctLabel } = buildChoicesForStimulus(
-                      record,
-                      stimuliRecords,
-                    );
-                    const stimulusIdentifier = createStimulusIdentifier(
-                      record.stimulusIdentifier,
-                    ) as StimulusIdentifier;
-                    return {
-                      stimulusIdentifier,
-                      wavBase64: record.wavBase64,
-                      metadata: {
-                        contrast: record.contrast,
-                        word: record.word,
-                        speakerIdentifier: record.speakerIdentifier,
-                        speakerSex: record.speakerSex,
-                        context: record.context,
-                        sourceCorpus: record.sourceCorpus,
-                        licenseIdentifier: record.licenseIdentifier,
-                      },
-                      choices,
-                      correctLabel,
-                    };
-                  },
-                );
+                const stimuliWithChoices: HvptStimulusWithChoices[] = [];
+                for (const record of stimuliRecords) {
+                  const choicesResult = buildChoicesForStimulus(record, stimuliRecords);
+                  if (choicesResult.isErr()) {
+                    return errAsync(choicesResult.error);
+                  }
+                  const { choices, correctLabel } = choicesResult.value;
+
+                  const stimulusIdentifier = createStimulusIdentifier(record.stimulusIdentifier);
+                  if (!stimulusIdentifier) {
+                    return errAsync(validationFailed("stimulusIdentifier", "不正な刺激識別子です"));
+                  }
+
+                  stimuliWithChoices.push({
+                    stimulusIdentifier,
+                    wavBase64: record.wavBase64,
+                    metadata: {
+                      contrast: record.contrast,
+                      word: record.word,
+                      speakerIdentifier: record.speakerIdentifier,
+                      speakerSex: record.speakerSex,
+                      context: record.context,
+                      sourceCorpus: record.sourceCorpus,
+                      licenseIdentifier: record.licenseIdentifier,
+                    },
+                    choices,
+                    correctLabel,
+                  });
+                }
 
                 return dependencies.trainingSessionRepository.persist(trainingSession).andThen(() =>
                   okAsync({

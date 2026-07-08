@@ -20,15 +20,13 @@
 import { type ResultAsync, errAsync, okAsync } from "neverthrow";
 import { type DomainError, validationFailed } from "../../domain/shared";
 import {
-  type TrainingSessionIdentifier,
-  type LearnerIdentifier,
-  type PhonemeContrast,
   type SpacingSchedulerConfig,
   createTrainingSessionIdentifier,
   createLearnerIdentifier,
   createPhonemeContrast,
   completeTrainingSession,
 } from "../../domain/training";
+import { generateIdentifier } from "../shared/identifier";
 import { type ShadowingLagClient, type ShadowingLagInput } from "../port/shadowing-lag-client";
 import { type TrainingSessionRepository } from "../port/training-session-repository";
 import { type EntropyProvider } from "../port/entropy-provider";
@@ -88,26 +86,26 @@ export type ComputeShadowingLagDependencies = Readonly<{
 export const createComputeShadowingLag =
   (dependencies: ComputeShadowingLagDependencies) =>
   (input: ComputeShadowingLagInput): ResultAsync<ComputeShadowingLagOutput, DomainError> => {
-    const learner = createLearnerIdentifier(input.learnerIdentifier) as LearnerIdentifier;
+    const learner = createLearnerIdentifier(input.learnerIdentifier);
     if (!learner) {
       return errAsync(validationFailed("learnerIdentifier", "不正な学習者識別子です"));
     }
 
-    const contrast = createPhonemeContrast(input.contrast) as PhonemeContrast;
+    const contrast = createPhonemeContrast(input.contrast);
     if (!contrast) {
       return errAsync(validationFailed("contrast", "不正な音素対立値です"));
     }
 
     const now = dependencies.clock.now();
-    const sessionIdentifierRaw = dependencies.entropyProvider.generateUlid();
-    const sessionIdentifier = createTrainingSessionIdentifier(
-      sessionIdentifierRaw,
-    ) as TrainingSessionIdentifier;
-    if (!sessionIdentifier) {
-      return errAsync(
-        validationFailed("sessionIdentifier", "訓練セッション識別子の生成に失敗しました"),
-      );
+    const sessionIdentifierResult = generateIdentifier(
+      dependencies.entropyProvider,
+      createTrainingSessionIdentifier,
+      "sessionIdentifier",
+    );
+    if (sessionIdentifierResult.isErr()) {
+      return errAsync(sessionIdentifierResult.error);
     }
+    const sessionIdentifier = sessionIdentifierResult.value;
 
     // 1. InProgressTrainingSession (kind='shadowing') を生成して永続化する
     const inProgressSession = {
