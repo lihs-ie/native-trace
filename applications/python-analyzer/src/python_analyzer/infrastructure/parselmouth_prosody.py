@@ -183,19 +183,3 @@ def _predict_stress_from_acoustics(
     if has_f0_peak or has_long_vowel:
         return 1
     return 0
-
-
-def parse_espeak_stress(ipa_word: str) -> int:
-    """espeak の IPA 出力から強勢記号を解析して 0/1/2 を返す純関数。
-
-    Args:
-        ipa_word: espeak の IPA 出力の 1 単語分 (例: "ˈhɛloʊ")。
-
-    Returns:
-        0=無強勢, 1=第1強勢, 2=第2強勢。
-    """
-    if _STRESS_MARK_PRIMARY in ipa_word:
-        return 1
-    if _STRESS_MARK_SECONDARY in ipa_word:
-        return 2
-    return 0

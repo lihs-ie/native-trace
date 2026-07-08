@@ -33,9 +33,6 @@ logger = logging.getLogger(__name__)
 # select_multi_talker_voices(5, require_mixed_sex=True) returns 3F + 2M.
 VOICES_PER_WORD = 5
 
-# Kokoro speaker sex mapping (derived from voice name prefix).
-_VOICE_SEX_MAP: dict[str, str] = {}
-
 
 def _voice_sex(voice_id: str) -> str:
     """Return 'F' for af_* voices, 'M' for am_* voices."""
@@ -86,9 +83,7 @@ def run_long_tail_supplement(
                         continue
 
                     sex = _voice_sex(voice_id)
-                    context = classify_phonological_context(
-                        word, position_in_utterance=0, utterance_word_count=1
-                    )
+                    context = classify_phonological_context(word)
 
                     stimulus_identifier = StimulusIdentifier(
                         contrast=contrast,

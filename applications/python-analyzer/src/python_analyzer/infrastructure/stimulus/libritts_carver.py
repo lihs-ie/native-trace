@@ -144,10 +144,6 @@ def run_core_carve_pipeline(
                 logger.debug("TextGrid parse error for %s: %s", utterance_id, parse_error)
                 continue
 
-            # Count non-silence words for context classification.
-            non_silence_words = [w for w in word_intervals if not w.is_silence()]
-            utterance_word_count = len(non_silence_words)
-
             # Read WAV bytes from the current archive member (forward read, no seek).
             file_obj = corpus_archive.extractfile(member)
             if file_obj is None:
@@ -188,17 +184,7 @@ def run_core_carve_pipeline(
                     speaker_id = utterance_id.split("_")[0]
                     sex = speaker_sex_map.get(speaker_id, "unknown")
 
-                    # Context classification.
-                    # Find position of this word in the utterance.
-                    word_position = 0
-                    for pos, non_silence_word in enumerate(non_silence_words):
-                        if non_silence_word.word.lower() == word.lower():
-                            word_position = pos
-                            break
-
-                    context = classify_phonological_context(
-                        word, word_position, utterance_word_count
-                    )
+                    context = classify_phonological_context(word)
 
                     # Add to each contrast that uses this word.
                     for contrast in contrasts_for_word:
@@ -357,41 +343,3 @@ def _load_alignment_map(
                 break
 
     return result
-
-
-def _extract_wav_from_archive(
-    open_archive: tarfile.TarFile,
-    utterance_id: str,
-) -> bytes | None:
-    """Extract WAV bytes for a given utterance_id from an already-open archive.
-
-    The LibriTTS path structure is:
-        ./LibriTTS/train-clean-100/{speaker}/{chapter}/{utterance_id}.wav
-
-    Args:
-        open_archive: Already-open tarfile.TarFile object.
-        utterance_id: Utterance identifier (e.g. "19_198_000001_000000").
-
-    Returns:
-        WAV bytes, or None if not found.
-    """
-    # Parse speaker and chapter from utterance_id.
-    parts = utterance_id.split("_")
-    if len(parts) < 2:
-        return None
-
-    speaker_id = parts[0]
-    chapter_id = parts[1]
-    wav_path = (
-        f"./LibriTTS/train-clean-100/{speaker_id}/{chapter_id}/{utterance_id}.wav"
-    )
-
-    try:
-        member = open_archive.getmember(wav_path)
-        file_obj = open_archive.extractfile(member)
-        if file_obj is None:
-            return None
-        return file_obj.read()
-    except KeyError:
-        # Member not in archive (happens when the archive content differs).
-        return None

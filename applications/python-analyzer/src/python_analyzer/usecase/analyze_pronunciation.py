@@ -20,9 +20,6 @@ from python_analyzer.usecase.ports import AlignerPort, G2PPort, ProsodyPort, Spe
 # IPA 母音核として認識する文字セット（音節・母音持続時間の算出に使用）
 _VOWEL_NUCLEI = frozenset("aeiouæɑɒɔəɛɪɨɵʊʌœøɯɤɐɞɘ")
 
-# espeak 強勢記号
-_STRESS_MARKS = frozenset({"ˈ", "ˌ"})
-
 
 class AnalyzePronunciationUseCase:
     """発音解析ユースケース。
@@ -59,17 +56,10 @@ class AnalyzePronunciationUseCase:
             target_accent: アクセント指定（例: "generalAmerican"）。
             include_reference_f0: True のとき reference_text を Kokoro TTS で合成して
                 reference F0 を抽出する。False のときスキップして None を返す（default True）。
+            speaker_sex: 話者性別 'F' | 'M' | 'unknown'（M-APD-4 maximum_formant_hz 選択用）。
 
         Returns:
             RawMeasurementResult。per_phoneme_gop が空の場合は呼び出し元で 500 を返す。
-
-        Args:
-            audio: 解析対象の音声入力。
-            reference_text: 参照テキスト（"Hello, world." 等）。
-            target_accent: アクセント指定（例: "generalAmerican"）。
-            include_reference_f0: True のとき reference_text を Kokoro TTS で合成して
-                reference F0 を抽出する。False のときスキップして None を返す（default True）。
-            speaker_sex: 話者性別 'F' | 'M' | 'unknown'（M-APD-4 maximum_formant_hz 選択用）。
         """
         # g2p で期待 IPA を生成する
         expected_ipa = self._g2p.convert(reference_text, target_accent)
@@ -88,6 +78,10 @@ class AnalyzePronunciationUseCase:
         # 録音品質計測（dBFS / 実音声長 / WADA-SNR）
         mean_dbfs, speech_duration_seconds, estimated_snr_db = self._aligner.measure_audio_quality(audio)
 
+        # 単語分割と境界情報を導出する（if self._prosody: ブロックと wordPosition 付与の両方で使用）
+        words = _tokenize_words(reference_text)
+        word_boundaries = _estimate_word_boundaries(words, boundaries)
+
         # C1 韻律計測（prosody_port が注入されている場合のみ実行する）
         f0_contour = None
         reference_f0_contour = None
@@ -99,15 +93,12 @@ class AnalyzePronunciationUseCase:
         phoneme_acoustics: tuple[PhonemeAcousticMeasurement, ...] = ()
 
         if self._prosody is not None:
-            # 単語分割と境界情報を導出する
-            words = _tokenize_words(reference_text)
-            word_boundaries = _estimate_word_boundaries(words, boundaries)
             expected_ipa_per_word = _get_expected_ipa_per_word(
-                words, reference_text, expected_ipa.to_string()
+                words, expected_ipa.to_string()
             )
 
             # C1-b F0 輪郭（PCM バイト列が必要）
-            pcm_bytes = _extract_pcm_bytes(audio)
+            pcm_bytes = audio.content
             sample_rate = _estimate_sample_rate(audio)
             # M-APD-5: per-phoneme 音響計測（ADR-018 D1–D3）
             # pcm_bytes :95 取得後・f0_contour :97 計測前に挿入（spec 指定位置）
@@ -156,10 +147,8 @@ class AnalyzePronunciationUseCase:
                 reference_f0_contour = self._prosody.extract_reference_f0_contour(reference_text)
 
         # M-102R-b: 音素ごとの単語内位置（wordPosition）を付与する
-        words_for_position = _tokenize_words(reference_text)
-        word_boundaries_for_position = _estimate_word_boundaries(words_for_position, boundaries)
         per_phoneme_gop_with_position = _assign_word_positions(
-            per_phoneme_gop, word_boundaries_for_position
+            per_phoneme_gop, word_boundaries
         )
 
         return RawMeasurementResult(
@@ -230,7 +219,6 @@ def _estimate_word_boundaries(
 
 def _get_expected_ipa_per_word(
     words: list[str],
-    reference_text: str,
     full_expected_ipa: str,
 ) -> list[str]:
     """単語ごとの期待 IPA 文字列リストを返す。
@@ -350,16 +338,6 @@ def _assign_word_positions(
             result[phoneme_index] = replace(result[phoneme_index], word_position=word_position)
 
     return tuple(result)
-
-
-def _extract_pcm_bytes(audio: AudioInput) -> bytes:
-    """AudioInput のバイト列を PCM バイト列として返す。
-
-    WAV 形式の場合はそのまま返す（parselmouth が WAV を直接読める）。
-    非 WAV 形式（WebM 等）は parselmouth が読めないため
-    バイト列をそのまま渡す（parselmouth 側で失敗時は空 F0 を返す）。
-    """
-    return audio.content
 
 
 def _estimate_sample_rate(audio: AudioInput) -> int:

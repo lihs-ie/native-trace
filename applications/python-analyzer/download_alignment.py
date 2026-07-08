@@ -1,8 +1,8 @@
-"""Download the cdminix/libritts-aligned TextGrid archive at Docker build time.
+"""Download the cdminix/libritts-aligned TextGrid archive.
 
-Run inside the Dockerfile carver stage (see Dockerfile). Kept as a standalone
-script because a multi-line `RUN python -c "..."` is misparsed by the Dockerfile
-front-end (each newline is read as a separate instruction).
+Run manually on a dev host before an out-of-band carve (not invoked from the
+Dockerfile carver stage). Kept as a standalone script so it can be re-run
+independently ahead of `run_core_carve_pipeline`.
 """
 
 import os

@@ -1,11 +1,7 @@
 """話速・無音区間・シュワ実現の解析インフラ実装。"""
 
-import logging
-
 from python_analyzer.domain.measurement import InterWordSilence, SchwaRealization
 from python_analyzer.domain.phoneme import AlignmentBoundary
-
-logger = logging.getLogger(__name__)
 
 # シュワ音の IPA 記号
 _SCHWA_PHONEME = "ə"
