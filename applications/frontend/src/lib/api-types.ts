@@ -1,7 +1,12 @@
 /**
  * UI 層が fetch で受け取る API レスポンス DTO の型定義。
  * domain / usecase / infrastructure は import しない。
+ * （例外 — W54: AcousticEvidenceDto は usecase/assessment-result-draft.ts の
+ *   AcousticEvidenceDraft の type-only re-export。usecase → lib の逆依存を解消するための逆転で、
+ *   値 import は引き続き禁止。）
  */
+
+import type { AcousticEvidenceDraft } from "../usecase/assessment-result-draft";
 
 export type MaterialSourceDto = {
   sourceType: string;
@@ -187,28 +192,10 @@ export type CefrSubscaleDto = {
 /**
  * M-APD-13 (ADR-018): worker acousticEvidence の方向ラベル + 実測/目標フォルマント。
  * 全ラベルは string literal union | null（optional なし — DTO スタイルに統一）。
+ * W54: 形の正本は usecase/assessment-result-draft.ts の AcousticEvidenceDraft（完全同形）。
+ * ここは type-only の別名 re-export（usecase → lib の逆依存解消）。
  */
-export type AcousticEvidenceDto = {
-  tongueHeight: "tooHigh" | "tooLow" | "ok" | null;
-  tongueBackness: "tooFront" | "tooBack" | "ok" | null;
-  rhoticity: "insufficient" | "overRetroflex" | "ok" | null;
-  sibilantPlace: "tooPalatal" | "tooAlveolar" | "ok" | null;
-  vowelLength: "tooShort" | "ok" | null;
-  measuredF1Hz: number | null;
-  measuredF2Hz: number | null;
-  measuredF3Hz: number | null;
-  targetF1Hz: number | null;
-  targetF2Hz: number | null;
-  targetF3Hz: number | null;
-  /** M-ADVL-13 (ADR-024): 数値スカラー 7 本 — frontend での規範定数ハードコード禁止。worker が emit。 */
-  spectralCentroidHz: number | null;
-  tenseLengthRatio: number | null;
-  signedF1SdDeviation: number | null;
-  signedF2SdDeviation: number | null;
-  signedF3SdDeviation: number | null;
-  targetSpectralCentroidHz: number | null;
-  targetTenseLengthRatio: number | null;
-};
+export type AcousticEvidenceDto = AcousticEvidenceDraft;
 
 /**
  * M-AAI-12 (ADR-019): EMA 調音推定座標 + 表示適格性スコア。
@@ -624,4 +611,19 @@ export type DiagnosticResultDto = {
   cefrSubscales: DiagnosticCefrSubscalesDto;
   focusSounds: DiagnosticFocusSoundDto[];
   completedAt: string;
+};
+
+// ---- Golden Speaker DTOs ----
+
+/**
+ * Golden Speaker 変換レスポンス (POST /api/v1/golden-speaker/convert)。
+ * W54: 型は lib（UI が参照する契約層）に置き、zod schema 実体は acl/golden-speaker/schema.ts に残す。
+ * ORPHAN-4: qualityGatePassed が false の場合、audioBase64 を無視すること。
+ * M-GRV-7: targetVoice は API レスポンス由来 (静的 HTML に焼かない)。
+ */
+export type GoldenConversionResponse = {
+  audioBase64: string | null;
+  qualityGatePassed: boolean;
+  withholdReason: string | null;
+  targetVoice: string;
 };

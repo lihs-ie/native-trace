@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import type { EngineFindingDto, EngineResultDto } from "@/lib/api-types";
+import type { EngineFindingDto, EngineResultDto, GoldenConversionResponse } from "@/lib/api-types";
 import { engineColorVariable } from "@/lib/engine-display";
 import { HighlightedWorkspaceText } from "./HighlightedWorkspaceText";
 import { GopHeatmap } from "./GopHeatmap";
@@ -9,7 +9,6 @@ import { F0Chart } from "./F0Chart";
 import { DetailPanelV2 } from "./DetailPanelV2";
 import { RailV2 } from "./RailV2";
 import { useTtsPlayback } from "./use-tts-playback";
-import type { GoldenConversionResponse } from "@/acl/golden-speaker/schema";
 
 type ViewMode = "highlight" | "gopmap" | "f0";
 type AudioSource = "self" | "model" | "golden";
