@@ -7,19 +7,9 @@ import { apiGet, apiPost, isApiClientError } from "@/lib/api-client";
 import type { MaterialDto, MaterialStatsDto, DiagnosticSessionDto } from "@/lib/api-types";
 import { MATERIAL_COMPLETED_SCORE } from "@/lib/score-bands";
 import { diagnosticSessionKey } from "@/lib/session-storage-keys";
+import { SOURCE_TYPE_LABELS, isTed } from "@/lib/material-source";
 import { AppTop } from "@/components/chrome/AppTop";
 import { HomeNav } from "@/components/chrome/HomeNav";
-
-const SOURCE_TYPE_LABELS: Record<string, string> = {
-  ted: "TED",
-  youtube: "YouTube",
-  speech: "スピーチ",
-  article: "記事",
-  book: "書籍",
-  other: "その他",
-};
-
-const isTed = (sourceType: string): boolean => sourceType.toLowerCase() === "ted";
 
 const formatRelativeDate = (isoString: string): string => {
   const date = new Date(isoString);

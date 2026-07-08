@@ -12,6 +12,7 @@ import type {
 } from "@/lib/api-types";
 import { AppTop } from "@/components/chrome/AppTop";
 import { HomeNav } from "@/components/chrome/HomeNav";
+import { formatDateTimeMinutes } from "@/lib/format-time";
 
 // ---- helpers ----
 
@@ -45,16 +46,6 @@ function engineKindLabel(engineKind: string): string {
 
 function engineKindDotVar(engineKind: string): string {
   return engineKind === "openai" ? "--engine-openai" : "--engine-rust";
-}
-
-function formatDateTime(isoString: string): string {
-  const date = new Date(isoString);
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  const h = String(date.getHours()).padStart(2, "0");
-  const min = String(date.getMinutes()).padStart(2, "0");
-  return `${y}-${m}-${d} ${h}:${min}`;
 }
 
 function statusPillClass(status: string): string {
@@ -471,7 +462,7 @@ function HistoryContent() {
                           <div className="src">録音</div>
                         </div>
                         <div className="att-mid">
-                          <div className="att-when">{formatDateTime(run.createdAt)}</div>
+                          <div className="att-when">{formatDateTimeMinutes(run.createdAt)}</div>
                           <div className="att-engines">
                             {!isRunning && !isFailed && (
                               <span

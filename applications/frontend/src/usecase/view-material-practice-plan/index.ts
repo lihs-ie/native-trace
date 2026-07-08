@@ -12,6 +12,7 @@ import {
 } from "../port/material-detail-stats-repository";
 import { firstPage, unboundedPage } from "../shared/pagination";
 import { parseInput } from "../shared/validation";
+import { countWords } from "../shared/tokenizer";
 
 // ---- Input ----
 
@@ -137,7 +138,7 @@ const buildSectionSeriesItemWithoutStats = async (
 };
 
 const emptyStats = (bodyText: string | null): SectionSeriesStatsOutput => ({
-  wordCount: bodyText !== null ? bodyText.trim().split(/\s+/).filter(Boolean).length : null,
+  wordCount: bodyText !== null ? countWords(bodyText) : null,
   recordingAttemptCount: 0,
   bestOverallScore: null,
   overallScoreHistory: [],

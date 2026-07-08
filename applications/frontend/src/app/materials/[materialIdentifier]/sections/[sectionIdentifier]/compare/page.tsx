@@ -9,6 +9,7 @@ import { deriveEngineAgreement } from "@/lib/engine-agreement";
 import type { AgreementItem } from "@/lib/engine-agreement";
 import { Gauge, ScoreRows, HighlightedWorkspaceText } from "@/components/workspace";
 import { AppBar } from "@/components/chrome/AppBar";
+import { formatDateTimeMinutes } from "@/lib/format-time";
 
 type PageProps = {
   params: Promise<{ materialIdentifier: string; sectionIdentifier: string }>;
@@ -22,16 +23,6 @@ const ENGINE_KIND_LABELS: Record<EngineResultDto["engineKind"], string> = {
   cloud: "OpenAI API",
   oss_worker: "Rust OSS",
 };
-
-function formatDateTime(isoString: string): string {
-  const date = new Date(isoString);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const hour = String(date.getHours()).padStart(2, "0");
-  const minute = String(date.getMinutes()).padStart(2, "0");
-  return `${year}-${month}-${day} ${hour}:${minute}`;
-}
 
 type SeverityBadgeProps = {
   severity: EngineFindingDto["severity"];
@@ -243,7 +234,9 @@ export default function ComparePage({ params }: PageProps) {
           />
           比較モード
         </span>
-        {latestAttempt && <span className="att">{formatDateTime(latestAttempt.createdAt)}</span>}
+        {latestAttempt && (
+          <span className="att">{formatDateTimeMinutes(latestAttempt.createdAt)}</span>
+        )}
         {audioUrl && (
           <div
             className="player"

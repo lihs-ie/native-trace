@@ -11,16 +11,7 @@ import {
   type SectionScoreStats,
 } from "./section-score-traversal";
 import { tryPersistence } from "./try-persistence";
-
-/**
- * テキストのワード数をスペース区切りで数える。
- * 空文字や null は 0 を返す。
- */
-const countWords = (text: string): number => {
-  const trimmed = text.trim();
-  if (!trimmed) return 0;
-  return trimmed.split(/\s+/).length;
-};
+import { countWords } from "../../../usecase/shared/tokenizer";
 
 type SectionsToSeriesResult = Readonly<{
   activeSectionIdentifiers: ReadonlyArray<string>;

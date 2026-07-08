@@ -4,6 +4,8 @@ import Link from "next/link";
 import { use, useCallback, useEffect, useRef, useState } from "react";
 import { apiGet, apiPost, apiPostForm, isApiClientError } from "@/lib/api-client";
 import { nowMs } from "@/lib/now";
+import { detectBrowserInfo } from "@/lib/browser-environment";
+import { formatMinutesSeconds } from "@/lib/format-time";
 import {
   type AnalysisMode,
   type EngineFindingDto,
@@ -40,18 +42,6 @@ type PageProps = {
 };
 
 type WorkspaceState = "idle" | "recording" | "analyzing" | "result" | "failed" | "low_quality";
-
-const detectBrowserInfo = () => ({
-  browserName: navigator.userAgent.includes("Chrome")
-    ? "Chrome"
-    : navigator.userAgent.includes("Firefox")
-      ? "Firefox"
-      : navigator.userAgent.includes("Safari")
-        ? "Safari"
-        : "Unknown",
-  browserVersion: navigator.userAgent,
-  deviceType: /Mobi|Android|iPhone/i.test(navigator.userAgent) ? "mobile" : "desktop",
-});
 
 export const deriveWorkspaceState = (
   workspace: WorkspaceDto | null,
@@ -315,7 +305,7 @@ export default function WorkspacePage({ params }: PageProps) {
   };
 
   // 録音秒数のフォーマット
-  const formattedRecTime = `${Math.floor(recSeconds / 60)}:${String(recSeconds % 60).padStart(2, "0")}`;
+  const formattedRecTime = formatMinutesSeconds(recSeconds);
 
   // 秒数を m:ss 形式にフォーマット
   const formatTime = (seconds: number): string => {

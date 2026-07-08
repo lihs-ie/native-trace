@@ -80,3 +80,30 @@ export const confidenceToLevel = (confidence: number): "high" | "mid" | "low" =>
  * 低信頼度の閾値（この値未満は .hedge/.fold に入れる）
  */
 export const LOW_CONFIDENCE_THRESHOLD = 0.5;
+
+/**
+ * 診断プロンプトの phenomenon（segmental/epenthesis/prosodic）→ 日本語ラベル。
+ * 上記 FindingPhenomenon 用の PHENOMENON_LABELS_JA/EN とは異なる型のため別名で持つ。
+ */
+export const PHENOMENON_LABELS: Record<"segmental" | "epenthesis" | "prosodic", string> = {
+  segmental: "分節音対立",
+  epenthesis: "母音挿入",
+  prosodic: "韻律・強勢",
+};
+
+/**
+ * contrast 文字列のヒューリスティックから phenomenon アイコンを推定する
+ * （診断結果画面: DiagnosticFocusSoundDto.contrast のような自由記述文字列向け）。
+ */
+export const getPhenomenonIconForContrast = (contrast: string): string => {
+  if (contrast.includes("/") || contrast.includes("·")) return "⇄";
+  if (contrast.toLowerCase().includes("epenthesis") || contrast.toLowerCase().includes("母音"))
+    return "‸";
+  if (
+    contrast.toLowerCase().includes("stress") ||
+    contrast.toLowerCase().includes("rhythm") ||
+    contrast.toLowerCase().includes("prosod")
+  )
+    return "ˈ";
+  return "⇄";
+};

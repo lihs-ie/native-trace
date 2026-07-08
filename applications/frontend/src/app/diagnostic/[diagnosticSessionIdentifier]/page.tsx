@@ -25,6 +25,9 @@ import { apiGet, apiPost, apiPostForm, isApiClientError } from "@/lib/api-client
 import { nowMs } from "@/lib/now";
 import type { DiagnosticSessionDto, DiagnosticPromptDto, WorkspaceDto } from "@/lib/api-types";
 import { diagnosticSessionKey } from "@/lib/session-storage-keys";
+import { detectBrowserInfo } from "@/lib/browser-environment";
+import { formatMinutesSeconds } from "@/lib/format-time";
+import { PHENOMENON_LABELS } from "@/lib/phenomenon";
 import {
   accumulateLowDurationMs,
   applyPeakHold,
@@ -44,31 +47,12 @@ type PromptResult = {
   assessmentResultIdentifier: string;
 };
 
-// ---- phenomenon アイコン・ラベル写像 ----
+// ---- phenomenon アイコン写像（ラベルは lib/phenomenon.ts の PHENOMENON_LABELS を使用） ----
 const PHENOMENON_ICONS: Record<DiagnosticPromptDto["phenomenon"], string> = {
   segmental: "⇄",
   epenthesis: "‸",
   prosodic: "ˈ",
 };
-
-const PHENOMENON_LABELS: Record<DiagnosticPromptDto["phenomenon"], string> = {
-  segmental: "分節音対立",
-  epenthesis: "母音挿入",
-  prosodic: "韻律・強勢",
-};
-
-// ---- ブラウザ情報 ----
-const detectBrowserInfo = () => ({
-  browserName: navigator.userAgent.includes("Chrome")
-    ? "Chrome"
-    : navigator.userAgent.includes("Firefox")
-      ? "Firefox"
-      : navigator.userAgent.includes("Safari")
-        ? "Safari"
-        : "Unknown",
-  browserVersion: navigator.userAgent,
-  deviceType: /Mobi|Android|iPhone/i.test(navigator.userAgent) ? "mobile" : "desktop",
-});
 
 // ---- ポーリング設定 ----
 const POLL_INTERVAL_MS = 1500;
@@ -444,7 +428,7 @@ export default function DiagnosticSessionPage({ params }: PageProps) {
   );
   const allPromptsCompleted = promptResults.length === totalPrompts;
 
-  const formattedRecTime = `${Math.floor(recSeconds / 60)}:${String(recSeconds % 60).padStart(2, "0")}`;
+  const formattedRecTime = formatMinutesSeconds(recSeconds);
 
   return (
     <div className="ws" data-state={recordingState}>

@@ -101,3 +101,10 @@ export const tokenizeSectionBody = (bodyText: string): ReadonlyArray<SectionToke
 
   return tokens;
 };
+
+/**
+ * 本文の語数を空白区切りで数える（純粋関数）。
+ * 空文字列・空白のみの場合は 0 を返す。
+ */
+export const countWords = (bodyText: string): number =>
+  bodyText.trim().split(/\s+/).filter(Boolean).length;

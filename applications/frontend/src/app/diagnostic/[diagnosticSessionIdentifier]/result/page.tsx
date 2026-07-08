@@ -15,6 +15,7 @@ import Link from "next/link";
 import { use, useEffect, useState } from "react";
 import { apiGet, isApiClientError } from "@/lib/api-client";
 import type { DiagnosticResultDto, DiagnosticFocusSoundDto } from "@/lib/api-types";
+import { getPhenomenonIconForContrast } from "@/lib/phenomenon";
 
 type PageProps = {
   params: Promise<{ diagnosticSessionIdentifier: string }>;
@@ -57,20 +58,6 @@ const functionalLoadRankToDataRank = (rank: string): string => {
 
 // ---- CEFR スコア → バー幅 % ----
 const cefrScoreToBarWidth = (score: number): number => Math.min(100, Math.max(0, score));
-
-// ---- phenomenon アイコン（contrast 文字列から推定） ----
-const getPhenomenonIcon = (contrast: string): string => {
-  if (contrast.includes("/") || contrast.includes("·")) return "⇄";
-  if (contrast.toLowerCase().includes("epenthesis") || contrast.toLowerCase().includes("母音"))
-    return "‸";
-  if (
-    contrast.toLowerCase().includes("stress") ||
-    contrast.toLowerCase().includes("rhythm") ||
-    contrast.toLowerCase().includes("prosod")
-  )
-    return "ˈ";
-  return "⇄";
-};
 
 // ---- 推奨訓練テキスト（functionalLoadRank + contrast から簡易生成） ----
 const getRecommendedTraining = (sound: DiagnosticFocusSoundDto): string => {
@@ -285,7 +272,7 @@ export default function DiagnosticResultPage({ params }: PageProps) {
             const priorityLabel = priorityToLabel(sound.priority);
             const dataRank = functionalLoadRankToDataRank(sound.functionalLoadRank);
             const isNow = isFocusTileNow(sound.priority);
-            const phenomenonIcon = getPhenomenonIcon(sound.contrast);
+            const phenomenonIcon = getPhenomenonIconForContrast(sound.contrast);
             const recommendedTraining = getRecommendedTraining(sound);
 
             // contrast 文字列から / / 区切りペアを分割

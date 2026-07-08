@@ -39,6 +39,7 @@ import type {
 } from "@/lib/api-types";
 import { TRAINING_PLATEAU_MINUTES } from "@/lib/score-bands";
 import { TRAINING_WEAKNESS_PROFILE_KEY } from "@/lib/session-storage-keys";
+import { formatMinutesSeconds } from "@/lib/format-time";
 
 // ---- 録音状態 ----
 type RecordingState = "idle" | "recording" | "done";
@@ -428,7 +429,7 @@ export default function TrainingPage() {
   }, []);
 
   // ---- 経過時間フォーマット ----
-  const formattedElapsedTime = `${Math.floor(elapsedSeconds / 60)}:${String(elapsedSeconds % 60).padStart(2, "0")}`;
+  const formattedElapsedTime = formatMinutesSeconds(elapsedSeconds);
 
   // ---- 正答率 ----
   const accuracyPercent = trialCount > 0 ? Math.round((correctCount / trialCount) * 100) : 0;
