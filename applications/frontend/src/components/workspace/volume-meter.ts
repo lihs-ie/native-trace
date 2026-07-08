@@ -51,7 +51,7 @@ export const rmsLevelToDisplayPercentage = (rmsLevel: number): number => {
  *   98% / 300ms ≈ 0.327 %/ms
  *
  * At 60fps (16.67ms per frame) this is 0.327 * 16.67 ≈ 5.45 %/frame.
- * Confirmed by simulation on the sample corpus (scripts/simulate_meter_peak_hold.py,
+ * Confirmed by simulation on the sample corpus (scripts/calibration/simulate_meter_peak_hold.py,
  * 2026-06-18): A2 satisfied (gate-rejected file peak stays at 37.9% < 41% threshold);
  * ~300ms decay bridges inter-syllable gaps for normal speech without lifting
  * genuinely quiet recordings above LOW_VOLUME_DISPLAY_THRESHOLD.
@@ -86,7 +86,7 @@ export const applyPeakHold = (
  * How many milliseconds of continuous sub-threshold display is required
  * before the "音量小" label fires.
  *
- * Target: ~500ms (calibrated 2026-06-18 via scripts/simulate_label_debounce.py on the
+ * Target: ~500ms (calibrated 2026-06-18 via scripts/calibration/simulate_label_debounce.py on the
  * 30-file corpus; see .agent-evidence/meter-label-debounce-calibration.txt).
  *
  * At 500ms:

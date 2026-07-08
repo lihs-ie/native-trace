@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 
 # Add python-analyzer src to path
-REPO_ROOT = Path(__file__).parent.parent
+REPO_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT / "applications/python-analyzer/src"))
 
 from python_analyzer.infrastructure.audio_energy import (  # noqa: E402
