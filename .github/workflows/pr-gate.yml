@@ -48,6 +48,8 @@ jobs:
         run: bash scripts/verify-allowlist-expiry.sh
       - name: No harness import in production src (ADR-031 D7)
         run: bash scripts/verify-no-harness-import-in-prod.sh
+      - name: verify cc-by-nc exclusion
+        run: bash scripts/verify-cc-by-nc-exclusion.sh
       - name: Upload policy evidence
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v4
