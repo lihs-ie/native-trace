@@ -41,7 +41,6 @@ import {
   createSpacingScheduleIdentifier,
   createPhonemeContrast,
   createCefrSubscaleScores,
-  createFocusScore,
   createCumulativeTrainingMinutes,
   createProgressSnapshotIdentifier,
   computeSessionAccuracy,
@@ -49,6 +48,7 @@ import {
   applySpacingTransition,
   captureProgressSnapshot,
 } from "../../domain/training";
+import { toScore0To100, deriveFocusScoresFromWeaknessProfile } from "../shared/focus-score";
 import { type TrainingSessionRepository } from "../port/training-session-repository";
 import { type HvptTrialRepository } from "../port/hvpt-trial-repository";
 import { type SpacingScheduleRepository } from "../port/spacing-schedule-repository";
@@ -228,7 +228,7 @@ export const createCompleteHvptSession =
 
                     // CEFR スコア: HVPT は分節スコアを正答率から近似
                     // accuracy 0-1 → 0-100 スコア変換（honest empty、実 CEFR 計算は産出ドリルで行う）
-                    const segmentalScore = Math.round(accuracyValue * 100);
+                    const segmentalScore = toScore0To100(accuracyValue);
                     const cefrScoresResult = createCefrSubscaleScores(
                       segmentalScore,
                       segmentalScore,
@@ -239,16 +239,11 @@ export const createCompleteHvptSession =
                     }
 
                     // focusScores: WeaknessProfile の mastery から生成
-                    const focusScoreResults = weaknessProfile.focusSounds.map((sound) => {
-                      const score0To100 = Math.round(Number(sound.mastery) * 100);
-                      return createFocusScore(String(sound.contrast), score0To100);
-                    });
-                    for (const result of focusScoreResults) {
-                      if (result.isErr()) {
-                        return errAsync(result.error);
-                      }
+                    const focusScoresResult = deriveFocusScoresFromWeaknessProfile(weaknessProfile);
+                    if (focusScoresResult.isErr()) {
+                      return errAsync(focusScoresResult.error);
                     }
-                    const focusScores = focusScoreResults.map((r) => r._unsafeUnwrap());
+                    const focusScores = focusScoresResult.value;
 
                     // cumulativeTrainingMinutes: このセッションの durationMinutes
                     const cumulativeResult = createCumulativeTrainingMinutes(input.durationMinutes);
