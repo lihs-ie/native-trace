@@ -2,6 +2,13 @@ import { z } from "zod";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+/**
+ * DEFAULT_ANALYZER_ENDPOINT — Python analyzer の既定ベース URL。
+ * 値の正は compose.yaml の analyzer サービス定義（port 8788）。
+ * env ANALYZER_URL が指定されていればそちらが優先される。
+ */
+const DEFAULT_ANALYZER_ENDPOINT = "http://localhost:8788";
+
 const configSchema = z.object({
   dbPath: z.string().min(1),
   audioStorageRoot: z.string().min(1),
@@ -139,7 +146,7 @@ export type AnalyzerConfig = z.infer<typeof analyzerConfigSchema>;
  */
 export const createAnalyzerConfig = (): AnalyzerConfig => {
   const result = analyzerConfigSchema.safeParse({
-    analyzerApiEndpoint: process.env.ANALYZER_URL ?? "http://localhost:8788",
+    analyzerApiEndpoint: process.env.ANALYZER_URL ?? DEFAULT_ANALYZER_ENDPOINT,
   });
   if (!result.success) {
     throw new Error(`analyzer 設定が不正です: ${result.error.message}`);
@@ -159,7 +166,7 @@ export const createConfig = (): AppConfig => {
     dbPath: process.env.DB_PATH ?? "./data/native-trace.db",
     audioStorageRoot: process.env.AUDIO_STORAGE_ROOT ?? "./data/audio",
     workerApiEndpoint: process.env.WORKER_API_ENDPOINT ?? "http://localhost:8787",
-    analyzerApiEndpoint: process.env.ANALYZER_URL ?? "http://localhost:8788",
+    analyzerApiEndpoint: process.env.ANALYZER_URL ?? DEFAULT_ANALYZER_ENDPOINT,
     openaiApiKey: process.env.OPENAI_API_KEY ?? "",
     openaiAssessmentModel: process.env.OPENAI_ASSESSMENT_MODEL ?? "gpt-4o-audio-preview",
     nodeEnv: process.env.NODE_ENV ?? "development",
