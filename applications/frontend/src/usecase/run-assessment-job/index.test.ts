@@ -357,6 +357,27 @@ describe("runAssessmentJob", () => {
     expect(output.job?.state).toBe("failed");
   });
 
+  it("fails permanently (not throws) when scores.intelligibility is out of range", async () => {
+    ulidCounter = 0;
+    const invalidDraft: AssessmentResultDraft = {
+      ...makeDraft(),
+      scores: { ...makeDraft().scores, intelligibility: 101 }, // 範囲外 → schema invalid（throw ではなく定義済みエラー）
+    };
+    const deps = makeDependencies({
+      engineRegistry: {
+        find: () => ok({ assess: () => okAsync(invalidDraft) }),
+      },
+    });
+    const execute = createRunAssessmentJob(deps);
+
+    const result = await execute({ leaseOwner: "runner-1", leaseDurationSeconds: 60 });
+
+    expect(result.isOk()).toBe(true);
+    const output = result._unsafeUnwrap();
+    expect(output.retryScheduled).toBe(false);
+    expect(output.job?.state).toBe("failed");
+  });
+
   it("does not save result when job is canceled before save", async () => {
     ulidCounter = 0;
     const resultPersistSpy = vi.fn(() => okAsync(undefined));

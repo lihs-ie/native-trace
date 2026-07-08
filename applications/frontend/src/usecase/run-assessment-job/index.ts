@@ -1,12 +1,4 @@
-import {
-  type ResultAsync,
-  type Result,
-  errAsync,
-  okAsync,
-  fromPromise,
-  ok,
-  err,
-} from "neverthrow";
+import { type ResultAsync, type Result, errAsync, okAsync, fromPromise, ok, err } from "neverthrow";
 import { z } from "zod";
 import { type DomainError, type NonEmptyList, createNonEmptyList } from "../../domain/shared";
 import {
@@ -415,8 +407,9 @@ type ValidatedDraft = Readonly<{
 
 /**
  * AssessmentResultDraft の共通検証 (use-case.md §7.5)。
- * low_quality 早期判定 → scores 6 項目 → segments 非空 → summary.messageJa 必須 →
- * tokenizerVersion 一致・非空、の順で検証する（既存の検証順序・エラー種別・reason 文言を維持）。
+ * low_quality 早期判定 → scores 6 項目 → intelligibility（nullable） → segments 非空 →
+ * summary.messageJa 必須 → tokenizerVersion 一致・非空、の順で検証する
+ * （既存の検証順序・エラー種別・reason 文言を維持）。
  */
 const validateDraft = (draft: AssessmentResultDraft): Result<ValidatedDraft, DomainError> => {
   // 早期返却: low_quality audio は engine 呼び出し成功だが採点対象外。
@@ -444,6 +437,19 @@ const validateDraft = (draft: AssessmentResultDraft): Result<ValidatedDraft, Dom
       return err({
         type: "assessmentSchemaInvalid",
         reason: `scores.${key}: ${extractReason(scoreResult.error) ?? scoreResult.error.type}`,
+      });
+    }
+  }
+
+  // intelligibility は nullable のため 6 項目ループとは別に検証する。
+  // 範囲外値を buildScoreSet の _unsafeUnwrap()（neverthrow の外で throw）に到達させず、
+  // 他スコアと同じ assessmentSchemaInvalid の定義済みエラー経路へ落とす。
+  if (draft.scores.intelligibility !== null) {
+    const intelligibilityResult = createScore0To100(draft.scores.intelligibility);
+    if (intelligibilityResult.isErr()) {
+      return err({
+        type: "assessmentSchemaInvalid",
+        reason: `scores.intelligibility: ${extractReason(intelligibilityResult.error) ?? intelligibilityResult.error.type}`,
       });
     }
   }
@@ -606,6 +612,8 @@ const precomputeFeedbackLayers = (
  * validateDraft で全項目が検証済みであることが前提（既存挙動どおり再生成 + unsafeUnwrap）。
  */
 const buildScoreSet = (draft: AssessmentResultDraft): ScoreSet => ({
+  // validateDraft が 6 項目 + intelligibility（非 null 時）の範囲を保証するため、
+  // 以下の _unsafeUnwrap() は throw しない。
   overall: createScore0To100(draft.scores.overall)._unsafeUnwrap(),
   accuracy: createScore0To100(draft.scores.accuracy)._unsafeUnwrap(),
   nativeLikeness: createScore0To100(draft.scores.nativeLikeness)._unsafeUnwrap(),
@@ -933,14 +941,10 @@ export const createRunAssessmentJob =
                                             ),
                                         )
                                         .map(() => {
-                                          dependencies.logger.info(
-                                            "runAssessmentJob: succeeded",
-                                            {
-                                              jobIdentifier: succeededJob.identifier as string,
-                                              resultIdentifier:
-                                                assessmentResult.identifier as string,
-                                            },
-                                          );
+                                          dependencies.logger.info("runAssessmentJob: succeeded", {
+                                            jobIdentifier: succeededJob.identifier as string,
+                                            resultIdentifier: assessmentResult.identifier as string,
+                                          });
 
                                           const allEvents: RunAssessmentJobOutput["events"] = [
                                             ...succeedEvents,
