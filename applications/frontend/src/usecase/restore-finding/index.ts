@@ -11,6 +11,7 @@ import { type AssessmentResultRepository } from "../port/assessment-result-repos
 import { type FindingDismissalRepository } from "../port/finding-dismissal-repository";
 import { type Clock } from "../port/clock";
 import { singleItemPage } from "../shared/pagination";
+import { parseInput } from "../shared/validation";
 
 // ---- Input ----
 
@@ -50,19 +51,18 @@ export type RestoreFindingDependencies = Readonly<{
 export const createRestoreFinding =
   (dependencies: RestoreFindingDependencies) =>
   (input: RestoreFindingInput): ResultAsync<RestoreFindingOutput, DomainError> => {
-    const parsed = restoreFindingSchema.safeParse(input);
-    if (!parsed.success) {
-      return errAsync(
-        validationFailed("input", parsed.error.errors.map((e) => e.message).join(", ")),
-      );
+    const parsedInput = parseInput(restoreFindingSchema, input);
+    if (parsedInput.isErr()) {
+      return errAsync(parsedInput.error);
     }
+    const parsed = parsedInput.value;
 
-    const sectionIdentifier = createSectionIdentifier(parsed.data.section);
+    const sectionIdentifier = createSectionIdentifier(parsed.section);
     if (!sectionIdentifier) {
       return errAsync(validationFailed("section", "不正なセクションIDです"));
     }
 
-    const findingIdentifier = parsed.data.finding;
+    const findingIdentifier = parsed.finding;
 
     return dependencies.sectionRepository
       .find(sectionIdentifier)

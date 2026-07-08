@@ -1,10 +1,6 @@
 import { type ResultAsync, errAsync, okAsync } from "neverthrow";
 import { z } from "zod";
-import {
-  type DomainError,
-  type NonEmptyList,
-  validationFailed,
-} from "../../domain/shared";
+import { type DomainError, type NonEmptyList, validationFailed } from "../../domain/shared";
 import { createRecordingAttemptIdentifier } from "../../domain/recording-attempt";
 import {
   createAnalysisRunIdentifier,
@@ -25,6 +21,7 @@ import { type TransactionManager } from "../port/transaction-manager";
 import { type EntropyProvider } from "../port/entropy-provider";
 import { type Clock } from "../port/clock";
 import { type Logger } from "../port/logger";
+import { parseInput } from "../shared/validation";
 
 // ---- Input ----
 
@@ -43,11 +40,13 @@ export type ReassessPracticeAttemptOutput = Readonly<{
     mode: string;
     createdAt: string;
   }>;
-  analysisJobs: ReadonlyArray<Readonly<{
-    identifier: string;
-    engine: string;
-    state: "queued";
-  }>>;
+  analysisJobs: ReadonlyArray<
+    Readonly<{
+      identifier: string;
+      engine: string;
+      state: "queued";
+    }>
+  >;
   events: NonEmptyList<AnalysisRunStarted | AnalysisJobQueued>;
 }>;
 
@@ -67,15 +66,16 @@ export type ReassessPracticeAttemptDependencies = Readonly<{
 
 export const createReassessPracticeAttempt =
   (dependencies: ReassessPracticeAttemptDependencies) =>
-  (input: ReassessPracticeAttemptInput): ResultAsync<ReassessPracticeAttemptOutput, DomainError> => {
-    const parsed = reassessPracticeAttemptSchema.safeParse(input);
-    if (!parsed.success) {
-      return errAsync(
-        validationFailed("input", parsed.error.errors.map((e) => e.message).join(", "))
-      );
+  (
+    input: ReassessPracticeAttemptInput,
+  ): ResultAsync<ReassessPracticeAttemptOutput, DomainError> => {
+    const parsedInput = parseInput(reassessPracticeAttemptSchema, input);
+    if (parsedInput.isErr()) {
+      return errAsync(parsedInput.error);
     }
+    const parsed = parsedInput.value;
 
-    const recordingAttemptIdentifier = createRecordingAttemptIdentifier(parsed.data.recordingAttempt);
+    const recordingAttemptIdentifier = createRecordingAttemptIdentifier(parsed.recordingAttempt);
     if (!recordingAttemptIdentifier) {
       return errAsync(validationFailed("recordingAttempt", "不正な録音試行IDです"));
     }
@@ -85,7 +85,7 @@ export const createReassessPracticeAttempt =
       .find(recordingAttemptIdentifier)
       .andThen((recordingAttempt) => {
         const now = dependencies.clock.now();
-        const { analysisMode } = parsed.data;
+        const { analysisMode } = parsed;
 
         return dependencies.transactionManager.execute(() => {
           const analysisRunRawId = dependencies.entropyProvider.generateUlid();
@@ -102,11 +102,12 @@ export const createReassessPracticeAttempt =
             now,
           });
 
-          const engines: EngineType[] = analysisMode === "cloud_only"
-            ? ["cloud"]
-            : analysisMode === "oss_worker_only"
-            ? ["oss_worker"]
-            : ["cloud", "oss_worker"];
+          const engines: EngineType[] =
+            analysisMode === "cloud_only"
+              ? ["cloud"]
+              : analysisMode === "oss_worker_only"
+                ? ["oss_worker"]
+                : ["cloud", "oss_worker"];
 
           type JobCreateResult = {
             analysisJob: ReturnType<typeof createAnalysisJob>["analysisJob"];
@@ -120,13 +121,15 @@ export const createReassessPracticeAttempt =
             if (!jobIdentifier) {
               return errAsync(validationFailed("analysisJobIdentifier", "ULID 生成に失敗しました"));
             }
-            jobCreations.push(createAnalysisJob({
-              identifier: jobIdentifier,
-              analysisRun: analysisRunIdentifier,
-              engine,
-              engineConfigJson: "{}",
-              now,
-            }));
+            jobCreations.push(
+              createAnalysisJob({
+                identifier: jobIdentifier,
+                analysisRun: analysisRunIdentifier,
+                engine,
+                engineConfigJson: "{}",
+                now,
+              }),
+            );
           }
 
           const persistJobs = (index: number): ResultAsync<void, DomainError> => {
@@ -146,10 +149,9 @@ export const createReassessPracticeAttempt =
               });
 
               const allJobQueued = jobCreations.flatMap((r) => [...r.events]);
-              const allEvents = [
-                ...runEvents,
-                ...allJobQueued,
-              ] as NonEmptyList<AnalysisRunStarted | AnalysisJobQueued>;
+              const allEvents = [...runEvents, ...allJobQueued] as NonEmptyList<
+                AnalysisRunStarted | AnalysisJobQueued
+              >;
 
               return {
                 analysisRun: {

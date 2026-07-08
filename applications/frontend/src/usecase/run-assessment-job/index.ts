@@ -1,11 +1,6 @@
 import { type ResultAsync, errAsync, okAsync, fromPromise } from "neverthrow";
 import { z } from "zod";
-import {
-  type DomainError,
-  type NonEmptyList,
-  validationFailed,
-  createNonEmptyList,
-} from "../../domain/shared";
+import { type DomainError, type NonEmptyList, createNonEmptyList } from "../../domain/shared";
 import {
   startAnalysisJob,
   completeAnalysisJob,
@@ -59,6 +54,7 @@ import {
   type ImprovementMessageGenerator,
   type FeedbackLayersOutput,
 } from "../port/improvement-message-generator";
+import { parseInput } from "../shared/validation";
 
 // ---- Constants ----
 
@@ -302,14 +298,13 @@ const handleJobFailure = (
 export const createRunAssessmentJob =
   (dependencies: RunAssessmentJobDependencies) =>
   (input: RunAssessmentJobInput): ResultAsync<RunAssessmentJobOutput, DomainError> => {
-    const parsed = runAssessmentJobSchema.safeParse(input);
-    if (!parsed.success) {
-      return errAsync(
-        validationFailed("input", parsed.error.errors.map((e) => e.message).join(", ")),
-      );
+    const parsedInput = parseInput(runAssessmentJobSchema, input);
+    if (parsedInput.isErr()) {
+      return errAsync(parsedInput.error);
     }
+    const parsed = parsedInput.value;
 
-    const { leaseOwner, leaseDurationSeconds } = parsed.data;
+    const { leaseOwner, leaseDurationSeconds } = parsed;
     const now = dependencies.clock.now();
     const leaseDurationMs = leaseDurationSeconds * 1000;
 

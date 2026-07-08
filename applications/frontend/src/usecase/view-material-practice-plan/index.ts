@@ -11,6 +11,7 @@ import {
   type SectionSeriesStats,
 } from "../port/material-detail-stats-repository";
 import { firstPage, unboundedPage } from "../shared/pagination";
+import { parseInput } from "../shared/validation";
 
 // ---- Input ----
 
@@ -156,14 +157,13 @@ export const createViewMaterialPracticePlan =
   (
     input: ViewMaterialPracticePlanInput,
   ): ResultAsync<ViewMaterialPracticePlanOutput, DomainError> => {
-    const parsed = viewMaterialPracticePlanSchema.safeParse(input);
-    if (!parsed.success) {
-      return errAsync(
-        validationFailed("input", parsed.error.errors.map((e) => e.message).join(", ")),
-      );
+    const parsedInput = parseInput(viewMaterialPracticePlanSchema, input);
+    if (parsedInput.isErr()) {
+      return errAsync(parsedInput.error);
     }
+    const parsed = parsedInput.value;
 
-    const identifierResult = createMaterialIdentifier(parsed.data.material);
+    const identifierResult = createMaterialIdentifier(parsed.material);
     if (!identifierResult) {
       return errAsync(validationFailed("material", "不正な素材IDです"));
     }

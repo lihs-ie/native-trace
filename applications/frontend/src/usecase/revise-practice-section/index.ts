@@ -20,6 +20,7 @@ import { type TransactionManager } from "../port/transaction-manager";
 import { type EntropyProvider } from "../port/entropy-provider";
 import { type Clock } from "../port/clock";
 import { type Logger } from "../port/logger";
+import { parseInput } from "../shared/validation";
 
 // ---- Input ----
 
@@ -72,18 +73,17 @@ export const createRevisePracticeSection =
   (dependencies: RevisePracticeSectionDependencies) =>
   (input: RevisePracticeSectionInput): ResultAsync<RevisePracticeSectionOutput, DomainError> => {
     // 1. Zod 検証
-    const parsed = revisePracticeSectionSchema.safeParse(input);
-    if (!parsed.success) {
-      return errAsync(
-        validationFailed("input", parsed.error.errors.map((e) => e.message).join(", ")),
-      );
+    const parsedInput = parseInput(revisePracticeSectionSchema, input);
+    if (parsedInput.isErr()) {
+      return errAsync(parsedInput.error);
     }
+    const parsed = parsedInput.value;
 
     // 少なくとも1つのフィールドが必要
     if (
-      parsed.data.title === undefined &&
-      parsed.data.displayOrder === undefined &&
-      parsed.data.bodyText === undefined
+      parsed.title === undefined &&
+      parsed.displayOrder === undefined &&
+      parsed.bodyText === undefined
     ) {
       return errAsync(
         validationFailed(
@@ -93,15 +93,15 @@ export const createRevisePracticeSection =
       );
     }
 
-    const seriesIdentifierResult = createSectionSeriesIdentifier(parsed.data.sectionSeries);
+    const seriesIdentifierResult = createSectionSeriesIdentifier(parsed.sectionSeries);
     if (!seriesIdentifierResult) {
       return errAsync(validationFailed("sectionSeries", "不正なSectionSeriesIDです"));
     }
 
     // bodyText がある場合は事前に VO 変換（validation first）
     let newBodyText = null;
-    if (parsed.data.bodyText !== undefined) {
-      const bodyTextResult = createSectionBodyText(parsed.data.bodyText);
+    if (parsed.bodyText !== undefined) {
+      const bodyTextResult = createSectionBodyText(parsed.bodyText);
       if (bodyTextResult.isErr()) return errAsync(bodyTextResult.error);
       newBodyText = bodyTextResult.value;
     }
@@ -115,8 +115,8 @@ export const createRevisePracticeSection =
 
           // 3. title / displayOrder の決定（未指定は現行維持）
           let newTitleResult: ReturnType<typeof createSectionTitle>;
-          if (parsed.data.title !== undefined) {
-            newTitleResult = createSectionTitle(parsed.data.title);
+          if (parsed.title !== undefined) {
+            newTitleResult = createSectionTitle(parsed.title);
           } else {
             newTitleResult = {
               isOk: () => true,
@@ -128,8 +128,8 @@ export const createRevisePracticeSection =
           const newTitle = newTitleResult.value;
 
           let newDisplayOrderResult: ReturnType<typeof createSectionDisplayOrder>;
-          if (parsed.data.displayOrder !== undefined) {
-            newDisplayOrderResult = createSectionDisplayOrder(parsed.data.displayOrder);
+          if (parsed.displayOrder !== undefined) {
+            newDisplayOrderResult = createSectionDisplayOrder(parsed.displayOrder);
           } else {
             newDisplayOrderResult = {
               isOk: () => true,

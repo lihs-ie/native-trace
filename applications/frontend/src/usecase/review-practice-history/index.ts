@@ -9,6 +9,7 @@ import { type RecordingAttemptRepository } from "../port/recording-attempt-repos
 import { type AnalysisRunRepository } from "../port/analysis-run-repository";
 import { type AssessmentResultRepository } from "../port/assessment-result-repository";
 import { toDomainPagination, firstPage } from "../shared/pagination";
+import { parseInput } from "../shared/validation";
 
 // ---- Input ----
 
@@ -214,26 +215,25 @@ const buildSectionVersionsSequentially = (
 export const createReviewPracticeHistory =
   (dependencies: ReviewPracticeHistoryDependencies) =>
   (input: ReviewPracticeHistoryInput): ResultAsync<ReviewPracticeHistoryOutput, DomainError> => {
-    const parsed = reviewPracticeHistorySchema.safeParse(input);
-    if (!parsed.success) {
-      return errAsync(
-        validationFailed("input", parsed.error.errors.map((e) => e.message).join(", ")),
-      );
+    const parsedInput = parseInput(reviewPracticeHistorySchema, input);
+    if (parsedInput.isErr()) {
+      return errAsync(parsedInput.error);
     }
+    const parsed = parsedInput.value;
 
-    const sectionSeriesIdentifier = createSectionSeriesIdentifier(parsed.data.sectionSeries);
+    const sectionSeriesIdentifier = createSectionSeriesIdentifier(parsed.sectionSeries);
     if (!sectionSeriesIdentifier) {
       return errAsync(validationFailed("sectionSeries", "不正な SectionSeries ID です"));
     }
 
-    if (parsed.data.material !== undefined) {
-      const materialIdentifier = createMaterialIdentifier(parsed.data.material);
+    if (parsed.material !== undefined) {
+      const materialIdentifier = createMaterialIdentifier(parsed.material);
       if (!materialIdentifier) {
         return errAsync(validationFailed("material", "不正な Material ID です"));
       }
     }
 
-    const pagination = toDomainPagination(parsed.data.pagination);
+    const pagination = toDomainPagination(parsed.pagination);
 
     return dependencies.sectionSeriesRepository
       .find(sectionSeriesIdentifier)

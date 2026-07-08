@@ -12,6 +12,7 @@ import { type FindingDismissalRepository } from "../port/finding-dismissal-repos
 import { type EntropyProvider } from "../port/entropy-provider";
 import { type Clock } from "../port/clock";
 import { singleItemPage } from "../shared/pagination";
+import { parseInput } from "../shared/validation";
 
 // ---- Input ----
 
@@ -54,20 +55,19 @@ export type DismissFindingDependencies = Readonly<{
 export const createDismissFinding =
   (dependencies: DismissFindingDependencies) =>
   (input: DismissFindingInput): ResultAsync<DismissFindingOutput, DomainError> => {
-    const parsed = dismissFindingSchema.safeParse(input);
-    if (!parsed.success) {
-      return errAsync(
-        validationFailed("input", parsed.error.errors.map((e) => e.message).join(", ")),
-      );
+    const parsedInput = parseInput(dismissFindingSchema, input);
+    if (parsedInput.isErr()) {
+      return errAsync(parsedInput.error);
     }
+    const parsed = parsedInput.value;
 
-    const sectionIdentifier = createSectionIdentifier(parsed.data.section);
+    const sectionIdentifier = createSectionIdentifier(parsed.section);
     if (!sectionIdentifier) {
       return errAsync(validationFailed("section", "不正なセクションIDです"));
     }
 
-    const findingIdentifier = parsed.data.finding;
-    const reason = parsed.data.reason ?? null;
+    const findingIdentifier = parsed.finding;
+    const reason = parsed.reason ?? null;
 
     return dependencies.sectionRepository
       .find(sectionIdentifier)

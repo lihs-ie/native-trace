@@ -14,6 +14,7 @@ import {
 import { type MaterialRepository } from "../port/material-repository";
 import { type SectionSeriesRepository } from "../port/section-series-repository";
 import { unboundedPage } from "../shared/pagination";
+import { parseInput } from "../shared/validation";
 import { type TransactionManager } from "../port/transaction-manager";
 import { type Clock } from "../port/clock";
 import { type Logger } from "../port/logger";
@@ -53,14 +54,13 @@ export type RetireMaterialDependencies = Readonly<{
 export const createRetireMaterial =
   (dependencies: RetireMaterialDependencies) =>
   (input: RetireMaterialInput): ResultAsync<RetireMaterialOutput, DomainError> => {
-    const parsed = retireMaterialSchema.safeParse(input);
-    if (!parsed.success) {
-      return errAsync(
-        validationFailed("input", parsed.error.errors.map((e) => e.message).join(", ")),
-      );
+    const parsedInput = parseInput(retireMaterialSchema, input);
+    if (parsedInput.isErr()) {
+      return errAsync(parsedInput.error);
     }
+    const parsed = parsedInput.value;
 
-    const identifierResult = createMaterialIdentifier(parsed.data.material);
+    const identifierResult = createMaterialIdentifier(parsed.material);
     if (!identifierResult) {
       return errAsync(validationFailed("material", "不正な素材IDです"));
     }

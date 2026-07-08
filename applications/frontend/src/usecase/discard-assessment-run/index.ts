@@ -7,6 +7,7 @@ import { type AnalysisJobRepository } from "../port/analysis-job-repository";
 import { type TransactionManager } from "../port/transaction-manager";
 import { type Clock } from "../port/clock";
 import { type Logger } from "../port/logger";
+import { parseInput } from "../shared/validation";
 
 // ---- Input ----
 
@@ -40,14 +41,13 @@ export type DiscardAssessmentRunDependencies = Readonly<{
 export const createDiscardAssessmentRun =
   (dependencies: DiscardAssessmentRunDependencies) =>
   (input: DiscardAssessmentRunInput): ResultAsync<DiscardAssessmentRunOutput, DomainError> => {
-    const parsed = discardAssessmentRunSchema.safeParse(input);
-    if (!parsed.success) {
-      return errAsync(
-        validationFailed("input", parsed.error.errors.map((e) => e.message).join(", ")),
-      );
+    const parsedInput = parseInput(discardAssessmentRunSchema, input);
+    if (parsedInput.isErr()) {
+      return errAsync(parsedInput.error);
     }
+    const parsed = parsedInput.value;
 
-    const analysisRunIdentifier = createAnalysisRunIdentifier(parsed.data.analysisRun);
+    const analysisRunIdentifier = createAnalysisRunIdentifier(parsed.analysisRun);
     if (!analysisRunIdentifier) {
       return errAsync(validationFailed("analysisRun", "不正な解析実行IDです"));
     }

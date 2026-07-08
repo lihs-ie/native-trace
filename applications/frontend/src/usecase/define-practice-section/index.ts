@@ -25,6 +25,7 @@ import { type TransactionManager } from "../port/transaction-manager";
 import { type EntropyProvider } from "../port/entropy-provider";
 import { type Clock } from "../port/clock";
 import { type Logger } from "../port/logger";
+import { parseInput } from "../shared/validation";
 
 // ---- Input ----
 
@@ -89,29 +90,28 @@ export const createDefinePracticeSection =
   (dependencies: DefinePracticeSectionDependencies) =>
   (input: DefinePracticeSectionInput): ResultAsync<DefinePracticeSectionOutput, DomainError> => {
     // 1. Zod 検証
-    const parsed = definePracticeSectionSchema.safeParse(input);
-    if (!parsed.success) {
-      return errAsync(
-        validationFailed("input", parsed.error.errors.map((e) => e.message).join(", "))
-      );
+    const parsedInput = parseInput(definePracticeSectionSchema, input);
+    if (parsedInput.isErr()) {
+      return errAsync(parsedInput.error);
     }
+    const parsed = parsedInput.value;
 
-    const materialIdentifierResult = createMaterialIdentifier(parsed.data.material);
+    const materialIdentifierResult = createMaterialIdentifier(parsed.material);
     if (!materialIdentifierResult) {
       return errAsync(validationFailed("material", "不正な素材IDです"));
     }
 
     // 2. bodyText の Domain VO 変換（空/最大長/英字割合/制御文字）
-    const bodyTextResult = createSectionBodyText(parsed.data.bodyText);
+    const bodyTextResult = createSectionBodyText(parsed.bodyText);
     if (bodyTextResult.isErr()) return errAsync(bodyTextResult.error);
     const bodyText = bodyTextResult.value;
 
     // 3. title と displayOrder の VO 変換
-    const titleResult = createSectionTitle(parsed.data.title);
+    const titleResult = createSectionTitle(parsed.title);
     if (titleResult.isErr()) return errAsync(titleResult.error);
     const title = titleResult.value;
 
-    const displayOrderResult = createSectionDisplayOrder(parsed.data.displayOrder);
+    const displayOrderResult = createSectionDisplayOrder(parsed.displayOrder);
     if (displayOrderResult.isErr()) return errAsync(displayOrderResult.error);
     const displayOrder = displayOrderResult.value;
 
@@ -120,7 +120,7 @@ export const createDefinePracticeSection =
       dependencies.materialRepository.find(materialIdentifierResult).andThen((material) => {
         if (material.type !== "active") {
           return errAsync(
-            validationFailed("material", "削除済みの素材にはセクションを追加できません")
+            validationFailed("material", "削除済みの素材にはセクションを追加できません"),
           );
         }
 
@@ -180,6 +180,6 @@ export const createDefinePracticeSection =
               events: allEvents,
             };
           });
-      })
+      }),
     );
   };

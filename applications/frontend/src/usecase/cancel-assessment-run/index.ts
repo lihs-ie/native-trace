@@ -17,6 +17,7 @@ import { type AnalysisJobRepository } from "../port/analysis-job-repository";
 import { type TransactionManager } from "../port/transaction-manager";
 import { type Clock } from "../port/clock";
 import { type Logger } from "../port/logger";
+import { parseInput } from "../shared/validation";
 
 // ---- Input ----
 
@@ -33,11 +34,13 @@ export type CancelAssessmentRunOutput = Readonly<{
     identifier: string;
     status: string;
   }>;
-  canceledJobs: ReadonlyArray<Readonly<{
-    identifier: string;
-    engine: string;
-    canceledAt: string;
-  }>>;
+  canceledJobs: ReadonlyArray<
+    Readonly<{
+      identifier: string;
+      engine: string;
+      canceledAt: string;
+    }>
+  >;
   events: NonEmptyList<AnalysisJobCanceled>;
 }>;
 
@@ -67,53 +70,47 @@ const persistCanceledJobs = (
 export const createCancelAssessmentRun =
   (dependencies: CancelAssessmentRunDependencies) =>
   (input: CancelAssessmentRunInput): ResultAsync<CancelAssessmentRunOutput, DomainError> => {
-    const parsed = cancelAssessmentRunSchema.safeParse(input);
-    if (!parsed.success) {
-      return errAsync(
-        validationFailed("input", parsed.error.errors.map((e) => e.message).join(", "))
-      );
+    const parsedInput = parseInput(cancelAssessmentRunSchema, input);
+    if (parsedInput.isErr()) {
+      return errAsync(parsedInput.error);
     }
+    const parsed = parsedInput.value;
 
-    const analysisRunIdentifier = createAnalysisRunIdentifier(parsed.data.analysisRun);
+    const analysisRunIdentifier = createAnalysisRunIdentifier(parsed.analysisRun);
     if (!analysisRunIdentifier) {
       return errAsync(validationFailed("analysisRun", "不正な解析実行IDです"));
     }
 
     return dependencies.transactionManager.execute(() =>
-      dependencies.analysisRunRepository
-        .find(analysisRunIdentifier)
-        .andThen(() =>
-          dependencies.analysisJobRepository
-            .search({
-              type: "jobsByAnalysisRun",
-              analysisRun: analysisRunIdentifier,
-            })
-            .andThen((jobPage) => {
-              const now = dependencies.clock.now();
-              const allJobs = [...jobPage.items];
+      dependencies.analysisRunRepository.find(analysisRunIdentifier).andThen(() =>
+        dependencies.analysisJobRepository
+          .search({
+            type: "jobsByAnalysisRun",
+            analysisRun: analysisRunIdentifier,
+          })
+          .andThen((jobPage) => {
+            const now = dependencies.clock.now();
+            const allJobs = [...jobPage.items];
 
-              // 未完了 Job のみ cancelAnalysisJob
-              const canceledEntries: { job: CanceledAnalysisJob; event: AnalysisJobCanceled }[] = [];
-              for (const job of allJobs) {
-                if (job.type === "queued" || job.type === "leased" || job.type === "running") {
-                  const { analysisJob: canceledJob, events } = cancelAnalysisJob(job, now);
-                  canceledEntries.push({ job: canceledJob, event: events[0] });
-                }
+            // 未完了 Job のみ cancelAnalysisJob
+            const canceledEntries: { job: CanceledAnalysisJob; event: AnalysisJobCanceled }[] = [];
+            for (const job of allJobs) {
+              if (job.type === "queued" || job.type === "leased" || job.type === "running") {
+                const { analysisJob: canceledJob, events } = cancelAnalysisJob(job, now);
+                canceledEntries.push({ job: canceledJob, event: events[0] });
               }
+            }
 
-              if (canceledEntries.length === 0) {
-                return errAsync(
-                  validationFailed("analysisRun", "キャンセルできる未完了ジョブがありません"),
-                );
-              }
+            if (canceledEntries.length === 0) {
+              return errAsync(
+                validationFailed("analysisRun", "キャンセルできる未完了ジョブがありません"),
+              );
+            }
 
-              const canceledJobs = canceledEntries.map((e) => e.job);
+            const canceledJobs = canceledEntries.map((e) => e.job);
 
-              return persistCanceledJobs(
-                dependencies.analysisJobRepository,
-                canceledJobs,
-                0,
-              ).andThen(() => {
+            return persistCanceledJobs(dependencies.analysisJobRepository, canceledJobs, 0).andThen(
+              () => {
                 // 全 Job を更新後の状態で再収集して deriveAnalysisRunStatus を再計算
                 const updatedJobs = allJobs.map((job) => {
                   const canceledEntry = canceledEntries.find(
@@ -152,8 +149,9 @@ export const createCancelAssessmentRun =
                       events: nonEmptyEvents,
                     } satisfies CancelAssessmentRunOutput;
                   });
-              });
-            }),
-        ),
+              },
+            );
+          }),
+      ),
     );
   };

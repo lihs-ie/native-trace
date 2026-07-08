@@ -10,6 +10,7 @@ import { type SectionSeriesRepository } from "../port/section-series-repository"
 import { type TransactionManager } from "../port/transaction-manager";
 import { type Clock } from "../port/clock";
 import { type Logger } from "../port/logger";
+import { parseInput } from "../shared/validation";
 
 // ---- Input ----
 
@@ -44,16 +45,15 @@ export type RetirePracticeSectionSeriesDependencies = Readonly<{
 export const createRetirePracticeSectionSeries =
   (dependencies: RetirePracticeSectionSeriesDependencies) =>
   (
-    input: RetirePracticeSectionSeriesInput
+    input: RetirePracticeSectionSeriesInput,
   ): ResultAsync<RetirePracticeSectionSeriesOutput, DomainError> => {
-    const parsed = retirePracticeSectionSeriesSchema.safeParse(input);
-    if (!parsed.success) {
-      return errAsync(
-        validationFailed("input", parsed.error.errors.map((e) => e.message).join(", "))
-      );
+    const parsedInput = parseInput(retirePracticeSectionSeriesSchema, input);
+    if (parsedInput.isErr()) {
+      return errAsync(parsedInput.error);
     }
+    const parsed = parsedInput.value;
 
-    const identifierResult = createSectionSeriesIdentifier(parsed.data.sectionSeries);
+    const identifierResult = createSectionSeriesIdentifier(parsed.sectionSeries);
     if (!identifierResult) {
       return errAsync(validationFailed("sectionSeries", "不正なSectionSeriesIDです"));
     }
@@ -77,6 +77,6 @@ export const createRetirePracticeSectionSeries =
             events,
           };
         });
-      })
+      }),
     );
   };

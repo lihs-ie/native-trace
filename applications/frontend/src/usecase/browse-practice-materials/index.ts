@@ -1,11 +1,12 @@
 import { type ResultAsync } from "neverthrow";
 import { z } from "zod";
 import { errAsync } from "../../domain/shared";
-import { type DomainError, validationFailed } from "../../domain/shared";
+import { type DomainError } from "../../domain/shared";
 import { type MaterialIdentifier } from "../../domain/material";
 import { type MaterialRepository } from "../port/material-repository";
 import { type LibraryStatsRepository } from "../port/library-stats-repository";
 import { toDomainPagination } from "../shared/pagination";
+import { parseInput } from "../shared/validation";
 
 // ---- Input ----
 
@@ -88,14 +89,13 @@ export const createBrowsePracticeMaterials =
   (
     input: BrowsePracticeMaterialsInput,
   ): ResultAsync<BrowsePracticeMaterialsOutput, DomainError> => {
-    const parsed = browsePracticeMaterialsSchema.safeParse(input);
-    if (!parsed.success) {
-      return errAsync(
-        validationFailed("input", parsed.error.errors.map((e) => e.message).join(", ")),
-      );
+    const parsedInput = parseInput(browsePracticeMaterialsSchema, input);
+    if (parsedInput.isErr()) {
+      return errAsync(parsedInput.error);
     }
+    const parsed = parsedInput.value;
 
-    const pagination = toDomainPagination(parsed.data.pagination);
+    const pagination = toDomainPagination(parsed.pagination);
 
     return dependencies.materialRepository
       .search({
