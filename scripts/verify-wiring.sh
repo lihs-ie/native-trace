@@ -1,10 +1,20 @@
 #!/usr/bin/env bash
+# KIT_VERSION: 1.3.0
 # agent-policy: wiring_manifest.yml に基づき「実装に対し配線が追随しているか」を検出する。
 # 各 rule: 変更ファイルが `when` glob にマッチしたら、`require_one_of` のいずれかにも
 # 変更ファイルがマッチしていなければ FAIL (未配線の疑い)。
 # waiver: .agent-evidence/wiring-waivers.txt に rule id を 1 行書くと、その rule をスキップ
 #         (= 配線不要の理由を証跡として残した、とみなす)。
 # smoke は v1 では宣言のみ (実行しない)。
+#
+# working-tree blind-spot union (agent-policy-kit-sync spec Task A follow-up — 長寿命ブランチ盲点
+# 修正、2026-07-02 P3 static-verifier 実測: committed diff (base...HEAD) が非空の長寿命ブランチでは
+# working-tree-only の変更が検査されていなかった):
+#   (a) BASE_REF 未設定 (ローカル/proven-done 実行) は committed diff の有無に関わらず常に
+#       committed(base...HEAD) ∪ staged ∪ unstaged ∪ untracked の和集合を採用する
+#       (未コミット変更を見逃さない — incident 2026-06-13 補正2 の意図を長寿命ブランチにも拡張)。
+#   (b) BASE_REF を明示指定した呼び出し (CI 等) は committed diff のみを意図するので、
+#       working-tree へは一切拡張しない (recall-paper 版の意味論を完全維持)。
 set -euo pipefail
 
 repository_root="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
@@ -15,9 +25,33 @@ if [ ! -f "$manifest" ]; then
   echo "verify-wiring: $manifest not found (skip)"; exit 0
 fi
 
-source "$repository_root/scripts/lib/changed-files.sh"
-
-changed="$(collect_changed_files "" empty)"
+base_ref_was_set=0
+[ -n "${BASE_REF:-}" ] && base_ref_was_set=1
+base="${BASE_REF:-$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@refs/remotes/@@')}"
+[ -z "${base:-}" ] && base="origin/main"
+if git rev-parse --verify "$base" >/dev/null 2>&1; then
+  committed="$(git diff --name-only --diff-filter=ACMRT "$base"...HEAD)"
+else
+  committed="$(git diff --name-only --diff-filter=ACMRT HEAD~1 2>/dev/null || true)"
+fi
+if [ "$base_ref_was_set" -eq 1 ]; then
+  # BASE_REF を明示指定した呼び出し (CI 等) は committed diff のみを意図するので、
+  # working tree へは一切拡張しない (現行意味論を完全維持)。
+  changed="$committed"
+else
+  # BASE_REF 未設定は committed diff の有無に関わらず常に working tree
+  # (staged ∪ unstaged ∪ untracked) を union する (長寿命ブランチ盲点の修正)。
+  working_tree="$(
+    { git diff --name-only --diff-filter=ACMRT HEAD 2>/dev/null || true
+      git diff --name-only --diff-filter=ACMRT --cached 2>/dev/null || true
+      git ls-files --others --exclude-standard 2>/dev/null || true
+    }
+  )"
+  changed="$(printf '%s\n%s\n' "$committed" "$working_tree" | sed '/^$/d' | sort -u)"
+  if [ -n "$working_tree" ]; then
+    echo "verify-wiring: BASE_REF unset; inspecting committed ∪ working tree (staged ∪ unstaged ∪ untracked)"
+  fi
+fi
 [ -z "$changed" ] && { echo "verify-wiring: no changes (OK)"; exit 0; }
 
 waivers=""
