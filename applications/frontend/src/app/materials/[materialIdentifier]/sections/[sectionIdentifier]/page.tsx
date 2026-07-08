@@ -13,6 +13,7 @@ import {
   type WorkspaceDto,
 } from "@/lib/api-types";
 import { toSeverityClass, SEVERITY_DISPLAY_LABELS } from "@/lib/severity";
+import { engineColorVariable } from "@/lib/engine-display";
 import {
   EngineSegSelector,
   Ribbon,
@@ -516,10 +517,7 @@ export default function WorkspacePage({ params }: PageProps) {
                   <span
                     className="eng-dot"
                     style={{
-                      background:
-                        engine.engineKind === "cloud"
-                          ? "var(--engine-openai)"
-                          : "var(--engine-rust)",
+                      background: engineColorVariable(engine.engineKind),
                     }}
                   />
                   {engine.engineName}

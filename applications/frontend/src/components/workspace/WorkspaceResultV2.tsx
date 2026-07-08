@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { EngineFindingDto, EngineResultDto } from "@/lib/api-types";
+import { engineColorVariable } from "@/lib/engine-display";
 import { HighlightedWorkspaceText } from "./HighlightedWorkspaceText";
 import { GopHeatmap } from "./GopHeatmap";
 import { F0Chart } from "./F0Chart";
@@ -426,8 +427,7 @@ export const WorkspaceResultV2 = ({
           <span
             className="eng-dot"
             style={{
-              background:
-                engineResult.engineKind === "cloud" ? "var(--engine-openai)" : "var(--engine-rust)",
+              background: engineColorVariable(engineResult.engineKind),
               marginTop: "5px",
             }}
           />

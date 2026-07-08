@@ -1,4 +1,5 @@
 import type { AnalysisMode } from "@/lib/api-types";
+import { engineColorVariable, engineDisplayName } from "@/lib/engine-display";
 
 type EngineSegSelectorProps = {
   value: AnalysisMode;
@@ -14,8 +15,8 @@ export function EngineSegSelector({ value, onChange }: EngineSegSelectorProps) {
         data-eng="openai"
         onClick={() => onChange("cloudOnly")}
       >
-        <span className="eng-dot" style={{ background: "var(--engine-openai)" }} />
-        OpenAI API
+        <span className="eng-dot" style={{ background: engineColorVariable("cloud") }} />
+        {engineDisplayName("cloud")}
       </button>
       <button
         className={`seg-item${value === "ossWorkerOnly" ? " is-active" : ""}`}
@@ -23,8 +24,8 @@ export function EngineSegSelector({ value, onChange }: EngineSegSelectorProps) {
         data-eng="rust"
         onClick={() => onChange("ossWorkerOnly")}
       >
-        <span className="eng-dot" style={{ background: "var(--engine-rust)" }} />
-        OSS Worker
+        <span className="eng-dot" style={{ background: engineColorVariable("oss_worker") }} />
+        {engineDisplayName("oss_worker")}
       </button>
       <button
         className={`seg-item${value === "comparison" ? " is-active" : ""}`}

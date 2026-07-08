@@ -13,27 +13,32 @@ import type {
 import { AppTop } from "@/components/chrome/AppTop";
 import { HomeNav } from "@/components/chrome/HomeNav";
 import { formatDateTimeMinutes } from "@/lib/format-time";
+import { engineColorVariable } from "@/lib/engine-display";
 
 // ---- helpers ----
 
+// run.mode ("cloudOnly"/"ossWorkerOnly"/"comparison") から engineKind への変換。
+// comparison は cloud（OpenAI）表示で代表させる元実装の挙動を維持する。
+function modeToEngineKind(mode: string): "cloud" | "oss_worker" {
+  return mode === "ossWorkerOnly" ? "oss_worker" : "cloud";
+}
+
+// mode-keyed の短縮ラベル（"OpenAI"/"Rust"）は engine-display.ts の canonical な
+// 表示名（"OpenAI API"/"OSS Worker"）と値が異なるため、history 固有の短縮表示として
+// ローカルに残す（W33: 現行値不一致のためローカル残置）。
 const ENGINE_MODE_LABELS: Record<string, string> = {
   cloudOnly: "OpenAI",
   ossWorkerOnly: "Rust",
   comparison: "OpenAI",
 };
 
-const ENGINE_MODE_DOT_VAR: Record<string, string> = {
-  cloudOnly: "--engine-openai",
-  ossWorkerOnly: "--engine-rust",
-  comparison: "--engine-openai",
-};
-
 function engineLabel(mode: string): string {
   return ENGINE_MODE_LABELS[mode] ?? mode;
 }
 
+// 色は 6 箇所すべてで一致しているため engineKind 版の薄いラッパーにする。
 function engineDotVar(mode: string): string {
-  return ENGINE_MODE_DOT_VAR[mode] ?? "--engine-openai";
+  return engineColorVariable(modeToEngineKind(mode));
 }
 
 // Per-result engine identity (so a comparison run renders OpenAI + Rust as two
@@ -509,7 +514,7 @@ function HistoryContent() {
                                 <span
                                   className="eng-dot"
                                   style={{
-                                    background: `var(${engineDotVar(run.mode)})`,
+                                    background: engineDotVar(run.mode),
                                   }}
                                 />
                                 {engineLabel(run.mode)} <span className="sc">—</span>
