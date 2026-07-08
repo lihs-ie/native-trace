@@ -40,6 +40,7 @@ import type {
 import { TRAINING_PLATEAU_MINUTES } from "@/lib/score-bands";
 import { TRAINING_WEAKNESS_PROFILE_KEY } from "@/lib/session-storage-keys";
 import { formatMinutesSeconds } from "@/lib/format-time";
+import { fetchTtsResponse } from "@/components/workspace/use-tts-playback";
 
 // ---- 録音状態 ----
 type RecordingState = "idle" | "recording" | "done";
@@ -54,7 +55,6 @@ type ShadowingPhase =
       referenceAudioBytes: Uint8Array;
       referenceText: string;
       referenceAudioNode: AudioBufferSourceNode;
-      audioContext: AudioContext;
       startedAt: number;
     }
   | { type: "submitting" }
@@ -183,6 +183,18 @@ export default function TrainingPage() {
   const [shadowingPhase, setShadowingPhase] = useState<ShadowingPhase>({ type: "idle" });
   const shadowingMediaRecorderRef = useRef<MediaRecorder | null>(null);
   const shadowingChunksRef = useRef<Blob[]>([]);
+  /** W34: シャドーイング用 AudioContext lazy-singleton（unmount で close） */
+  const shadowingAudioContextRef = useRef<AudioContext | null>(null);
+  const acquireShadowingAudioContext = (): AudioContext => {
+    shadowingAudioContextRef.current ??= new AudioContext();
+    return shadowingAudioContextRef.current;
+  };
+  useEffect(() => {
+    return () => {
+      void shadowingAudioContextRef.current?.close();
+      shadowingAudioContextRef.current = null;
+    };
+  }, []);
   // シャドーイングお手本テキスト (HVPT のcontrast から生成した文例)
   const SHADOWING_REFERENCE_TEXT = "The red ball is big and the blue ball is small.";
   const SHADOWING_CONTRAST = "general";
@@ -925,11 +937,7 @@ export default function TrainingPage() {
   const loadShadowingReference = async () => {
     setShadowingPhase({ type: "tts_loading" });
     try {
-      const response = await globalThis.fetch("/api/v1/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: SHADOWING_REFERENCE_TEXT, speed: 1.0 }),
-      });
+      const response = await fetchTtsResponse(SHADOWING_REFERENCE_TEXT, 1.0);
       if (!response.ok) {
         setShadowingPhase({ type: "error", message: "TTS 取得に失敗しました" });
         return;
@@ -959,7 +967,8 @@ export default function TrainingPage() {
       };
 
       // AudioContext でお手本を 1.0x 再生 (ADR-013: OQ-7 client-side playbackRate)
-      const audioContext = new AudioContext();
+      // W34: lazy-singleton を再利用（unmount effect で必ず close される）
+      const audioContext = acquireShadowingAudioContext();
       const decodedBuffer = await audioContext.decodeAudioData(
         referenceAudioBytes.buffer.slice(0) as ArrayBuffer,
       );
@@ -975,7 +984,6 @@ export default function TrainingPage() {
         referenceAudioBytes,
         referenceText,
         referenceAudioNode: sourceNode,
-        audioContext,
         startedAt,
       });
 
@@ -995,7 +1003,7 @@ export default function TrainingPage() {
 
   // ---- シャドーイング: 録音停止 + 送信 ----
   const stopAndSubmitShadowing = (phase: Extract<ShadowingPhase, { type: "recording" }>) => {
-    const { referenceAudioBytes, referenceText, audioContext, startedAt } = phase;
+    const { referenceAudioBytes, referenceText, startedAt } = phase;
 
     // お手本再生を停止
     try {
@@ -1044,7 +1052,8 @@ export default function TrainingPage() {
         const json = (await response.json()) as { data: ShadowingLagResultDto };
         const lagResult = json.data;
 
-        await audioContext.close();
+        // W34: AudioContext は lazy-singleton になったためここでは close しない
+        // （成功パスのみ close していた漏れは unmount effect の必ず close で解消）
 
         setShadowingPhase({
           type: "result",
@@ -1064,7 +1073,8 @@ export default function TrainingPage() {
   // ---- シャドーイング: スロー再生でお手本を再生 ----
   const playShadowingAtSpeed = async (audioBytes: Uint8Array, playbackRate: number) => {
     try {
-      const audioContext = new AudioContext();
+      // W34: lazy-singleton を再利用（close は unmount effect に一元化）
+      const audioContext = acquireShadowingAudioContext();
       const decodedBuffer = await audioContext.decodeAudioData(
         audioBytes.buffer.slice(0) as ArrayBuffer,
       );
@@ -1073,9 +1083,6 @@ export default function TrainingPage() {
       // M-SHL-6: スロー再生 0.7x は AudioContext.playbackRate で実現 (OQ-7)
       sourceNode.playbackRate.value = playbackRate;
       sourceNode.connect(audioContext.destination);
-      sourceNode.onended = () => {
-        void audioContext.close();
-      };
       sourceNode.start(0);
     } catch {
       // 再生失敗は無視
@@ -1285,11 +1292,7 @@ export default function TrainingPage() {
                     // 簡易実装: speed ボタンで TTS を再取得してスロー再生
                     void (async () => {
                       const rate = result.playbackRate === 1.0 ? 0.7 : 1.0;
-                      const response = await globalThis.fetch("/api/v1/tts", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ text: SHADOWING_REFERENCE_TEXT, speed: rate }),
-                      });
+                      const response = await fetchTtsResponse(SHADOWING_REFERENCE_TEXT, rate);
                       if (!response.ok) return;
                       const buf = await response.arrayBuffer();
                       await playShadowingAtSpeed(new Uint8Array(buf), rate);

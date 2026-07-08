@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import type { EngineFindingDto } from "@/lib/api-types";
+import { useTtsPlayback } from "@/components/workspace/use-tts-playback";
 import { toSeverityClass, SEVERITY_DISPLAY_LABELS } from "@/lib/severity";
 import {
   getPhenomenonIcon,
@@ -46,8 +47,12 @@ export const DetailPanelV2 = ({
 }: DetailPanelV2Props) => {
   const [isDismissed, setIsDismissed] = useState(finding?.dismissed ?? false);
   const [ttsSpeed, setTtsSpeed] = useState<TtsSpeed>(0.85);
-  const [ttsAudio, setTtsAudio] = useState<HTMLAudioElement | null>(null);
-  const [ttsPlaying, setTtsPlaying] = useState(false);
+  // W34: TTS fetch→objectURL→Audio 再生と revoke 管理は共通 hook に委譲
+  const {
+    isPlaying: ttsPlaying,
+    togglePlay: toggleTtsPlayback,
+    stop: stopTtsPlayback,
+  } = useTtsPlayback();
   const [dismissLoading, setDismissLoading] = useState(false);
   const [showArticulation, setShowArticulation] = useState(false);
 
@@ -57,6 +62,19 @@ export const DetailPanelV2 = ({
   /** S-CRL-2: finding identifier キーでデコード済み AudioBuffer をキャッシュ */
   const audioBufferCache = useRef<Map<string, AudioBuffer>>(new Map());
   const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
+
+  /** W34: 部分再生用 AudioContext lazy-singleton（unmount で close） */
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const acquireAudioContext = (): AudioContext => {
+    audioContextRef.current ??= new AudioContext();
+    return audioContextRef.current;
+  };
+  useEffect(() => {
+    return () => {
+      void audioContextRef.current?.close();
+      audioContextRef.current = null;
+    };
+  }, []);
 
   if (!finding) {
     return (
@@ -113,38 +131,7 @@ export const DetailPanelV2 = ({
   const handlePlayTts = async () => {
     const text = finding.expected.text ?? finding.detected.text ?? "";
     if (!text) return;
-
-    if (ttsAudio) {
-      if (ttsPlaying) {
-        ttsAudio.pause();
-        setTtsPlaying(false);
-      } else {
-        void ttsAudio.play();
-        setTtsPlaying(true);
-      }
-      return;
-    }
-
-    try {
-      const response = await fetch("/api/v1/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, speed: ttsSpeed }),
-      });
-      if (!response.ok) return;
-
-      const audioBlob = await response.blob();
-      const audioUrl = URL.createObjectURL(audioBlob);
-      const audio = new Audio(audioUrl);
-      audio.onended = () => {
-        setTtsPlaying(false);
-      };
-      setTtsAudio(audio);
-      void audio.play();
-      setTtsPlaying(true);
-    } catch {
-      // TTS unavailable — no-op, button stays
-    }
+    await toggleTtsPlayback(text, ttsSpeed);
   };
 
   /**
@@ -179,13 +166,13 @@ export const DetailPanelV2 = ({
         if (!response.ok) return;
         const arrayBuffer = await response.arrayBuffer();
 
-        const audioContext = new AudioContext();
+        const audioContext = acquireAudioContext();
         decoded = await audioContext.decodeAudioData(arrayBuffer);
         // S-CRL-2: キャッシュに保存（所見切替まで有効）
         audioBufferCache.current.set(cacheKey, decoded);
       }
 
-      const audioContext = new AudioContext();
+      const audioContext = acquireAudioContext();
       const sampleRate = decoded.sampleRate;
       const startSample = Math.floor(startSec * sampleRate);
       const endSample = Math.min(Math.ceil(endSec * sampleRate), decoded.length);
@@ -441,8 +428,7 @@ export const DetailPanelV2 = ({
                           type="button"
                           onClick={() => {
                             setTtsSpeed(speed);
-                            setTtsAudio(null);
-                            setTtsPlaying(false);
+                            stopTtsPlayback();
                           }}
                         >
                           {speed}x

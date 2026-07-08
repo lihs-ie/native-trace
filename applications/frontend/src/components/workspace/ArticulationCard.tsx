@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import type { ArticulationEntry } from "@/lib/articulation-data";
+import { useTtsPlayback } from "@/components/workspace/use-tts-playback";
 import type {
   AcousticEvidenceDto,
   ArticulatoryEstimateDto,
@@ -119,8 +120,13 @@ export const ArticulationCard = ({
   latestRecordingAttemptIdentifier,
 }: ArticulationCardProps) => {
   const [ttsSpeed, setTtsSpeed] = useState<TtsSpeed>(0.85);
-  const [ttsPlaying, setTtsPlaying] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  // W34: TTS fetch→objectURL→Audio 再生と revoke 管理は共通 hook に委譲
+  const {
+    isPlaying: ttsPlaying,
+    togglePlay: toggleTtsPlayback,
+    playOnce: playTtsOnce,
+    stop: stopTtsPlayback,
+  } = useTtsPlayback();
 
   // M-CRL-3: MediaRecorder local state
   const [isRecording, setIsRecording] = useState(false);
@@ -128,57 +134,45 @@ export const ArticulationCard = ({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const recordingStartRef = useRef<Date | null>(null);
+  /** W34: 録音中 unmount で mic トラックを解放するために stream を保持 */
+  const micStreamRef = useRef<MediaStream | null>(null);
+
+  /** W34: playClip 用 AudioContext lazy-singleton（unmount で close） */
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const acquireAudioContext = (): AudioContext => {
+    audioContextRef.current ??= new AudioContext();
+    return audioContextRef.current;
+  };
+
+  // W34: unmount cleanup — 録音中なら submit を発火させず mic トラックのみ解放し、
+  // AudioContext を close する（再生中 TTS の停止は useTtsPlayback が担う）
+  useEffect(() => {
+    return () => {
+      if (mediaRecorderRef.current) {
+        mediaRecorderRef.current.ondataavailable = null;
+        mediaRecorderRef.current.onstop = null;
+      }
+      micStreamRef.current?.getTracks().forEach((track) => track.stop());
+      micStreamRef.current = null;
+      void audioContextRef.current?.close();
+      audioContextRef.current = null;
+    };
+  }, []);
 
   // M-CRL-9: retry 結果の表示 state
   const [retryState, setRetryState] = useState<RetryRecordingResponse | null>(null);
 
-  const handlePlayTts = async (text: string) => {
-    if (audioRef.current) {
-      if (ttsPlaying) {
-        audioRef.current.pause();
-        setTtsPlaying(false);
-      } else {
-        void audioRef.current.play();
-        setTtsPlaying(true);
-      }
-      return;
-    }
-
-    try {
-      const response = await fetch("/api/v1/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, speed: ttsSpeed }),
-      });
-      if (!response.ok) return;
-
-      const audioBlob = await response.blob();
-      const audioUrl = URL.createObjectURL(audioBlob);
-      const audio = new Audio(audioUrl);
-      audio.onended = () => {
-        setTtsPlaying(false);
-      };
-      audioRef.current = audio;
-      void audio.play();
-      setTtsPlaying(true);
-    } catch {
-      // TTS unavailable — no-op
-    }
-  };
+  const handlePlayTts = (text: string): Promise<void> => toggleTtsPlayback(text, ttsSpeed);
 
   const handleSpeedChange = (speed: TtsSpeed) => {
     setTtsSpeed(speed);
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-      setTtsPlaying(false);
-    }
+    stopTtsPlayback();
   };
 
   /**
    * M-AAI-21c (ADR-019 D6): ミニマルペアの A/B 順次再生。
    * targetWord を TTS 再生し、ended 後に contrastWord を再生する。
-   * LOCAL Audio オブジェクトを使い、お手本 audioRef の toggle state を汚染しない。
+   * playOnce は使い捨て Audio を使い、お手本 toggle state を汚染しない。
    * エラーは no-op（TTS 不在時はサイレントに失敗）。
    */
   const handlePlayMinimalPair = async ({
@@ -188,25 +182,9 @@ export const ArticulationCard = ({
     targetWord: string;
     contrastWord: string;
   }) => {
-    const playWord = async (word: string): Promise<void> => {
-      const response = await fetch("/api/v1/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: word, speed: ttsSpeed }),
-      });
-      if (!response.ok) return;
-      const audioBlob = await response.blob();
-      const audioUrl = URL.createObjectURL(audioBlob);
-      const audio = new Audio(audioUrl);
-      await new Promise<void>((resolve) => {
-        audio.onended = () => resolve();
-        void audio.play();
-      });
-    };
-
     try {
-      await playWord(targetWord);
-      await playWord(contrastWord);
+      await playTtsOnce(targetWord, ttsSpeed);
+      await playTtsOnce(contrastWord, ttsSpeed);
     } catch {
       // TTS unavailable — no-op
     }
@@ -226,6 +204,7 @@ export const ArticulationCard = ({
       return;
     }
 
+    micStreamRef.current = stream;
     recordedChunksRef.current = [];
     recordingStartRef.current = new Date();
 
@@ -276,7 +255,7 @@ export const ArticulationCard = ({
       const response = await fetch(`/api/v1/recording-attempts/${identifier}/audio`);
       if (!response.ok) return;
       const arrayBuffer = await response.arrayBuffer();
-      const audioContext = new AudioContext();
+      const audioContext = acquireAudioContext();
       const decoded = await audioContext.decodeAudioData(arrayBuffer);
       const source = audioContext.createBufferSource();
       source.buffer = decoded;
@@ -576,7 +555,7 @@ export const ArticulationCard = ({
         </button>
 
         {/* M-AAI-21c (ADR-019 D6): ミニマルペア A/B 順次再生ボタン — design HTML:105 準拠。
-            LOCAL Audio オブジェクトを使い、お手本 audioRef の toggle state を汚染しない。
+            playOnce の使い捨て Audio を使い、お手本 toggle state を汚染しない。
             entry.minimalPair が未設定の音素（/ɪ/・/ʌ/・/ð/・/f/・/ə/）はボタン非表示。 */}
         {entry.minimalPair && (
           <button
