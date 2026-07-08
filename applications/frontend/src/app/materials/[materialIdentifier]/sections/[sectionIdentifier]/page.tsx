@@ -12,7 +12,6 @@ import {
   type EngineResultDto,
   type WorkspaceDto,
 } from "@/lib/api-types";
-import { toSeverityClass, SEVERITY_DISPLAY_LABELS } from "@/lib/severity";
 import { engineColorVariable } from "@/lib/engine-display";
 import {
   EngineSegSelector,
@@ -24,8 +23,10 @@ import {
   LiveWave,
   HighlightedWorkspaceText,
   WorkspaceResultV2,
+  SeverityCountPills,
 } from "@/components/workspace";
 import { useRecordingWithVolumeMeter } from "@/components/workspace/use-recording-with-volume-meter";
+import { AppTop } from "@/components/chrome";
 
 // ワークスペースのポーリング周期（ms）。値の統一はしない（diagnostic ページの POLL_INTERVAL_MS とは別値）。
 const WORKSPACE_POLL_INTERVAL_MILLISECONDS = 2000;
@@ -235,9 +236,7 @@ export default function WorkspacePage({ params }: PageProps) {
     <div className="ws" data-state={state} data-annostyle="underline" data-tone="standard">
       {/* app-top */}
       <div className="app-top">
-        <div className="app-brand">
-          NativeTrace <span className="ipa">/ˈneɪtɪv treɪs/</span>
-        </div>
+        <AppTop />
         <div className="crumb" style={{ marginLeft: "16px" }}>
           <span>{materialIdentifier}</span>
           <span className="sep">›</span>
@@ -328,19 +327,7 @@ export default function WorkspacePage({ params }: PageProps) {
 
               {/* sevcount */}
               {activeResult && (
-                <div className="sevcount">
-                  {(["critical", "major", "minor", "suggestion"] as const).map((sev) => {
-                    const cssClass = toSeverityClass(sev);
-                    const count = activeResult.counts[sev];
-                    const label = SEVERITY_DISPLAY_LABELS[cssClass];
-                    return (
-                      <span key={sev} className="sevpill">
-                        <span className="dot" style={{ background: `var(--sev-${cssClass})` }} />
-                        {count} {label}
-                      </span>
-                    );
-                  })}
-                </div>
+                <SeverityCountPills counts={activeResult.counts} className="sevcount" />
               )}
             </div>
 

@@ -16,6 +16,7 @@ import { use, useEffect, useState } from "react";
 import { apiGet, isApiClientError } from "@/lib/api-client";
 import type { DiagnosticResultDto, DiagnosticFocusSoundDto } from "@/lib/api-types";
 import { getPhenomenonIconForContrast } from "@/lib/phenomenon";
+import { AppTop } from "@/components/chrome";
 
 type PageProps = {
   params: Promise<{ diagnosticSessionIdentifier: string }>;
@@ -143,9 +144,7 @@ export default function DiagnosticResultPage({ params }: PageProps) {
     <div>
       {/* app-top */}
       <div className="app-top">
-        <div className="app-brand">
-          NativeTrace <span className="ipa">/ˈneɪtɪv treɪs/</span>
-        </div>
+        <AppTop />
         <div className="crumb" style={{ marginLeft: "16px" }}>
           <b>診断結果</b>
           <span className="sep">·</span>

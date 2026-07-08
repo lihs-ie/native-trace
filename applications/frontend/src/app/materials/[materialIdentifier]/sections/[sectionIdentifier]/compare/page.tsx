@@ -8,7 +8,12 @@ import { toSeverityClass, SEVERITY_DISPLAY_LABELS } from "@/lib/severity";
 import { deriveEngineAgreement } from "@/lib/engine-agreement";
 import type { AgreementItem } from "@/lib/engine-agreement";
 import { engineColorVariable, engineDisplayName } from "@/lib/engine-display";
-import { Gauge, ScoreRows, HighlightedWorkspaceText } from "@/components/workspace";
+import {
+  Gauge,
+  ScoreRows,
+  HighlightedWorkspaceText,
+  SeverityCountPills,
+} from "@/components/workspace";
 import { AppBar } from "@/components/chrome/AppBar";
 import { formatDateTimeMinutes } from "@/lib/format-time";
 
@@ -120,19 +125,7 @@ function EngineColumn({ engineResult, bodyText, isOss }: EngineColumnProps) {
           showMarks
         />
       </div>
-      <div className="ecol-sev">
-        {(["critical", "major", "minor", "suggestion"] as const).map((sev) => {
-          const cssClass = toSeverityClass(sev);
-          const count = engineResult.counts[sev];
-          const label = SEVERITY_DISPLAY_LABELS[cssClass];
-          return (
-            <span key={sev} className="sevpill">
-              <span className="dot" style={{ background: `var(--sev-${cssClass})` }} />
-              {count} {label}
-            </span>
-          );
-        })}
-      </div>
+      <SeverityCountPills counts={engineResult.counts} className="ecol-sev" />
     </div>
   );
 }

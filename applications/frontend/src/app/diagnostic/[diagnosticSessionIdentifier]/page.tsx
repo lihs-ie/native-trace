@@ -29,6 +29,7 @@ import { detectBrowserInfo } from "@/lib/browser-environment";
 import { formatMinutesSeconds } from "@/lib/format-time";
 import { PHENOMENON_LABELS } from "@/lib/phenomenon";
 import { useRecordingWithVolumeMeter } from "@/components/workspace/use-recording-with-volume-meter";
+import { AppTop } from "@/components/chrome";
 
 // ---- 録音状態 ----
 type RecordingState = "idle" | "recording" | "analyzing" | "done" | "failed";
@@ -335,9 +336,7 @@ export default function DiagnosticSessionPage({ params }: PageProps) {
     <div className="ws" data-state={recordingState}>
       {/* app-top */}
       <div className="app-top">
-        <div className="app-brand">
-          NativeTrace <span className="ipa">/ˈneɪtɪv treɪs/</span>
-        </div>
+        <AppTop />
         <div className="crumb" style={{ marginLeft: "16px" }}>
           <b>診断テスト</b>
           <span className="sep">·</span>

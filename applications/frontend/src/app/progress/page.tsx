@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 import { apiGet, isApiClientError } from "@/lib/api-client";
 import type { ProgressDto, ProgressSnapshotDto } from "@/lib/api-types";
 import { TRAINING_PLATEAU_MINUTES } from "@/lib/score-bands";
+import { AppTop } from "@/components/chrome";
 
 // ---- CEFR レーダー SVG 計算 ----
 // viewBox: 0 0 220 190
@@ -296,9 +297,7 @@ export default function ProgressPage() {
     <div>
       {/* app-top — M-PG-6: scope-note 常時表示（条件分岐で消えない） */}
       <div className="app-top">
-        <div className="app-brand">
-          NativeTrace <span className="ipa">/ˈneɪtɪv treɪs/</span>
-        </div>
+        <AppTop />
         <div className="crumb" style={{ marginLeft: "16px" }}>
           <b>進捗</b>
           <span className="sep">·</span>

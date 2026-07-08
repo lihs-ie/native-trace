@@ -41,6 +41,7 @@ import { TRAINING_PLATEAU_MINUTES } from "@/lib/score-bands";
 import { TRAINING_WEAKNESS_PROFILE_KEY } from "@/lib/session-storage-keys";
 import { formatMinutesSeconds } from "@/lib/format-time";
 import { fetchTtsResponse } from "@/components/workspace/use-tts-playback";
+import { AppTop } from "@/components/chrome";
 
 // ---- 録音状態 ----
 type RecordingState = "idle" | "recording" | "done";
@@ -1099,9 +1100,7 @@ export default function TrainingPage() {
     <div>
       {/* app-top */}
       <div className="app-top">
-        <div className="app-brand">
-          NativeTrace <span className="ipa">/ˈneɪtɪv treɪs/</span>
-        </div>
+        <AppTop />
         <div className="crumb" style={{ marginLeft: "16px" }}>
           <Link href="/">
             <span>訓練</span>
