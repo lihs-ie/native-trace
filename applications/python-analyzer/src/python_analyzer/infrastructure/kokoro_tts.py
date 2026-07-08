@@ -47,8 +47,8 @@ KOKORO_MALE_VOICES: tuple[str, ...] = (
 # 全 20 声のセット（バリデーション用）
 ALL_KOKORO_VOICES: frozenset[str] = frozenset(KOKORO_FEMALE_VOICES + KOKORO_MALE_VOICES)
 
-# Kokoro のデフォルトサンプリングレート
-_KOKORO_SAMPLE_RATE = 24000
+# Kokoro のデフォルトサンプリングレート（公開定数・他 infrastructure モジュールから参照可）
+KOKORO_SAMPLE_RATE = 24000
 
 
 def synthesize_speech(
@@ -102,7 +102,7 @@ def synthesize_speech(
         raise RuntimeError("Kokoro TTS が空の音声を返しました")
 
     all_pcm = b"".join(audio_chunks)
-    return _wrap_as_wav(all_pcm, sample_rate=_KOKORO_SAMPLE_RATE)
+    return _wrap_as_wav(all_pcm, sample_rate=KOKORO_SAMPLE_RATE)
 
 
 def select_multi_talker_voices(

@@ -20,6 +20,11 @@ from python_analyzer.usecase.ports import AlignerPort, G2PPort, ProsodyPort, Spe
 # IPA 母音核として認識する文字セット（音節・母音持続時間の算出に使用）
 _VOWEL_NUCLEI = frozenset("aeiouæɑɒɔəɛɪɨɵʊʌœøɯɤɐɞɘ")
 
+# WAV ヘッダーからサンプリングレートを取得できない場合のフォールバック値。
+# usecase 層は infrastructure に依存できないため（オニオン依存方向の制約）、
+# audio_energy.TARGET_SAMPLE_RATE（16000）と手動同期すること。
+_FALLBACK_SAMPLE_RATE_HZ = 16000
+
 
 class AnalyzePronunciationUseCase:
     """発音解析ユースケース。
@@ -343,14 +348,14 @@ def _assign_word_positions(
 def _estimate_sample_rate(audio: AudioInput) -> int:
     """WAV ヘッダーからサンプリングレートを取得する。
 
-    取得できない場合は 16000 を返す。
+    取得できない場合は _FALLBACK_SAMPLE_RATE_HZ を返す。
     """
     mime_normalized = audio.mime_type.split(";")[0].strip().lower()
     if mime_normalized not in {"audio/wav", "audio/x-wav", "audio/wave"}:
-        return 16000
+        return _FALLBACK_SAMPLE_RATE_HZ
 
     try:
         with wave.open(io.BytesIO(audio.content)) as wav_file:
             return wav_file.getframerate()
     except Exception:
-        return 16000
+        return _FALLBACK_SAMPLE_RATE_HZ

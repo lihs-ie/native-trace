@@ -4,6 +4,8 @@ numpy のみに依存し、soundfile/torch を一切 import しない。
 ローカル環境（soundfile 不在）でもテスト可能とするために wav2vec2_aligner.py から分離する。
 """
 
+import math
+
 import numpy as np
 
 # ---- エネルギーベース VAD 定数（calibratable） ----
@@ -17,8 +19,15 @@ ENERGY_SILENCE_RMS_THRESHOLD = 0.01
 TARGET_SAMPLE_RATE = 16000
 
 # no-speech 番兵値。発話区間フレームが 0 件の場合に compute_speech_active_rms が返す。
-# 呼び出し側はこの値（0.0）を検出して -100.0 dBFS などの番兵 dBFS に変換する。
+# 呼び出し側はこの値（0.0）を検出して NO_SPEECH_DBFS_SENTINEL などの番兵 dBFS に変換する。
 NO_SPEECH_RMS_SENTINEL = 0.0
+
+# no-speech 番兵 dBFS 値。rms_to_dbfs / measure_audio_quality が発話区間 RMS ≈ 0（無音）の
+# 場合に返す。wav2vec2_aligner.measure_audio_quality もこの値を参照する。
+NO_SPEECH_DBFS_SENTINEL = -100.0
+
+# WADA-SNR 番兵値（dB）。compute_wada_snr が発話区間サンプルなし等で推定不能な場合に返す。
+WADA_SNR_SENTINEL_DB = -120.0
 
 
 def _walk_frames(
@@ -116,19 +125,19 @@ def compute_wada_snr(
         sample_rate: サンプリングレート（Hz）。将来のリサンプリングガード用（現在未使用）。
 
     Returns:
-        推定 SNR（dB）。発話区間サンプルが空の場合は番兵値 -120.0 を返す。
+        推定 SNR（dB）。発話区間サンプルが空の場合は番兵値 WADA_SNR_SENTINEL_DB（-120.0）を返す。
         値域は概ね -10 〜 45 dB の範囲に収まる（尖度の有効範囲による）。
     """
     _WADA_K_CLEAN_PRIOR = 34.0  # Gamma-modulated speech の先験尖度（calibrated, see docstring）
     _MIN_SPEECH_SAMPLES = 10
 
     if len(samples) == 0:
-        return -120.0
+        return WADA_SNR_SENTINEL_DB
 
     # VAD で発話区間フレームがあるか確認する（no-speech チェック用）
     _, speech_frame_count = _walk_frames(samples)
     if speech_frame_count == 0:
-        return -120.0
+        return WADA_SNR_SENTINEL_DB
 
     # WADA-SNR は全サンプルの尖度分布を使用する。
     # VAD フィルタリングすると SNR によって選択フレームが変化し（高 SNR = 静音フレーム除外、
@@ -136,12 +145,12 @@ def compute_wada_snr(
     all_samples = samples.astype(np.float64)
     nz_samples = all_samples[np.abs(all_samples) > 1e-12]
     if len(nz_samples) < _MIN_SPEECH_SAMPLES:
-        return -120.0
+        return WADA_SNR_SENTINEL_DB
 
     # 4 次モーメントから正規化尖度を計算する: K_y = E[y^4] / (E[y^2])^2
     p_y = float(np.mean(all_samples**2))
     if p_y < 1e-20:
-        return -120.0
+        return WADA_SNR_SENTINEL_DB
     k_y = float(np.mean(all_samples**4)) / (p_y**2)
 
     kappa_s = _WADA_K_CLEAN_PRIOR
@@ -194,7 +203,7 @@ def compute_speech_active_rms(
         発話区間フレームの RMS（0.0 < rms <= 1.0 の範囲）。
         発話フレームが 0 件の場合は NO_SPEECH_RMS_SENTINEL（0.0）を返す。
         呼び出し側は戻り値が NO_SPEECH_RMS_SENTINEL（< 1e-9）のとき
-        no-speech 番兵 dBFS（例: -100.0）を使用すること。
+        rms_to_dbfs 経由で NO_SPEECH_DBFS_SENTINEL（-100.0）を得ること。
     """
     if len(waveform_numpy) == 0:
         return NO_SPEECH_RMS_SENTINEL
@@ -207,3 +216,21 @@ def compute_speech_active_rms(
 
     all_speech_samples = np.concatenate(speech_frame_samples)
     return float(np.sqrt(np.mean(all_speech_samples**2)))
+
+
+def rms_to_dbfs(rms: float) -> float:
+    """発話区間 RMS（0〜1 スケール）を dBFS に変換する純関数。
+
+    compute_speech_active_rms の戻り値を dBFS に変換する用途で使う
+    （wav2vec2_aligner.measure_audio_quality から呼ばれる）。
+
+    Args:
+        rms: 発話区間フレームの RMS（0.0〜1.0）。
+
+    Returns:
+        20 * log10(rms) の dBFS 値。rms < 1e-9（無音相当）の場合は
+        NO_SPEECH_DBFS_SENTINEL（-100.0）を返す。
+    """
+    if rms < 1e-9:
+        return NO_SPEECH_DBFS_SENTINEL
+    return 20.0 * math.log10(rms)
