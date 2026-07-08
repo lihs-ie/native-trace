@@ -26,6 +26,8 @@ dist-newstyle/
 
 # --- Local data (SQLite / audio files) ---
 data/
+# error-catalog domain data is committed source, not runtime data
+!applications/frontend/src/domain/error-catalog/data/
 *.db
 *.db-journal
 *.db-wal

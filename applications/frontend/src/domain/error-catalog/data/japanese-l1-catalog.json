@@ -1,0 +1,421 @@
+[
+  {
+    "id": "l-r-substitution",
+    "kind": "segmental",
+    "targetPhoneme": "/l/",
+    "contrast": "/l/-/r/",
+    "confusionSet": ["[ɾ]"],
+    "l1MechanismJa": "日本語のラ行子音は歯茎弾き音 [ɾ] であり、英語の /l/（側面接近音）とも /r/（そり舌接近音）とも異なる。日本語話者は /l/ と /r/ の両方をこの [ɾ] に知覚同化させるため、2つの音の区別を習得する前に産出でも区別が生じない。",
+    "functionalLoad": "max",
+    "intelligibilityImpact": "high",
+    "recommendedTraining": ["perception", "articulation"],
+    "evidenceStrength": "high",
+    "evidenceIds": ["E-8", "E-9"],
+    "articulation": {
+      "mannerJa": "側面接近音: 舌先を歯茎に当て、舌の両脇から息を流す",
+      "stepsJa": [
+        "舌先を上前歯の裏の歯茎（歯茎隆起部）に軽く当てる",
+        "舌先は歯茎に触れたまま、舌の左右両脇を下げて隙間を作る",
+        "息を舌の両脇から流す（舌先は当てたまま）",
+        "lllll と数秒伸ばして舌先の接触感を確認する",
+        "語中・語末 /l/（cold, ball）では舌先を当てるだけで音を止める"
+      ],
+      "substituteVariants": {
+        "ɾ": [
+          "舌先を歯茎（歯茎隆起部）にしっかり当てる（弾き音と違い、当てたまま保持する）",
+          "舌先を当てたまま、舌の左右両脇を下げて息を両脇から流す（側面気流）",
+          "弾いて離さない—舌先接触を持続させることで [ɾ] との差を作る",
+          "lllll と伸ばして側面気流の感覚を確認し、[ɾ] との接触時間の差を意識する"
+        ]
+      }
+    }
+  },
+  {
+    "id": "r-substitution",
+    "kind": "segmental",
+    "targetPhoneme": "/r/",
+    "contrast": "/r/-/l/",
+    "confusionSet": ["[ɾ]", "[l]"],
+    "l1MechanismJa": "英語の /r/ はそり舌接近音または後退接近音で、舌先を歯茎に当てない。日本語の [ɾ] と音響的に異なるが、日本語話者は知覚同化により /l/ とともに [ɾ] で代替する傾向がある。舌先を後退させる動作が日本語にないため産出困難。",
+    "functionalLoad": "max",
+    "intelligibilityImpact": "high",
+    "recommendedTraining": ["perception", "articulation"],
+    "evidenceStrength": "high",
+    "evidenceIds": ["E-8", "E-9"],
+    "articulation": {
+      "mannerJa": "後退接近音: 舌先を上に向けるが歯茎には当てない",
+      "stepsJa": [
+        "口を軽く開き、舌全体を少し後方に引く",
+        "舌先をわずかに上に向けるが、口蓋・歯茎には触れない",
+        "唇をわずかに丸める（唇を閉じない）",
+        "口腔内に空洞を作るイメージで声を出す",
+        "red, right などで練習し、舌が歯茎に触れていないことを確認する"
+      ],
+      "substituteVariants": {
+        "ɾ": [
+          "舌先を一切接触させない—歯茎にも口蓋にも触れない（弾き音 [ɾ] の瞬間接触を解除する）",
+          "舌全体を後方に引き、舌中央を盛り上げる（後退・隆起接近音の形）",
+          "唇をわずかに丸めて空洞を作り、声を出す（接触なし・摩擦なし）",
+          "red の /r/ で舌が口蓋に触れていないことを指で口の外から確認しながら練習する"
+        ]
+      }
+    }
+  },
+  {
+    "id": "theta-s-substitution",
+    "kind": "segmental",
+    "targetPhoneme": "/θ/",
+    "contrast": "/θ/-/s/",
+    "confusionSet": ["[s]"],
+    "l1MechanismJa": "英語の /θ/（無声歯間摩擦音）は日本語音韻体系に存在しない。日本語話者は最も近い摩擦音 [s] に知覚同化させる。/θ/ の産出には舌先を上歯の間または後ろに置く動作が必要だが、この調音位置は日本語にない。",
+    "functionalLoad": "low",
+    "intelligibilityImpact": "low",
+    "recommendedTraining": ["articulation"],
+    "evidenceStrength": "mid",
+    "evidenceIds": ["E-8", "E-9"],
+    "articulation": {
+      "mannerJa": "歯間摩擦音: 舌先を上歯の縁に軽く当てて息を流す",
+      "stepsJa": [
+        "舌先を軽く噛むか、上歯の内側に当てる",
+        "その状態で息を細く流す（声は出さない）",
+        "think, three で練習する",
+        "日常会話では /s/ と区別されにくいため、意識しすぎず自然なリズムを優先する"
+      ]
+    }
+  },
+  {
+    "id": "eth-z-substitution",
+    "kind": "segmental",
+    "targetPhoneme": "/ð/",
+    "contrast": "/ð/-/z/",
+    "confusionSet": ["[z]", "[d]"],
+    "l1MechanismJa": "英語の /ð/（有声歯間摩擦音）も日本語に存在しない。有声版のため /θ/ より /z/ または /d/ への知覚同化が起きやすい。機能語（the, this, that, there）に多く現れ、語強勢が弱いため誤りが埋もれやすい。",
+    "functionalLoad": "low",
+    "intelligibilityImpact": "low",
+    "recommendedTraining": ["articulation"],
+    "evidenceStrength": "mid",
+    "evidenceIds": ["E-8"],
+    "articulation": {
+      "mannerJa": "有声歯間摩擦音: 舌先を上歯の縁に当てて声を出しながら息を流す",
+      "stepsJa": [
+        "舌先を上歯の縁に軽く当てる（/θ/ と同じ位置）",
+        "声帯を振動させながら（有声）息を流す",
+        "the, this, that, there, them で練習する",
+        "機能語の弱形実現と合わせて練習すると効果的"
+      ]
+    }
+  },
+  {
+    "id": "v-b-substitution",
+    "kind": "segmental",
+    "targetPhoneme": "/v/",
+    "contrast": "/v/-/b/",
+    "confusionSet": ["[b]"],
+    "l1MechanismJa": "英語の /v/（有声唇歯摩擦音）は日本語に存在しない。日本語の /b/ は両唇破裂音であり、/v/ に最も近い。日本語話者は /v/ を [b] に知覚同化させる。摩擦音に必要な上前歯と下唇の接触が日本語にないため産出も困難。",
+    "functionalLoad": "high",
+    "intelligibilityImpact": "high",
+    "recommendedTraining": ["articulation", "perception"],
+    "evidenceStrength": "high",
+    "evidenceIds": ["E-8", "E-9"],
+    "articulation": {
+      "mannerJa": "唇歯摩擦音: 上前歯を下唇の内側に軽く当てて息を流す",
+      "stepsJa": [
+        "上前歯を下唇の内側（赤い部分の内縁）に軽く当てる",
+        "声帯を振動させながら息を細く流す",
+        "唇を閉じて弾かない（[b] にならないよう注意）",
+        "very, voice, move で練習する",
+        "バ行音と比べて摩擦感があることを確認する"
+      ]
+    }
+  },
+  {
+    "id": "f-h-substitution",
+    "kind": "segmental",
+    "targetPhoneme": "/f/",
+    "contrast": "/f/-/h/",
+    "confusionSet": ["[h]", "[ɸ]"],
+    "l1MechanismJa": "日本語は /h/ が /u/ の前で両唇摩擦音 [ɸ] となるが、上前歯と下唇を接触させる唇歯摩擦音 /f/ は日本語音韻体系に存在しない。日本語話者は英語の /f/ を声門摩擦音 [h] または両唇摩擦音 [ɸ] で代替しやすく、上前歯・下唇接触を伴う調音が未習得のことが多い。",
+    "functionalLoad": "mid",
+    "intelligibilityImpact": "mid",
+    "recommendedTraining": ["articulation", "perception"],
+    "evidenceStrength": "mid",
+    "evidenceIds": ["E-8"],
+    "articulation": {
+      "mannerJa": "唇歯摩擦音（無声）: 上前歯を下唇の内側に軽く当てて息を流す（声帯振動なし）",
+      "stepsJa": [
+        "上前歯を下唇の内側（赤い部分の内縁）に軽く当てる",
+        "声帯を振動させずに息を細く流す（無声摩擦）",
+        "唇を閉じて弾かない—[p] や [ɸ] にならないよう上前歯の接触を保つ",
+        "five, food, leaf で練習し、上前歯と下唇の摩擦感を確認する",
+        "/v/ と比較: /f/ は無声（声帯振動なし）、/v/ は有声（振動あり）という点のみ異なる"
+      ]
+    }
+  },
+  {
+    "id": "s-sh-substitution",
+    "kind": "segmental",
+    "targetPhoneme": "/s/",
+    "contrast": "/s/-/ʃ/",
+    "confusionSet": ["[ɕ]"],
+    "l1MechanismJa": "日本語では /s/ が /i/ の前で口蓋化され [ɕ]（日本語の「シ」）になる。英語では /s/ は /i/ の前でも口蓋化されない（sit /sɪt/ は [ɕɪt] にならない）。日本語話者は see, sit などで /s/ を [ɕ] で代替しやすい。",
+    "functionalLoad": "mid",
+    "intelligibilityImpact": "mid",
+    "recommendedTraining": ["articulation", "perception"],
+    "evidenceStrength": "mid",
+    "evidenceIds": ["E-8"],
+    "articulation": {
+      "mannerJa": "歯茎摩擦音: 舌先を歯茎の後ろに近づけ中央から息を流す",
+      "stepsJa": [
+        "舌先を上歯茎の後ろ（歯茎隆起部手前）に近づけるが触れない",
+        "唇を横に引いて舌を前方に保つ（口蓋化させない）",
+        "息を舌中央の溝を通して流す",
+        "see, sit, sing で /s/ が口蓋化しないよう練習する"
+      ]
+    }
+  },
+  {
+    "id": "final-consonant-omission",
+    "kind": "segmental",
+    "targetPhoneme": "C#",
+    "contrast": null,
+    "confusionSet": [],
+    "l1MechanismJa": "日本語の音節構造は基本的に CV（子音＋母音）で、語末閉鎖音は存在しない。英語の語末閉鎖音（/p, t, k, b, d, g/）を産出する際、日本語話者は省略するか後続母音を挿入しやすい。語末子音は英語で音韻的に弁別的で語認識への影響が大きい。",
+    "functionalLoad": "high",
+    "intelligibilityImpact": "high",
+    "recommendedTraining": ["articulation"],
+    "evidenceStrength": "mid",
+    "evidenceIds": ["E-8", "E-11"],
+    "articulation": {
+      "mannerJa": "語末閉鎖: 閉鎖を作って息を止める（開放は任意）",
+      "stepsJa": [
+        "語末閉鎖音（p, t, k, b, d, g）の調音位置で口を閉じる",
+        "日本語のような後続母音（「pu」「to」など）を加えない",
+        "息を止めるだけで解放しなくてよい（非開放閉鎖）",
+        "stop, back, bed などで語末に到達したら音を加えないよう意識する"
+      ]
+    }
+  },
+  {
+    "id": "ae-a-substitution",
+    "kind": "segmental",
+    "targetPhoneme": "/æ/",
+    "contrast": "/æ/-/ʌ/",
+    "confusionSet": ["[a]"],
+    "l1MechanismJa": "英語の /æ/（前舌低母音）と /ʌ/（中舌中低母音）はいずれも日本語の /a/ に知覚同化される。/æ/ は /a/ より舌が前で口を大きく横に広げる音で、日本語話者には不自然に感じる。bat と but の区別に直結する高機能負担量の対立。",
+    "functionalLoad": "high",
+    "intelligibilityImpact": "high",
+    "recommendedTraining": ["perception", "articulation"],
+    "evidenceStrength": "high",
+    "evidenceIds": ["E-8", "E-9"],
+    "articulation": {
+      "mannerJa": "前舌低母音: 顎を下げ舌を前に出し、口を横に広げる",
+      "stepsJa": [
+        "顎をしっかり下げて口を大きく開く",
+        "舌を口の前方（歯の後ろ近く）に保つ",
+        "唇を少し横に引く（笑顔のように）",
+        "cat, bad, man で日本語の「ア」より口を大きく横に開く意識で練習する"
+      ]
+    }
+  },
+  {
+    "id": "iː-ɪ-substitution",
+    "kind": "segmental",
+    "targetPhoneme": "/iː/",
+    "contrast": "/iː/-/ɪ/",
+    "confusionSet": ["[iː]", "[i]"],
+    "l1MechanismJa": "日本語の /i/ は長短（意味の区別なし）で使用される。英語の /iː/（長い前舌高母音）と /ɪ/（短い弛緩前舌母音）は音質が異なる対立で、日本語話者は長さのみで区別しようとして音質差を無視しやすい。beat と bit は機能語彙とも重なる。",
+    "functionalLoad": "high",
+    "intelligibilityImpact": "high",
+    "recommendedTraining": ["perception", "articulation"],
+    "evidenceStrength": "high",
+    "evidenceIds": ["E-8", "E-9"],
+    "articulation": {
+      "mannerJa": "/iː/ は緊張前舌高母音、/ɪ/ は弛緩して舌が少し下がる",
+      "stepsJa": [
+        "/iː/: 唇を強く横に引き、舌を口蓋に近づける（緊張した「イ」）",
+        "/ɪ/: 唇の力を抜き、舌を少し下げる（弛緩した「イ」）",
+        "beat/bit, sheep/ship のペアで音質差を意識して練習する",
+        "長さだけでなく音質（舌の高さと緊張）の差に集中する"
+      ]
+    }
+  },
+  {
+    "id": "schwa-substitution",
+    "kind": "segmental",
+    "targetPhoneme": "/ə/",
+    "contrast": null,
+    "confusionSet": ["[a]", "[o]", "[u]"],
+    "l1MechanismJa": "英語の /ə/（シュワー、中央中母音）は非強勢音節にのみ現れる音で日本語に存在しない。日本語話者は非強勢音節に表記された母音字（a, e, o, u）をそのまま読むため、シュワーへの弱化が起きずリズムが硬直化する。弱形実現とも密接に関係。",
+    "functionalLoad": "high",
+    "intelligibilityImpact": "high",
+    "recommendedTraining": ["perception", "articulation", "prosody"],
+    "evidenceStrength": "high",
+    "evidenceIds": ["E-8", "E-10"],
+    "articulation": {
+      "mannerJa": "中央中母音: あいまいで弛緩した、最も力を抜いた母音",
+      "stepsJa": [
+        "顎・舌・唇を完全にリラックスさせ、自然に「ウ」と「ア」の中間の音を出す",
+        "非強勢音節（about の 'a'、sofa の 'a' など）で使用する",
+        "強勢音節では絶対に使わない",
+        "about /əˈbaʊt/、teacher /ˈtiːtʃər/ で非強勢音節を短く弱く発音する練習をする"
+      ]
+    }
+  },
+  {
+    "id": "vowel-length-substitution",
+    "kind": "segmental",
+    "targetPhoneme": "V:",
+    "contrast": "V:-V",
+    "confusionSet": [],
+    "l1MechanismJa": "日本語では母音の長短が弁別的（例：おばさん vs おばあさん）で長短の区別自体はある。しかし英語の長短対立（/iː/-/ɪ/、/ɑː/-/ɒ/ 等）は長さだけでなく音質（舌の位置・緊張度）も異なるため、日本語的な「長さのみ」で区別しようとすると不十分。",
+    "functionalLoad": "mid",
+    "intelligibilityImpact": "mid",
+    "recommendedTraining": ["perception"],
+    "evidenceStrength": "mid",
+    "evidenceIds": ["E-8"],
+    "articulation": {
+      "mannerJa": "英語の長短対立は長さ+音質の両方で決まる",
+      "stepsJa": [
+        "長母音（/iː/, /ɑː/, /ɔː/, /uː/, /ɜː/）は舌の緊張を高める",
+        "短母音（/ɪ/, /ʊ/, /ɒ/, /ʌ/）は弛緩して舌を少し下げる",
+        "長さだけでなく音質（舌位置）の変化を意識する",
+        "ミニマルペア（beat/bit, pool/pull）で音質の違いを練習する"
+      ]
+    }
+  },
+  {
+    "id": "alpha-a-substitution",
+    "kind": "segmental",
+    "targetPhoneme": "/ɑ/",
+    "contrast": "/ɑ/-/æ/",
+    "confusionSet": ["[a]"],
+    "l1MechanismJa": "英語の /ɑ/（後舌低母音: hot, father の母音）は日本語の /a/ より舌が後退し口が大きく開く音。日本語話者は /ɑ/ を日本語の /a/ で代替し、/æ/ とも混同しやすい。hot と hat の対立は日本語に類似する音韻対立がなく、3音（/ɑ/・/æ/・/ʌ/）がいずれも日本語 /a/ 付近に収束する。",
+    "functionalLoad": "mid",
+    "intelligibilityImpact": "mid",
+    "recommendedTraining": ["perception", "articulation"],
+    "evidenceStrength": "mid",
+    "evidenceIds": ["E-8", "E-9"],
+    "articulation": {
+      "mannerJa": "後舌低母音: 顎を大きく下げ舌を後方に引いて発音する",
+      "stepsJa": [
+        "顎をしっかり下げて口を大きく開く（/æ/ より口の開きが大きい）",
+        "舌を口の後方に引く（/æ/ は前舌、/ɑ/ は後舌）",
+        "唇を丸めない・横に引かない（リラックスした状態）",
+        "hot, father, palm で舌を後退させる感覚を練習する",
+        "/æ/（cat）と /ɑ/（hot）を交互に発音して舌の前後差を感じる"
+      ]
+    }
+  },
+  {
+    "id": "epenthesis",
+    "kind": "syllabic",
+    "targetPhoneme": "C",
+    "contrast": null,
+    "confusionSet": ["[ɯ]", "[o]", "[i]"],
+    "l1MechanismJa": "日本語の音節構造は CV が基本で、子音連続（ CCC 等）を処理する際に母音を挿入する「錯覚母音」が生じる（Dupoux et al. 1999）。これは調音の問題以前に知覚レベルで起きており、日本語話者は英語の CVC や CCVC を CV.CV.CV として聴知覚・産出する。音節破壊として語認識への影響が特に大きい（Tajima et al. 1997: 時間構造補正だけで明瞭性 +19pt）。",
+    "functionalLoad": "high",
+    "intelligibilityImpact": "high",
+    "recommendedTraining": ["perception", "articulation"],
+    "evidenceStrength": "high",
+    "evidenceIds": ["E-8", "E-11"],
+    "articulation": {
+      "mannerJa": "子音連続を母音なしで発音する練習",
+      "stepsJa": [
+        "まず対象単語をゆっくり1回音声で聴き、音節数を確認する（カタカナで読まない）",
+        "字幕・テキストを見ずに音声を先にまねる（音声先行）",
+        "子音と子音の間に母音を入れないよう意識する（strは「スト-ラ」でなく str）",
+        "stop, strike, bread などで子音連続を母音なしで発音する練習をする",
+        "録音して音節数が英語辞書と一致するか確認する"
+      ]
+    }
+  },
+  {
+    "id": "lexical-stress-error",
+    "kind": "prosodic",
+    "targetPhoneme": "σ",
+    "contrast": null,
+    "confusionSet": [],
+    "l1MechanismJa": "日本語は音節の高低（ピッチアクセント）で弁別するが英語は強勢（ストレス）で弁別する。日本語話者は英語の語強勢を平板化しやすく、非強勢音節をシュワー化しないため全音節を等しく発音する傾向がある。語強勢の誤りは語認識への影響が分節音誤りより大きいことがある（Kang 2010）。",
+    "functionalLoad": "high",
+    "intelligibilityImpact": "high",
+    "recommendedTraining": ["perception", "prosody"],
+    "evidenceStrength": "high",
+    "evidenceIds": ["E-10", "E-11"],
+    "articulation": {
+      "mannerJa": "強勢音節を長く・高く・強く、非強勢音節は短くシュワー化",
+      "stepsJa": [
+        "辞書で強勢位置（ˈ または ˌ）を確認する",
+        "強勢音節を他の音節より長く・高く・大きく発音する",
+        "非強勢音節は短く弱く、できればシュワー /ə/ に近づける",
+        "record (名詞: REcord vs 動詞: reCORD) などの強勢移動ペアで練習する",
+        "英語の「波」のリズムをまず大げさに練習してから自然に縮める"
+      ]
+    }
+  },
+  {
+    "id": "weak-form-realization",
+    "kind": "prosodic",
+    "targetPhoneme": "Fw",
+    "contrast": null,
+    "confusionSet": [],
+    "l1MechanismJa": "英語の機能語（to, of, and, for, at, can, was, etc.）は非強勢の文脈では弱形（シュワー化・短縮）で発音される。日本語には弱形の概念がないため、日本語話者は機能語を強形で読み、英語のリズム（強弱のパターン）が破綻しネイティブ性が大きく低下する。",
+    "functionalLoad": "high",
+    "intelligibilityImpact": "high",
+    "recommendedTraining": ["perception", "prosody"],
+    "evidenceStrength": "high",
+    "evidenceIds": ["E-10"],
+    "articulation": {
+      "mannerJa": "機能語を弱形（シュワー化）で発音するリズム練習",
+      "stepsJa": [
+        "よく使う機能語の弱形 IPA を覚える（to /tə/、for /fər/、and /ənd/、of /əv/）",
+        "文を読むとき機能語を短く弱く、内容語を強く読む",
+        "「I want to go」は「アイ ウォンタ ゴウ」のように to を短く弱める",
+        "シャドーイングで音声をまねながら弱形を体感的に習得する"
+      ]
+    }
+  },
+  {
+    "id": "rhythm-npvi",
+    "kind": "prosodic",
+    "targetPhoneme": "nPVI",
+    "contrast": null,
+    "confusionSet": [],
+    "l1MechanismJa": "英語は強勢拍リズム（stress-timed）で、日本語は音節拍リズム（mora-timed）。日本語話者の英語発話はモーラを等時間間隔で並べる傾向があり、nPVI（母音持続時間の変動指標）が英語ネイティブより有意に低くなる。英語の波打つリズムが生まれず、全体的なアクセントと明瞭性に影響する。",
+    "functionalLoad": "high",
+    "intelligibilityImpact": "mid",
+    "recommendedTraining": ["prosody", "perception"],
+    "evidenceStrength": "mid",
+    "evidenceIds": ["E-10", "E-11"],
+    "articulation": {
+      "mannerJa": "強弱の波を作る: 強勢音節を引き伸ばし非強勢を圧縮する",
+      "stepsJa": [
+        "英語の詩や歌の強勢パターンを手でリズムを取りながら読む",
+        "強勢音節を意図的に長めに発音し、非強勢音節を短く圧縮する練習をする",
+        "nPVI の高い英語音声（ネイティブ）と自分の発話を並べて聴き比べる",
+        "シャドーイングでリズムパターンを身体で習得する（初期は低速で）"
+      ]
+    }
+  },
+  {
+    "id": "connected-speech-linking",
+    "kind": "prosodic",
+    "targetPhoneme": "linking",
+    "contrast": null,
+    "confusionSet": [],
+    "l1MechanismJa": "英語では語末子音と語頭母音が連結して発音される（'an apple' → [əˈnæpl]）。日本語は全音節が明確に独立するため、日本語話者は語と語の境界を明確に保ち連結が生じにくい。連結の欠如は不自然さ（native-likeness 低下）の主要因の一つ。",
+    "functionalLoad": "mid",
+    "intelligibilityImpact": "mid",
+    "recommendedTraining": ["perception", "prosody"],
+    "evidenceStrength": "mid",
+    "evidenceIds": ["E-8", "E-10"],
+    "articulation": {
+      "mannerJa": "語末子音と次の語頭母音をつなげて発音する",
+      "stepsJa": [
+        "語末が子音・語頭が母音のペアを意識する（not at all, pick up, come in）",
+        "境界を作らず一連の音節として発音する練習をする",
+        "まずゆっくり意識的に連結し、慣れたら速度を上げる",
+        "シャドーイングでネイティブの連結パターンを自然に習得する"
+      ]
+    }
+  }
+]
