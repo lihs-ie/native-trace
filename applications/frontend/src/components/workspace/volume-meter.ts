@@ -21,6 +21,13 @@ const FLOOR_DB = -60;
 const CEILING_DB = 0;
 const MIN_DISPLAY_PERCENTAGE = 2;
 
+// dBFS display scale threshold aligned to ADR-015 worker gate (-36 dBFS, S-PH-1 / ADR-016 D2).
+// Derivation: ((-36 - FLOOR_DB) / (CEILING_DB - FLOOR_DB)) * (100 - MIN_DISPLAY_PERCENTAGE) + MIN_DISPLAY_PERCENTAGE
+//           = ((-36 + 60) / 60) * 98 + 2 = (24/60)*98 + 2 ≈ 41.2 → 41
+// Confirmed by simulation (scripts/calibration/simulate_meter_peak_hold.py, 2026-06-18):
+//   gate-rejected recordings (speech_active < -36 dBFS) peak at 37.9% < 41% after smoothing.
+export const LOW_VOLUME_DISPLAY_THRESHOLD = 41;
+
 /**
  * Maps an RMS level [0, 1] to a display percentage using a dBFS logarithmic
  * scale so that typical speech (-30 to -10 dBFS) occupies the middle range

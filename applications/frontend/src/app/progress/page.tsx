@@ -14,6 +14,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { apiGet, isApiClientError } from "@/lib/api-client";
 import type { ProgressDto, ProgressSnapshotDto } from "@/lib/api-types";
+import { TRAINING_PLATEAU_MINUTES } from "@/lib/score-bands";
 
 // ---- CEFR レーダー SVG 計算 ----
 // viewBox: 0 0 220 190
@@ -55,13 +56,17 @@ const toPolygonPoints = (
 };
 
 // ---- Stage スコア推定（diagnostic result 画面と同ロジック） ----
+// NOTE: この 70 は result ページの stage enum 判定と値が一致していない（既知の不一致、
+// 挙動選択のため本リファクタリングでは未修正 — 計画書 §4.2 参照）。命名のみ行う。
+const STAGE_II_SCORE_HEURISTIC = 70;
+
 const estimateStageScores = (
   snapshot: ProgressSnapshotDto,
 ): { stageI: number; stageII: number } => {
   const overallScore = snapshot.cefrSubscales.overall?.score ?? 50;
   const prosodicScore = snapshot.cefrSubscales.prosodic?.score ?? 50;
   const stageI = Math.min(100, overallScore);
-  const stageII = overallScore >= 70 ? Math.min(100, prosodicScore) : 0;
+  const stageII = overallScore >= STAGE_II_SCORE_HEURISTIC ? Math.min(100, prosodicScore) : 0;
   return { stageI, stageII };
 };
 
@@ -106,11 +111,7 @@ const buildSparkData = (snapshots: ProgressSnapshotDto[]): SparkData[] => {
  * SparkSvg — 1 行の focus 推移 SVG sparkline。
  * 点が 1 件のみなら sdot のみ（偽の折れ線を引かない）。
  */
-const SparkSvg = ({
-  points,
-}: {
-  points: Array<{ score: number; capturedAt: string }>;
-}) => {
+const SparkSvg = ({ points }: { points: Array<{ score: number; capturedAt: string }> }) => {
   if (points.length === 0) return null;
 
   const lastPoint = points[points.length - 1]!;
@@ -158,9 +159,7 @@ const SparkSvg = ({
 // ---- delta 表示 ----
 type DeltaDisplay = { className: "delta-up" | "delta-dn" | "mono"; text: string };
 
-const buildDeltaDisplay = (
-  points: Array<{ score: number }>,
-): DeltaDisplay => {
+const buildDeltaDisplay = (points: Array<{ score: number }>): DeltaDisplay => {
   if (points.length < 2) {
     return {
       className: "mono",
@@ -210,9 +209,7 @@ export default function ProgressPage() {
         setLoading(false);
       })
       .catch((error: unknown) => {
-        setLoadError(
-          isApiClientError(error) ? error.message : "進捗データの取得に失敗しました",
-        );
+        setLoadError(isApiClientError(error) ? error.message : "進捗データの取得に失敗しました");
         setLoading(false);
       });
   }, []);
@@ -257,12 +254,8 @@ export default function ProgressPage() {
   const prevSegmental = prev?.cefrSubscales.segmental?.score ?? 0;
   const prevProsodic = prev?.cefrSubscales.prosodic?.score ?? 0;
 
-  const nowPolygonPoints = now
-    ? toPolygonPoints(nowOverall, nowSegmental, nowProsodic)
-    : null;
-  const prevPolygonPoints = prev
-    ? toPolygonPoints(prevOverall, prevSegmental, prevProsodic)
-    : null;
+  const nowPolygonPoints = now ? toPolygonPoints(nowOverall, nowSegmental, nowProsodic) : null;
+  const prevPolygonPoints = prev ? toPolygonPoints(prevOverall, prevSegmental, prevProsodic) : null;
 
   // ---- focus 推移 ----
   const sparkData = buildSparkData(snapshots);
@@ -280,9 +273,9 @@ export default function ProgressPage() {
   // M-PG-5c: training 未実装なので honest empty (0 / 「訓練データなし」)
   const cumulativeTrainingMinutes = now?.cumulativeTrainingMinutes ?? 0;
   const hasCumulativeTraining = cumulativeTrainingMinutes > 0;
-  // cum-bar 幅は仮想 400min 頭打ちでスケール (架空値は出さないが、0以外ならバーを表示)
+  // cum-bar 幅は仮想 TRAINING_PLATEAU_MINUTES 頭打ちでスケール (架空値は出さないが、0以外ならバーを表示)
   const cumBarWidth = hasCumulativeTraining
-    ? Math.min(100, (cumulativeTrainingMinutes / 400) * 100)
+    ? Math.min(100, (cumulativeTrainingMinutes / TRAINING_PLATEAU_MINUTES) * 100)
     : 0;
 
   // ---- axis-expl テキスト ----
@@ -347,7 +340,10 @@ export default function ProgressPage() {
                 <b>二段階ゴール — 現在地</b>
                 <span className="en">Stage I → II</span>
               </div>
-              <div className="stage-track" style={{ maxWidth: "760px", marginBottom: "var(--sp-5)" }}>
+              <div
+                className="stage-track"
+                style={{ maxWidth: "760px", marginBottom: "var(--sp-5)" }}
+              >
                 <div className="stage-seg">
                   <div className="sl">
                     <b>Stage I 明瞭性</b>
@@ -407,9 +403,7 @@ export default function ProgressPage() {
                         <span
                           className="pair"
                           style={
-                            spark.contrast.length > 6
-                              ? { fontSize: "var(--text-sm)" }
-                              : undefined
+                            spark.contrast.length > 6 ? { fontSize: "var(--text-sm)" } : undefined
                           }
                         >
                           {spark.contrast}
@@ -437,10 +431,7 @@ export default function ProgressPage() {
                   })
                 )}
 
-                <p
-                  className="note"
-                  style={{ margin: "14px 0 0", fontSize: "var(--text-2xs)" }}
-                >
+                <p className="note" style={{ margin: "14px 0 0", fontSize: "var(--text-2xs)" }}>
                   同一診断文セットの再録音で計測。解析のたびに漸進更新（再診断テストは不要）。
                 </p>
               </div>
@@ -457,18 +448,9 @@ export default function ProgressPage() {
                   style={{ maxWidth: "300px", display: "block", margin: "0 auto" }}
                 >
                   {/* 参照グリッド (ref) — 100%/75%/50% */}
-                  <polygon
-                    className="radar-poly--ref"
-                    points={toPolygonPoints(100, 100, 100)}
-                  />
-                  <polygon
-                    className="radar-poly--ref"
-                    points={toPolygonPoints(75, 75, 75)}
-                  />
-                  <polygon
-                    className="radar-poly--ref"
-                    points={toPolygonPoints(50, 50, 50)}
-                  />
+                  <polygon className="radar-poly--ref" points={toPolygonPoints(100, 100, 100)} />
+                  <polygon className="radar-poly--ref" points={toPolygonPoints(75, 75, 75)} />
+                  <polygon className="radar-poly--ref" points={toPolygonPoints(50, 50, 50)} />
 
                   {/* M-PG-5a: prev がある場合のみ描画 */}
                   {prevPolygonPoints && (
@@ -573,7 +555,10 @@ export default function ProgressPage() {
                       <small> min</small>
                     </span>
                   ) : (
-                    <span className="sv" style={{ fontSize: "var(--text-sm)", color: "var(--text-faint)" }}>
+                    <span
+                      className="sv"
+                      style={{ fontSize: "var(--text-sm)", color: "var(--text-faint)" }}
+                    >
                       訓練データなし
                     </span>
                   )}
@@ -585,7 +570,10 @@ export default function ProgressPage() {
                 </div>
                 <div className="stat">
                   <span className="sk">平均訓練間隔</span>
-                  <span className="sv" style={{ fontSize: "var(--text-sm)", color: "var(--text-faint)" }}>
+                  <span
+                    className="sv"
+                    style={{ fontSize: "var(--text-sm)", color: "var(--text-faint)" }}
+                  >
                     —
                   </span>
                   <span className="sd3">訓練データなし</span>
@@ -614,7 +602,12 @@ export default function ProgressPage() {
                       : "—"}
                   </span>
                   <span className="sd3">
-                    {now ? new Date(now.capturedAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) : ""}
+                    {now
+                      ? new Date(now.capturedAt).toLocaleTimeString("ja-JP", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : ""}
                   </span>
                 </div>
               </div>
@@ -665,12 +658,10 @@ export default function ProgressPage() {
                           <span
                             className="sd2"
                             style={{
-                              background:
-                                index === 0 ? "var(--src-self)" : "var(--text-faint)",
+                              background: index === 0 ? "var(--src-self)" : "var(--text-faint)",
                             }}
                           />
-                          試行{" "}
-                          {String(snapshots.length - index).padStart(2, "0")} ·{" "}
+                          試行 {String(snapshots.length - index).padStart(2, "0")} ·{" "}
                           {new Date(snapshot.capturedAt).toLocaleDateString("ja-JP", {
                             month: "numeric",
                             day: "numeric",

@@ -37,6 +37,8 @@ import type {
   SpacingScheduleDto,
   ShadowingLagResultDto,
 } from "@/lib/api-types";
+import { TRAINING_PLATEAU_MINUTES } from "@/lib/score-bands";
+import { TRAINING_WEAKNESS_PROFILE_KEY } from "@/lib/session-storage-keys";
 
 // ---- 録音状態 ----
 type RecordingState = "idle" | "recording" | "done";
@@ -135,7 +137,7 @@ const formatNextPresentationDate = (isoString: string): string => {
 function readCachedWeaknessProfileId(): string | null {
   try {
     return typeof window !== "undefined"
-      ? sessionStorage.getItem("training-weakness-profile-id")
+      ? sessionStorage.getItem(TRAINING_WEAKNESS_PROFILE_KEY)
       : null;
   } catch {
     return null;
@@ -433,7 +435,7 @@ export default function TrainingPage() {
 
   // ---- cum-bar 幅 ----
   const cumulativeMinutes = trainingSchedule?.cumulativeTrainingMinutes ?? 0;
-  const cumBarWidth = Math.min(100, (cumulativeMinutes / 400) * 100);
+  const cumBarWidth = Math.min(100, (cumulativeMinutes / TRAINING_PLATEAU_MINUTES) * 100);
 
   // ---- 現在の刺激 ----
   const currentStimulus =

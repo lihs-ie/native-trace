@@ -26,23 +26,20 @@ import {
   accumulateLowDurationMs,
   applyPeakHold,
   computeRmsLevel,
+  LOW_VOLUME_DISPLAY_THRESHOLD,
   PEAK_HOLD_RELEASE_RATE_PER_MS,
   rmsLevelToDisplayPercentage,
   SUSTAINED_LOW_MS,
 } from "@/components/workspace/volume-meter";
+
+// ワークスペースのポーリング周期（ms）。値の統一はしない（diagnostic ページの POLL_INTERVAL_MS とは別値）。
+const WORKSPACE_POLL_INTERVAL_MILLISECONDS = 2000;
 
 type PageProps = {
   params: Promise<{ materialIdentifier: string; sectionIdentifier: string }>;
 };
 
 type WorkspaceState = "idle" | "recording" | "analyzing" | "result" | "failed" | "low_quality";
-
-// dBFS display scale threshold aligned to ADR-015 worker gate (-36 dBFS, S-PH-1 / ADR-016 D2).
-// Derivation: ((-36 - FLOOR_DB) / (CEILING_DB - FLOOR_DB)) * (100 - MIN_DISPLAY_PERCENTAGE) + MIN_DISPLAY_PERCENTAGE
-//           = ((-36 + 60) / 60) * 98 + 2 = (24/60)*98 + 2 ≈ 41.2 → 41
-// Confirmed by simulation (scripts/calibration/simulate_meter_peak_hold.py, 2026-06-18):
-//   gate-rejected recordings (speech_active < -36 dBFS) peak at 37.9% < 41% after smoothing.
-const LOW_VOLUME_DISPLAY_THRESHOLD = 41;
 
 const detectBrowserInfo = () => ({
   browserName: navigator.userAgent.includes("Chrome")
@@ -154,7 +151,7 @@ export default function WorkspacePage({ params }: PageProps) {
   // 初回取得 + 2 秒ポーリング
   useEffect(() => {
     void refresh();
-    const intervalId = setInterval(() => void refresh(), 2000);
+    const intervalId = setInterval(() => void refresh(), WORKSPACE_POLL_INTERVAL_MILLISECONDS);
     return () => clearInterval(intervalId);
   }, [refresh]);
 

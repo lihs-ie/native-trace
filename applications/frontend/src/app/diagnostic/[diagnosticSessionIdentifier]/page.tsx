@@ -24,21 +24,16 @@ import { useRouter } from "next/navigation";
 import { apiGet, apiPost, apiPostForm, isApiClientError } from "@/lib/api-client";
 import { nowMs } from "@/lib/now";
 import type { DiagnosticSessionDto, DiagnosticPromptDto, WorkspaceDto } from "@/lib/api-types";
+import { diagnosticSessionKey } from "@/lib/session-storage-keys";
 import {
   accumulateLowDurationMs,
   applyPeakHold,
   computeRmsLevel,
+  LOW_VOLUME_DISPLAY_THRESHOLD,
   PEAK_HOLD_RELEASE_RATE_PER_MS,
   rmsLevelToDisplayPercentage,
   SUSTAINED_LOW_MS,
 } from "@/components/workspace/volume-meter";
-
-// dBFS display scale threshold aligned to ADR-015 worker gate (-36 dBFS, S-PH-1 / ADR-016 D2).
-// Derivation: ((-36 - FLOOR_DB) / (CEILING_DB - FLOOR_DB)) * (100 - MIN_DISPLAY_PERCENTAGE) + MIN_DISPLAY_PERCENTAGE
-//           = ((-36 + 60) / 60) * 98 + 2 = (24/60)*98 + 2 ≈ 41.2 → 41
-// Confirmed by simulation (scripts/calibration/simulate_meter_peak_hold.py, 2026-06-18):
-//   gate-rejected recordings (speech_active < -36 dBFS) peak at 37.9% < 41% after smoothing.
-const LOW_VOLUME_DISPLAY_THRESHOLD = 41;
 
 // ---- 録音状態 ----
 type RecordingState = "idle" | "recording" | "analyzing" | "done" | "failed";
@@ -112,7 +107,7 @@ const sessionSnapshotCache = new Map<
 >();
 
 function readSessionFromStorage(diagnosticSessionIdentifier: string): DiagnosticSessionDto | null {
-  const key = `diagnostic-session-${diagnosticSessionIdentifier}`;
+  const key = diagnosticSessionKey(diagnosticSessionIdentifier);
   const stored = sessionStorage.getItem(key);
   const cached = sessionSnapshotCache.get(key);
   if (cached !== undefined && cached.raw === stored) {
