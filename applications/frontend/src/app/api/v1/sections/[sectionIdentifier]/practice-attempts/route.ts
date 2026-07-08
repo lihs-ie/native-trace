@@ -9,21 +9,14 @@ import { getContainer } from "../../../../../../registry";
 import { successResponse } from "../../../_shared/response";
 import { domainErrorToResponse } from "../../../_shared/errors";
 import { normalizeAudioMimeType } from "../../../../../../lib/mime";
+import {
+  isSupportedAudioMimeType,
+  type SupportedAudioMimeType,
+  parseBrowserRecordingForm,
+  parseRecordedDurationMilliseconds,
+} from "../../../_shared/multipart";
 
 type RouteContext = { params: Promise<{ sectionIdentifier: string }> };
-
-const SUPPORTED_MIME_TYPES = [
-  "audio/webm",
-  "audio/mp4",
-  "audio/mpeg",
-  "audio/wav",
-  "audio/ogg",
-] as const;
-
-type SupportedMimeType = (typeof SUPPORTED_MIME_TYPES)[number];
-
-const isSupportedMimeType = (value: string): value is SupportedMimeType =>
-  (SUPPORTED_MIME_TYPES as ReadonlyArray<string>).includes(value);
 
 const analysisModeSchema = z.enum(["cloudOnly", "ossWorkerOnly", "comparison"]);
 
@@ -40,12 +33,6 @@ const toUseCaseAnalysisMode = (
       return "comparison";
   }
 };
-
-const browserInfoSchema = z.object({
-  browserName: z.string().min(1),
-  browserVersion: z.string().optional(),
-  deviceType: z.string().optional(),
-});
 
 export async function POST(request: NextRequest, context: RouteContext): Promise<Response> {
   const { sectionIdentifier } = await context.params;
@@ -99,18 +86,21 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
 
   const useCaseAnalysisMode = toUseCaseAnalysisMode(analysisModeParseResult.data);
 
-  const recordedDurationMsRaw = formData.get("recordedDurationMs");
-  const recordedDurationMs = recordedDurationMsRaw !== null ? Number(recordedDurationMsRaw) : NaN;
-  if (!Number.isInteger(recordedDurationMs) || recordedDurationMs <= 0) {
+  const recordedDurationMsResult = parseRecordedDurationMilliseconds(
+    formData,
+    "recordedDurationMs は正の整数で指定してください（最大10分）",
+  );
+  if (recordedDurationMsResult.isErr()) {
     return domainErrorToResponse({
       type: "validationFailed",
-      field: "recordedDurationMs",
-      reason: "recordedDurationMs は正の整数で指定してください（最大10分）",
+      field: recordedDurationMsResult.error.field,
+      reason: recordedDurationMsResult.error.reason,
     });
   }
+  const recordedDurationMs = recordedDurationMsResult.value;
 
   const mimeType = normalizeAudioMimeType(audioFile.type || "audio/webm");
-  if (!isSupportedMimeType(mimeType)) {
+  if (!isSupportedAudioMimeType(mimeType)) {
     return domainErrorToResponse({
       type: "validationFailed",
       field: "audio",
@@ -123,61 +113,15 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
   const container = getContainer();
 
   if (audioSourceType === "browser_recording") {
-    const startedAtRaw = formData.get("startedAt");
-    const endedAtRaw = formData.get("endedAt");
-    const browserInfoRaw = formData.get("browserInfo");
-
-    if (!startedAtRaw || typeof startedAtRaw !== "string") {
+    const browserRecordingFormResult = parseBrowserRecordingForm(formData);
+    if (browserRecordingFormResult.isErr()) {
       return domainErrorToResponse({
         type: "validationFailed",
-        field: "startedAt",
-        reason: "browser_recording では startedAt が必須です",
+        field: browserRecordingFormResult.error.field,
+        reason: browserRecordingFormResult.error.reason,
       });
     }
-    if (!endedAtRaw || typeof endedAtRaw !== "string") {
-      return domainErrorToResponse({
-        type: "validationFailed",
-        field: "endedAt",
-        reason: "browser_recording では endedAt が必須です",
-      });
-    }
-    if (!browserInfoRaw || typeof browserInfoRaw !== "string") {
-      return domainErrorToResponse({
-        type: "validationFailed",
-        field: "browserInfo",
-        reason: "browser_recording では browserInfo が必須です",
-      });
-    }
-
-    let browserInfoParsed: unknown;
-    try {
-      browserInfoParsed = JSON.parse(browserInfoRaw);
-    } catch {
-      return domainErrorToResponse({
-        type: "validationFailed",
-        field: "browserInfo",
-        reason: "browserInfo は JSON 文字列で指定してください",
-      });
-    }
-
-    const browserInfoResult = browserInfoSchema.safeParse(browserInfoParsed);
-    if (!browserInfoResult.success) {
-      return domainErrorToResponse({
-        type: "validationFailed",
-        field: "browserInfo",
-        reason: browserInfoResult.error.errors.map((e) => e.message).join(", "),
-      });
-    }
-
-    const startedAt = new Date(startedAtRaw);
-    const endedAt = new Date(endedAtRaw);
-    if (isNaN(startedAt.getTime()) || isNaN(endedAt.getTime())) {
-      return domainErrorToResponse({
-        type: "validationFailed",
-        field: "startedAt",
-        reason: "startedAt / endedAt は ISO 8601 形式で指定してください",
-      });
-    }
+    const { startedAt, endedAt, browserInfo } = browserRecordingFormResult.value;
 
     const result = await container.usecases.submitPracticeAttempt({
       section: sectionIdentifier,
@@ -185,16 +129,11 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
       audioSource: {
         type: "browser_recording",
         data: audioBuffer,
-        mimeType: mimeType as SupportedMimeType,
+        mimeType: mimeType as SupportedAudioMimeType,
         durationMilliseconds: recordedDurationMs,
         startedAt,
         endedAt,
-        browserInfo: {
-          browserName: browserInfoResult.data.browserName,
-          deviceType: browserInfoResult.data.deviceType === "mobile" ? "mobile" : "pc",
-          recordingApiType: "MediaRecorder",
-          userAgent: browserInfoResult.data.browserVersion ?? browserInfoResult.data.browserName,
-        },
+        browserInfo,
       },
     });
 
@@ -221,7 +160,7 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
       audioSource: {
         type: "uploaded_file",
         data: audioBuffer,
-        mimeType: mimeType as SupportedMimeType,
+        mimeType: mimeType as SupportedAudioMimeType,
         durationMilliseconds: recordedDurationMs,
         originalFileName,
       },

@@ -8,7 +8,7 @@ export type StorageKey = Brand<string, "StorageKey">;
 export const createAudioFileIdentifier = (value: string): AudioFileIdentifier | null =>
   createNonEmptyBrandedString<AudioFileIdentifier>(value);
 
-const ALLOWED_MIME_TYPES = [
+export const SUPPORTED_AUDIO_MIME_TYPES = [
   "audio/webm",
   "audio/mp4",
   "audio/mpeg",
@@ -17,7 +17,9 @@ const ALLOWED_MIME_TYPES = [
 ] as const;
 
 export const createAudioMimeType = (value: string): AudioMimeType | null =>
-  (ALLOWED_MIME_TYPES as readonly string[]).includes(value) ? (value as AudioMimeType) : null;
+  (SUPPORTED_AUDIO_MIME_TYPES as readonly string[]).includes(value)
+    ? (value as AudioMimeType)
+    : null;
 
 export const createStorageKey = (value: string): StorageKey | null =>
   createNonEmptyBrandedString<StorageKey>(value);

@@ -44,23 +44,15 @@ import { createGopDeltaAdaptor } from "../../../../../../acl/gop-delta/create-go
 import type { RetryRecordingResponse } from "../../../../../../lib/api-types";
 import { createAssessmentResultIdentifier } from "../../../../../../domain/assessment-result";
 import type { DiagnosticPerPhonemeGopDraft } from "../../../../../../usecase/assessment-result-draft";
+import {
+  isSupportedAudioMimeType,
+  type SupportedAudioMimeType,
+  parseRecordedDurationMilliseconds,
+} from "../../../_shared/multipart";
 
 type RouteContext = {
   params: Promise<{ findingIdentifier: string }>;
 };
-
-const SUPPORTED_MIME_TYPES = [
-  "audio/webm",
-  "audio/mp4",
-  "audio/mpeg",
-  "audio/wav",
-  "audio/ogg",
-] as const;
-
-type SupportedMimeType = (typeof SUPPORTED_MIME_TYPES)[number];
-
-const isSupportedMimeType = (value: string): value is SupportedMimeType =>
-  (SUPPORTED_MIME_TYPES as ReadonlyArray<string>).includes(value);
 
 /** assessment job 完了まで polling する最大待機時間（ミリ秒） */
 const ANALYSIS_POLL_MAX_WAIT_MS = 30_000;
@@ -197,14 +189,14 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
     return badRequestResponse("expectedPhonemeIpa", "expectedPhonemeIpa フィールドが必須です");
   }
 
-  const recordedDurationMsRaw = formData.get("recordedDurationMs");
-  const recordedDurationMs = recordedDurationMsRaw !== null ? Number(recordedDurationMsRaw) : NaN;
-  if (!Number.isInteger(recordedDurationMs) || recordedDurationMs <= 0) {
+  const recordedDurationMsResult = parseRecordedDurationMilliseconds(formData);
+  if (recordedDurationMsResult.isErr()) {
     return badRequestResponse(
-      "recordedDurationMs",
-      "recordedDurationMs は正の整数で指定してください",
+      recordedDurationMsResult.error.field,
+      recordedDurationMsResult.error.reason,
     );
   }
+  const recordedDurationMs = recordedDurationMsResult.value;
 
   const expectedAudioRangeStartMsRaw = formData.get("expectedAudioRangeStartMs");
   const expectedAudioRangeStartMs =
@@ -223,7 +215,7 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
   }
 
   const mimeType = normalizeAudioMimeType(audioFile.type || "audio/webm");
-  if (!isSupportedMimeType(mimeType)) {
+  if (!isSupportedAudioMimeType(mimeType)) {
     return badRequestResponse("audio", `サポートされていない音声形式です: ${mimeType}`);
   }
 
@@ -245,7 +237,7 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
     audioSource: {
       type: "browser_recording",
       data: audioBuffer,
-      mimeType: mimeType as SupportedMimeType,
+      mimeType: mimeType as SupportedAudioMimeType,
       durationMilliseconds: recordedDurationMs,
       startedAt: now,
       endedAt: new Date(now.getTime() + recordedDurationMs),
