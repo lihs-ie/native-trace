@@ -9,6 +9,7 @@
 
 import { type AnalysisEngine } from "../domain/analysis-engine";
 import { type FindingCategory, type FindingSeverity } from "../domain/assessment-result";
+import { createNonEmptyBrandedString } from "../domain/shared";
 
 // ---- ブランド型（ACL 境界で使うバージョン文字列）----
 
@@ -22,13 +23,13 @@ export type PromptVersion = AclBrand<string, "PromptVersion">;
 export type Instant = AclBrand<string, "Instant">;
 
 export const createAssessmentSchemaVersion = (value: string): AssessmentSchemaVersion | null =>
-  value.trim().length > 0 ? (value as AssessmentSchemaVersion) : null;
+  createNonEmptyBrandedString<AssessmentSchemaVersion>(value);
 
 export const createScoringRubricVersion = (value: string): ScoringRubricVersion | null =>
-  value.trim().length > 0 ? (value as ScoringRubricVersion) : null;
+  createNonEmptyBrandedString<ScoringRubricVersion>(value);
 
 export const createPromptVersion = (value: string): PromptVersion | null =>
-  value.trim().length > 0 ? (value as PromptVersion) : null;
+  createNonEmptyBrandedString<PromptVersion>(value);
 
 export const createInstant = (date: Date): Instant => date.toISOString() as Instant;
 

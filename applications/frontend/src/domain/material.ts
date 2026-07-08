@@ -1,24 +1,22 @@
 import { err, ok } from "neverthrow";
 import { type Result } from "neverthrow";
-import { type DomainError, type NonEmptyList, validationFailed } from "./shared";
-
-declare const __brand: unique symbol;
-type Brand<T, B> = T & { readonly [__brand]: B };
+import {
+  type Brand,
+  type DomainError,
+  type NonEmptyList,
+  createNonEmptyBrandedString,
+  validationFailed,
+} from "./shared";
 
 export type MaterialIdentifier = Brand<string, "MaterialIdentifier">;
 export type MaterialTitle = Brand<string, "MaterialTitle">;
 
-export const createMaterialIdentifier = (
-  value: string,
-): MaterialIdentifier | null =>
-  value.trim().length > 0 ? (value as MaterialIdentifier) : null;
+export const createMaterialIdentifier = (value: string): MaterialIdentifier | null =>
+  createNonEmptyBrandedString<MaterialIdentifier>(value);
 
-export const createMaterialTitle = (
-  value: string,
-): Result<MaterialTitle, DomainError> => {
+export const createMaterialTitle = (value: string): Result<MaterialTitle, DomainError> => {
   const trimmed = value.trim();
-  if (trimmed.length === 0)
-    return err(validationFailed("title", "タイトルは空にできません"));
+  if (trimmed.length === 0) return err(validationFailed("title", "タイトルは空にできません"));
   return ok(trimmed as MaterialTitle);
 };
 
@@ -134,9 +132,7 @@ export const reviseMaterial = (
   };
   return {
     material: revised,
-    events: [
-      { type: "materialRevised", material: revised, occurredAt: input.now },
-    ],
+    events: [{ type: "materialRevised", material: revised, occurredAt: input.now }],
   };
 };
 
@@ -145,10 +141,7 @@ export type RetireMaterialOutput = Readonly<{
   events: NonEmptyList<MaterialRetired>;
 }>;
 
-export const retireMaterial = (
-  material: ActiveMaterial,
-  now: Date,
-): RetireMaterialOutput => {
+export const retireMaterial = (material: ActiveMaterial, now: Date): RetireMaterialOutput => {
   const deleted: DeletedMaterial = {
     type: "deleted",
     identifier: material.identifier,
@@ -157,8 +150,6 @@ export const retireMaterial = (
   };
   return {
     material: deleted,
-    events: [
-      { type: "materialRetired", material: deleted, occurredAt: now },
-    ],
+    events: [{ type: "materialRetired", material: deleted, occurredAt: now }],
   };
 };

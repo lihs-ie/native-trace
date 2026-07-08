@@ -1,15 +1,12 @@
-import { type NonEmptyList } from "./shared";
+import { type Brand, type NonEmptyList, createNonEmptyBrandedString } from "./shared";
 import { type RecordingAttemptIdentifier } from "./recording-attempt";
-
-declare const __brand: unique symbol;
-type Brand<T, B> = T & { readonly [__brand]: B };
 
 export type AudioFileIdentifier = Brand<string, "AudioFileIdentifier">;
 export type AudioMimeType = Brand<string, "AudioMimeType">;
 export type StorageKey = Brand<string, "StorageKey">;
 
 export const createAudioFileIdentifier = (value: string): AudioFileIdentifier | null =>
-  value.trim().length > 0 ? (value as AudioFileIdentifier) : null;
+  createNonEmptyBrandedString<AudioFileIdentifier>(value);
 
 const ALLOWED_MIME_TYPES = [
   "audio/webm",
@@ -23,7 +20,7 @@ export const createAudioMimeType = (value: string): AudioMimeType | null =>
   (ALLOWED_MIME_TYPES as readonly string[]).includes(value) ? (value as AudioMimeType) : null;
 
 export const createStorageKey = (value: string): StorageKey | null =>
-  value.trim().length > 0 ? (value as StorageKey) : null;
+  createNonEmptyBrandedString<StorageKey>(value);
 
 export type StoredAudioFile = Readonly<{
   type: "stored";

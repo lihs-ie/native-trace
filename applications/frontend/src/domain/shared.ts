@@ -86,7 +86,11 @@ export const invalidStateTransition = (
 
 // Branded type ヘルパー
 declare const __brand: unique symbol;
-type Brand<T, B> = T & { readonly [__brand]: B };
+export type Brand<T, B> = T & { readonly [__brand]: B };
+
+/** 非空文字列ブランド型の共通ファクトリ（trim 後の長さのみを検証する）。 */
+export const createNonEmptyBrandedString = <T extends string>(value: string): T | null =>
+  value.trim().length > 0 ? (value as T) : null;
 
 // Pagination
 export type Offset = Brand<number, "Offset">;

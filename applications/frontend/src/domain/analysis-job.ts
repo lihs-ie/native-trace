@@ -1,19 +1,22 @@
 import { err, ok } from "neverthrow";
 import { type Result } from "neverthrow";
-import { type DomainError, type NonEmptyList, invalidStateTransition } from "./shared";
+import {
+  type Brand,
+  type DomainError,
+  type NonEmptyList,
+  createNonEmptyBrandedString,
+  invalidStateTransition,
+} from "./shared";
 import { type AnalysisRunIdentifier } from "./analysis-run";
-
-declare const __brand: unique symbol;
-type Brand<T, B> = T & { readonly [__brand]: B };
 
 export type AnalysisJobIdentifier = Brand<string, "AnalysisJobIdentifier">;
 export type AnalysisLeaseToken = Brand<string, "AnalysisLeaseToken">;
 
 export const createAnalysisJobIdentifier = (value: string): AnalysisJobIdentifier | null =>
-  value.trim().length > 0 ? (value as AnalysisJobIdentifier) : null;
+  createNonEmptyBrandedString<AnalysisJobIdentifier>(value);
 
 export const createAnalysisLeaseToken = (value: string): AnalysisLeaseToken | null =>
-  value.trim().length > 0 ? (value as AnalysisLeaseToken) : null;
+  createNonEmptyBrandedString<AnalysisLeaseToken>(value);
 
 export type EngineType = "cloud" | "oss_worker";
 

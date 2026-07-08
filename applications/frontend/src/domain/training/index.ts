@@ -13,8 +13,10 @@
 import { err, ok } from "neverthrow";
 import { type Result } from "neverthrow";
 import {
+  type Brand,
   type DomainError,
   type NonEmptyList,
+  createNonEmptyBrandedString,
   createNonEmptyList,
   validationFailed,
   hoursToMilliseconds,
@@ -28,9 +30,6 @@ import { type FunctionalLoadRank } from "../error-catalog";
 import { type SectionIdentifier } from "../section";
 
 // ---- Branded types ----
-
-declare const __brand: unique symbol;
-type Brand<T, B> = T & { readonly [__brand]: B };
 
 export type DiagnosticSessionIdentifier = Brand<string, "DiagnosticSessionIdentifier">;
 export type WeaknessProfileIdentifier = Brand<string, "WeaknessProfileIdentifier">;
@@ -56,19 +55,19 @@ export type PriorityScore = Brand<number, "PriorityScore">;
 export const createDiagnosticSessionIdentifier = (
   value: string,
 ): DiagnosticSessionIdentifier | null =>
-  value.trim().length > 0 ? (value as DiagnosticSessionIdentifier) : null;
+  createNonEmptyBrandedString<DiagnosticSessionIdentifier>(value);
 
 export const createWeaknessProfileIdentifier = (value: string): WeaknessProfileIdentifier | null =>
-  value.trim().length > 0 ? (value as WeaknessProfileIdentifier) : null;
+  createNonEmptyBrandedString<WeaknessProfileIdentifier>(value);
 
 export const createLearnerIdentifier = (value: string): LearnerIdentifier | null =>
-  value.trim().length > 0 ? (value as LearnerIdentifier) : null;
+  createNonEmptyBrandedString<LearnerIdentifier>(value);
 
 export const createPhonemeContrast = (value: string): PhonemeContrast | null =>
-  value.trim().length > 0 ? (value as PhonemeContrast) : null;
+  createNonEmptyBrandedString<PhonemeContrast>(value);
 
 export const createCatalogId = (value: string): CatalogId | null =>
-  value.trim().length > 0 ? (value as CatalogId) : null;
+  createNonEmptyBrandedString<CatalogId>(value);
 
 export const createOccurrenceFrequency = (
   value: number,
@@ -482,7 +481,7 @@ export type ProgressSnapshotIdentifier = Brand<string, "ProgressSnapshotIdentifi
 export const createProgressSnapshotIdentifier = (
   value: string,
 ): ProgressSnapshotIdentifier | null =>
-  value.trim().length > 0 ? (value as ProgressSnapshotIdentifier) : null;
+  createNonEmptyBrandedString<ProgressSnapshotIdentifier>(value);
 
 // ---- ControlledTaskKind (DD-250) ----
 
@@ -620,7 +619,7 @@ export type ProgressSnapshotCaptured = Readonly<{
 export type TrainingSessionIdentifier = Brand<string, "TrainingSessionIdentifier">;
 
 export const createTrainingSessionIdentifier = (value: string): TrainingSessionIdentifier | null =>
-  value.trim().length > 0 ? (value as TrainingSessionIdentifier) : null;
+  createNonEmptyBrandedString<TrainingSessionIdentifier>(value);
 
 // ---- TrainingKind (DD-202) ----
 
@@ -794,10 +793,10 @@ export type StimulusIdentifier = Brand<string, "StimulusIdentifier">;
 export type ReactionTime = Brand<number, "ReactionTime">;
 
 export const createHvptTrialIdentifier = (value: string): HvptTrialIdentifier | null =>
-  value.trim().length > 0 ? (value as HvptTrialIdentifier) : null;
+  createNonEmptyBrandedString<HvptTrialIdentifier>(value);
 
 export const createStimulusIdentifier = (value: string): StimulusIdentifier | null =>
-  value.trim().length > 0 ? (value as StimulusIdentifier) : null;
+  createNonEmptyBrandedString<StimulusIdentifier>(value);
 
 export const createReactionTime = (value: number): Result<ReactionTime, DomainError> => {
   if (!Number.isInteger(value) || value <= 0) {
@@ -944,7 +943,7 @@ export const computeSessionAccuracy = (trials: NonEmptyList<HvptTrial>): Accurac
 export type SpacingScheduleIdentifier = Brand<string, "SpacingScheduleIdentifier">;
 
 export const createSpacingScheduleIdentifier = (value: string): SpacingScheduleIdentifier | null =>
-  value.trim().length > 0 ? (value as SpacingScheduleIdentifier) : null;
+  createNonEmptyBrandedString<SpacingScheduleIdentifier>(value);
 
 // ---- SpacingState (DD-248) ----
 

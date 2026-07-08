@@ -1,9 +1,6 @@
-import { type NonEmptyList } from "./shared";
+import { type Brand, type NonEmptyList, createNonEmptyBrandedString } from "./shared";
 import { type SectionIdentifier } from "./section";
 import { type AudioFileIdentifier } from "./audio-file";
-
-declare const __brand: unique symbol;
-type Brand<T, B> = T & { readonly [__brand]: B };
 
 export type RecordingAttemptIdentifier = Brand<string, "RecordingAttemptIdentifier">;
 export type RecordingDuration = Brand<number, "RecordingDuration">;
@@ -13,13 +10,13 @@ export type RecordingFailureReason = Brand<string, "RecordingFailureReason">;
 export const createRecordingAttemptIdentifier = (
   value: string,
 ): RecordingAttemptIdentifier | null =>
-  value.trim().length > 0 ? (value as RecordingAttemptIdentifier) : null;
+  createNonEmptyBrandedString<RecordingAttemptIdentifier>(value);
 
 export const createRecordingDuration = (milliseconds: number): RecordingDuration | null =>
   milliseconds > 0 ? (milliseconds as RecordingDuration) : null;
 
 export const createOriginalFileName = (value: string): OriginalFileName | null =>
-  value.trim().length > 0 ? (value as OriginalFileName) : null;
+  createNonEmptyBrandedString<OriginalFileName>(value);
 
 export const createRecordingFailureReason = (value: string): RecordingFailureReason =>
   value as RecordingFailureReason;
