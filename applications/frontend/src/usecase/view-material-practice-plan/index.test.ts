@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { okAsync, errAsync } from "neverthrow";
 import { createViewMaterialPracticePlan, type ViewMaterialPracticePlanDependencies } from "./index";
-import type { MaterialDetailStatsRepository } from "../../usecase/port/material-detail-stats-repository";
+import type { SectionSeriesStatsRepository } from "../../usecase/port/section-series-stats-repository";
 import {
   type ActiveMaterial,
   type MaterialIdentifier,
@@ -49,7 +49,7 @@ const makeActiveSection = (seriesId: string, version: number = 1): ActiveSection
   createdAt: new Date("2026-01-01T00:00:00Z"),
 });
 
-const makeEmptyMaterialDetailStatsRepository = (): MaterialDetailStatsRepository => ({
+const makeEmptySectionSeriesStatsRepository = (): SectionSeriesStatsRepository => ({
   findStatsBySectionSeries: (_identifiers, _latestBodyTextBySeries) => okAsync(new Map()),
 });
 
@@ -73,7 +73,7 @@ const makeDependencies = (
     search: () => okAsync({ items: [], total: 0 }),
     persist: () => okAsync(undefined),
   },
-  materialDetailStatsRepository: makeEmptyMaterialDetailStatsRepository(),
+  sectionSeriesStatsRepository: makeEmptySectionSeriesStatsRepository(),
   ...overrides,
 });
 

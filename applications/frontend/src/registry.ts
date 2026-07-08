@@ -17,7 +17,7 @@ import { createDrizzleDatabase, type DrizzleDatabase } from "./infrastructure/dr
 import { createDrizzleTransactionManager } from "./infrastructure/drizzle/transaction-manager";
 import { createDrizzleMaterialRepository } from "./infrastructure/drizzle/repositories/material-repository";
 import { createDrizzleLibraryStatsRepository } from "./infrastructure/drizzle/repositories/library-stats-repository";
-import { createDrizzleMaterialDetailStatsRepository } from "./infrastructure/drizzle/repositories/material-detail-stats-repository";
+import { createDrizzleSectionSeriesStatsRepository } from "./infrastructure/drizzle/repositories/section-series-stats-repository";
 import { createDrizzleSectionSeriesRepository } from "./infrastructure/drizzle/repositories/section-series-repository";
 import { createDrizzleSectionRepository } from "./infrastructure/drizzle/repositories/section-repository";
 import { createDrizzleRecordingAttemptRepository } from "./infrastructure/drizzle/repositories/recording-attempt-repository";
@@ -313,7 +313,7 @@ const buildContainer = (): Container => {
   // Repositories
   const materialRepository = createDrizzleMaterialRepository(database);
   const libraryStatsRepository = createDrizzleLibraryStatsRepository(database);
-  const materialDetailStatsRepository = createDrizzleMaterialDetailStatsRepository(database);
+  const sectionSeriesStatsRepository = createDrizzleSectionSeriesStatsRepository(database);
   const sectionSeriesRepository = createDrizzleSectionSeriesRepository(database);
   const sectionRepository = createDrizzleSectionRepository(database);
   const recordingAttemptRepository = createDrizzleRecordingAttemptRepository(database);
@@ -573,7 +573,7 @@ const buildContainer = (): Container => {
       materialRepository,
       sectionSeriesRepository,
       sectionRepository,
-      materialDetailStatsRepository,
+      sectionSeriesStatsRepository,
     }),
 
     viewPracticeWorkspace: createViewPracticeWorkspace({

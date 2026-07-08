@@ -7,9 +7,9 @@ import { type SectionRepository } from "../port/section-repository";
 import { type MaterialRepository } from "../port/material-repository";
 import { type SectionSeriesRepository } from "../port/section-series-repository";
 import {
-  type MaterialDetailStatsRepository,
+  type SectionSeriesStatsRepository,
   type SectionSeriesStats,
-} from "../port/material-detail-stats-repository";
+} from "../port/section-series-stats-repository";
 import { firstPage, unboundedPage } from "../shared/pagination";
 import { parseInput } from "../shared/validation";
 import { countWords } from "../shared/tokenizer";
@@ -90,7 +90,7 @@ export type ViewMaterialPracticePlanDependencies = Readonly<{
   materialRepository: MaterialRepository;
   sectionSeriesRepository: SectionSeriesRepository;
   sectionRepository: SectionRepository;
-  materialDetailStatsRepository: MaterialDetailStatsRepository;
+  sectionSeriesStatsRepository: SectionSeriesStatsRepository;
 }>;
 
 // ---- Helpers ----
@@ -200,7 +200,7 @@ export const createViewMaterialPracticePlan =
 
               const seriesIdentifiers = itemsWithoutStats.map((item) => item.identifier);
 
-              return dependencies.materialDetailStatsRepository
+              return dependencies.sectionSeriesStatsRepository
                 .findStatsBySectionSeries(seriesIdentifiers, latestBodyTextBySeries)
                 .map((statsMap) => {
                   const sectionSeriesItems: SectionSeriesItemOutput[] = itemsWithoutStats.map(

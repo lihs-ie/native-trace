@@ -1,9 +1,9 @@
 import { inArray } from "drizzle-orm";
 import { type DrizzleDatabase } from "../client";
 import {
-  type MaterialDetailStatsRepository,
+  type SectionSeriesStatsRepository,
   type SectionSeriesStats,
-} from "../../../usecase/port/material-detail-stats-repository";
+} from "../../../usecase/port/section-series-stats-repository";
 import { sections } from "../schema";
 import {
   collectScoresBySection,
@@ -123,9 +123,9 @@ const assembleStats = (
   return resultMap;
 };
 
-export const createDrizzleMaterialDetailStatsRepository = (
+export const createDrizzleSectionSeriesStatsRepository = (
   database: DrizzleDatabase,
-): MaterialDetailStatsRepository => ({
+): SectionSeriesStatsRepository => ({
   findStatsBySectionSeries: (
     sectionSeriesIdentifiers: ReadonlyArray<string>,
     latestBodyTextBySeries: ReadonlyMap<string, string>,

@@ -24,7 +24,7 @@ export type SectionSeriesStats = Readonly<{
   overallScoreHistory: ReadonlyArray<number>;
 }>;
 
-export type MaterialDetailStatsRepository = Readonly<{
+export type SectionSeriesStatsRepository = Readonly<{
   /**
    * 指定 section_series 識別子のリストに対して SectionSeriesStats を一括取得する。
    * 存在しない identifier に対しては省略される（Map に含まれない）。

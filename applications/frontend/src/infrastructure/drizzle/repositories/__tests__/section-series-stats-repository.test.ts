@@ -3,13 +3,13 @@ import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "../../schema";
 import { type DrizzleDatabase } from "../../client";
-import { createDrizzleMaterialDetailStatsRepository } from "../material-detail-stats-repository";
+import { createDrizzleSectionSeriesStatsRepository } from "../section-series-stats-repository";
 
 /**
- * MaterialDetailStatsRepository 特性テスト（characterization test）。
+ * SectionSeriesStatsRepository 特性テスト（characterization test）。
  *
  * 目的: `findStatsBySectionSeries` の現在の挙動を固定する（真値の検証ではない）。
- * 期待値は実装（material-detail-stats-repository.ts）を読んで導出した現状の出力をそのまま書く。
+ * 期待値は実装（section-series-stats-repository.ts）を読んで導出した現状の出力をそのまま書く。
  * W25 で 5 段結合の共通化リファクタを行う前の safety net。
  *
  * findStatsBySectionSeries は materials / section_series テーブルを参照しない
@@ -114,7 +114,12 @@ const insertSection = (sqlite: SqliteDb, id: string, sectionSeries: string, now:
     .run(id, sectionSeries, now);
 };
 
-const insertRecordingAttempt = (sqlite: SqliteDb, id: string, section: string, createdAt: string) => {
+const insertRecordingAttempt = (
+  sqlite: SqliteDb,
+  id: string,
+  section: string,
+  createdAt: string,
+) => {
   sqlite
     .prepare(
       `INSERT INTO recording_attempts (identifier, section, status, input_kind, original_file_name, duration_milliseconds, created_at, updated_at)
@@ -166,7 +171,7 @@ const insertAssessmentResult = (
     );
 };
 
-describe("DrizzleMaterialDetailStatsRepository (findStatsBySectionSeries, characterization)", () => {
+describe("DrizzleSectionSeriesStatsRepository (findStatsBySectionSeries, characterization)", () => {
   let sqlite: SqliteDb;
 
   afterEach(() => {
@@ -176,7 +181,7 @@ describe("DrizzleMaterialDetailStatsRepository (findStatsBySectionSeries, charac
   it("series 2件で片方のみ結果あり → series単位でベスト/履歴が分離され、wordCount は連続空白を圧縮した値になる", async () => {
     sqlite = createTestDb();
     const db = drizzle(sqlite, { schema }) as DrizzleDatabase;
-    const repository = createDrizzleMaterialDetailStatsRepository(db);
+    const repository = createDrizzleSectionSeriesStatsRepository(db);
 
     // SS-101: 結果あり（2 attempt）
     insertSection(sqlite, "SEC-101", "SS-101", "2026-01-01T00:00:00.000Z");
