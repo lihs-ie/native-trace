@@ -13,7 +13,7 @@ from python_analyzer.domain.audio import AudioInput
 from python_analyzer.domain.phoneme import IpaSequence
 from python_analyzer.domain.shadowing_lag import ShadowingLagMeasurement
 from python_analyzer.infrastructure.dtw_lag import compute_lag
-from python_analyzer.usecase.ports import AlignerPort, G2PPort
+from python_analyzer.usecase.ports import WAV_MIME_TYPES, AlignerPort, G2PPort
 
 
 class ComputeShadowingLagUseCase:
@@ -81,7 +81,7 @@ def _load_waveform_numpy(audio: AudioInput) -> np.ndarray | None:
     soundfile / torch は使わず wave モジュールのみで読む（VAD は純 numpy）。
     """
     mime_normalized = audio.mime_type.split(";")[0].strip().lower()
-    if mime_normalized not in {"audio/wav", "audio/x-wav", "audio/wave"}:
+    if mime_normalized not in WAV_MIME_TYPES:
         return None
 
     try:

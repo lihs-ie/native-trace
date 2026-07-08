@@ -19,6 +19,10 @@ from python_analyzer.domain.measurement import (
 )
 from python_analyzer.domain.phoneme import AlignmentBoundary, IpaSequence
 
+# wave モジュールで WAV ヘッダー解析可能とみなす MIME タイプ集合（usecase 層の共有語彙）。
+# wav2vec2_aligner.py の ffmpeg デコード対象 superset（flac/aiff 入り）とは別物。
+WAV_MIME_TYPES: frozenset[str] = frozenset({"audio/wav", "audio/x-wav", "audio/wave"})
+
 
 class G2PPort(Protocol):
     """g2p（grapheme-to-phoneme）変換ポート。"""

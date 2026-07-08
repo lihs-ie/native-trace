@@ -14,9 +14,6 @@ from python_analyzer.domain.measurement import (
 
 logger = logging.getLogger(__name__)
 
-# IPA 母音核として認識する文字セット（強勢計算に使用）
-_IPA_VOWEL_NUCLEI = frozenset("aeiouæɑɒɔəɛɪɨɵʊʌœøɯɤɐɞɘɵ")
-
 # espeak 強勢記号から int へのマッピング
 _STRESS_MARK_PRIMARY = "ˈ"  # 第1強勢
 _STRESS_MARK_SECONDARY = "ˌ"  # 第2強勢

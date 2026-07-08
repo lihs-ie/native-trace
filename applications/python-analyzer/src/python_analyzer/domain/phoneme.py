@@ -5,6 +5,13 @@
 
 from dataclasses import dataclass
 
+# IPA 母音核として認識する文字セット（音節カウント・母音持続時間・強勢計算に使用）。
+# usecase / infrastructure の各所で共有するドメイン語彙。
+VOWEL_NUCLEI: frozenset[str] = frozenset("aeiouæɑɒɔəɛɪɨɵʊʌœøɯɤɐɞɘ")
+
+# schwa（シュワ）音の IPA 記号。弱形・シュワ実現検出で共有するドメイン語彙。
+SCHWA_PHONEME = "ə"
+
 
 @dataclass(frozen=True)
 class PhonemeLabel:

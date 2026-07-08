@@ -1,10 +1,8 @@
 """話速・無音区間・シュワ実現の解析インフラ実装。"""
 
 from python_analyzer.domain.measurement import InterWordSilence, SchwaRealization
-from python_analyzer.domain.phoneme import AlignmentBoundary
+from python_analyzer.domain.phoneme import SCHWA_PHONEME, AlignmentBoundary
 
-# シュワ音の IPA 記号
-_SCHWA_PHONEME = "ə"
 # 無音区間と判定する最小ギャップ（ミリ秒）
 _MIN_SILENCE_GAP_MS = 100
 
@@ -73,7 +71,7 @@ class SpeechRateAnalyzer:
         """
         schwas: list[SchwaRealization] = []
         for boundary in boundaries:
-            if _SCHWA_PHONEME in boundary.phoneme.value:
+            if SCHWA_PHONEME in boundary.phoneme.value:
                 schwas.append(
                     SchwaRealization(
                         phoneme=boundary.phoneme,

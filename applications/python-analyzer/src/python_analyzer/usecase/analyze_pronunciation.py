@@ -14,11 +14,14 @@ from python_analyzer.domain.measurement import (
     PhonemeGopMeasurement,
     RawMeasurementResult,
 )
-from python_analyzer.domain.phoneme import AlignmentBoundary
-from python_analyzer.usecase.ports import AlignerPort, G2PPort, ProsodyPort, SpeechRatePort
-
-# IPA 母音核として認識する文字セット（音節・母音持続時間の算出に使用）
-_VOWEL_NUCLEI = frozenset("aeiouæɑɒɔəɛɪɨɵʊʌœøɯɤɐɞɘ")
+from python_analyzer.domain.phoneme import VOWEL_NUCLEI, AlignmentBoundary
+from python_analyzer.usecase.ports import (
+    WAV_MIME_TYPES,
+    AlignerPort,
+    G2PPort,
+    ProsodyPort,
+    SpeechRatePort,
+)
 
 # WAV ヘッダーからサンプリングレートを取得できない場合のフォールバック値。
 # usecase 層は infrastructure に依存できないため（オニオン依存方向の制約）、
@@ -268,7 +271,7 @@ def _parse_stress_per_word(
             stress_list.append(2)
         else:
             # 多音節語（母音核 >= 2）は第1強勢あり（デフォルト推定）
-            vowel_count = sum(1 for char in ipa_word if char in _VOWEL_NUCLEI)
+            vowel_count = sum(1 for char in ipa_word if char in VOWEL_NUCLEI)
             stress_list.append(1 if vowel_count >= 2 else 0)
     return stress_list
 
@@ -286,7 +289,7 @@ def _extract_vowel_durations_per_word(
             if boundary.start_milliseconds < start_ms or boundary.end_milliseconds > end_ms:
                 continue
             # 音素が母音核を含む場合
-            if any(char in _VOWEL_NUCLEI for char in boundary.phoneme.value):
+            if any(char in VOWEL_NUCLEI for char in boundary.phoneme.value):
                 duration = boundary.end_milliseconds - boundary.start_milliseconds
                 if duration > 0:
                     vowel_durations.append(duration)
@@ -351,7 +354,7 @@ def _estimate_sample_rate(audio: AudioInput) -> int:
     取得できない場合は _FALLBACK_SAMPLE_RATE_HZ を返す。
     """
     mime_normalized = audio.mime_type.split(";")[0].strip().lower()
-    if mime_normalized not in {"audio/wav", "audio/x-wav", "audio/wave"}:
+    if mime_normalized not in WAV_MIME_TYPES:
         return _FALLBACK_SAMPLE_RATE_HZ
 
     try:
