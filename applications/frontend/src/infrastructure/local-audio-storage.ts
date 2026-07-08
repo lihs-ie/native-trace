@@ -16,7 +16,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
 
-/** cast なしの型付き audioStorageFailed リテラルを作る（W26: DomainError への cast 排除）。 */
+/** Build a typed audioStorageFailed literal without casting (W26: removed `as DomainError`). */
 const audioStorageFailed = (reason: string): AudioStorageFailedError => ({
   type: "audioStorageFailed",
   reason,
