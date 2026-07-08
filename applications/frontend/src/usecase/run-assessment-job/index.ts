@@ -9,6 +9,7 @@ import {
   cancelAnalysisJob,
   DEFAULT_ANALYSIS_JOB_MAX_ATTEMPTS,
   type AnalysisJobIdentifier,
+  type LeasedAnalysisJob,
   type RunningAnalysisJob,
   type AnalysisJobSucceeded,
   type AnalysisJobFailed,
@@ -45,13 +46,20 @@ import { type TransactionManager } from "../port/transaction-manager";
 import { type EntropyProvider } from "../port/entropy-provider";
 import { type Clock } from "../port/clock";
 import { type Logger } from "../port/logger";
+import {
+  type AnalysisEngine,
+  type AnalysisEngineIdentifier,
+  type AnalysisEngineDisplayName,
+} from "../../domain/analysis-engine";
 import { TOKENIZER_VERSION } from "../shared/tokenizer";
 import {
   type AssessmentResultDraft,
+  type AssessmentFindingDraft,
   type DiagnosticPerPhonemeGopDraft,
 } from "../assessment-result-draft";
 import {
   type ImprovementMessageGenerator,
+  type ImprovementMessageGeneratorInput,
   type FeedbackLayersOutput,
 } from "../port/improvement-message-generator";
 import { parseInput } from "../shared/validation";
@@ -219,6 +227,92 @@ const mapEngineSnapshot = (draft: AssessmentResultDraft): AnalysisEngineSnapshot
   };
 };
 
+/**
+ * AnalysisJob の engine 情報から engineRegistry.find / engine.assess に渡す
+ * AnalysisEngine 記述子を構築する（1 回構築して両方に渡す）。
+ * AnalysisJob は engineConfigJson / engine しか保持していないため、既存挙動どおり
+ * identifier / displayName に同値をブランド型 cast で埋める（cast はこのヘルパーに閉じ込める）。
+ */
+const buildEngineDescriptor = (runningJob: RunningAnalysisJob): AnalysisEngine => {
+  const identifier = runningJob.engineConfigJson as AnalysisEngineIdentifier;
+  const engineName: string = runningJob.engine;
+  const displayName = engineName as AnalysisEngineDisplayName;
+
+  if (runningJob.engine === "cloud") {
+    return {
+      type: "cloud",
+      identifier,
+      displayName,
+      provider: "cloud",
+      modelName: "",
+      externalSendingRequired: true,
+      enabled: true,
+      configuration: {},
+    };
+  }
+  return {
+    type: "oss_worker",
+    identifier,
+    displayName,
+    workerVersion: "",
+    modelName: "",
+    rulesetVersion: "",
+    enabled: true,
+    configuration: {},
+  };
+};
+
+/**
+ * Job をキャンセル確定して永続化し、キャンセル出力を返す。
+ * lease 直後・エンジン呼び出し前・結果保存直前の 3 つのキャンセル確認点で共通。
+ */
+const persistCanceledOutput = (
+  dependencies: RunAssessmentJobDependencies,
+  job: LeasedAnalysisJob | RunningAnalysisJob,
+  now: Date,
+): ResultAsync<RunAssessmentJobOutput, DomainError> => {
+  const { analysisJob: canceledJob, events: cancelEvents } = cancelAnalysisJob(job, now);
+  return dependencies.analysisJobRepository.persist(canceledJob).map(() => ({
+    job: {
+      identifier: canceledJob.identifier as string,
+      engine: canceledJob.engine,
+      state: canceledJob.type,
+    },
+    result: null,
+    retryScheduled: false,
+    events: [...cancelEvents] as RunAssessmentJobOutput["events"],
+    diagnosticPerPhonemeGop: [],
+  }));
+};
+
+/**
+ * finding draft から ImprovementMessageGenerator の入力を構築する。
+ * M-LLM-3 (ADR-021): generate / generateFeedbackLayers 入力に gop / functionalLoad を配線
+ * （両呼び出し点 = pre-loop batch と rule-based 同期 fallback に必須）。
+ * M-APD-15 (ADR-018): acousticEvidence を配線。
+ * phenomenon は型ガードで確定し、invalid なら substitution にフォールバックする。
+ */
+const toImprovementMessageInput = (
+  findingDraft: AssessmentFindingDraft,
+): ImprovementMessageGeneratorInput & Readonly<{ phenomenon: FindingPhenomenon }> => ({
+  phenomenon: isValidFindingPhenomenon(findingDraft.phenomenon ?? "")
+    ? (findingDraft.phenomenon as FindingPhenomenon)
+    : "substitution",
+  expected: findingDraft.expected,
+  detected: findingDraft.detected,
+  wordPositionLabel: findingDraft.wordPositionLabel ?? null,
+  catalogId: findingDraft.catalogId ?? null,
+  wordPair: findingDraft.wordPair ?? null,
+  expectedPronunciation: findingDraft.expectedPronunciation ?? null,
+  insertedVowel: findingDraft.insertedVowel ?? null,
+  insertionPositionMs: findingDraft.insertionPositionMs ?? null,
+  detectedTopCandidate: findingDraft.detectedTopCandidate ?? null,
+  nBest: findingDraft.nBest ?? null,
+  gop: findingDraft.gop ?? null,
+  functionalLoad: findingDraft.functionalLoad ?? null,
+  acousticEvidence: findingDraft.acousticEvidence ?? null,
+});
+
 const handleJobFailure = (
   dependencies: RunAssessmentJobDependencies,
   job: RunningAnalysisJob,
@@ -323,21 +417,7 @@ export const createRunAssessmentJob =
         return isJobCanceled(dependencies.analysisJobRepository, leasedJob.identifier).andThen(
           (isCanceledAfterLease) => {
             if (isCanceledAfterLease) {
-              const { analysisJob: canceledJob, events: cancelEvents } = cancelAnalysisJob(
-                leasedJob,
-                now,
-              );
-              return dependencies.analysisJobRepository.persist(canceledJob).map(() => ({
-                job: {
-                  identifier: canceledJob.identifier as string,
-                  engine: canceledJob.engine,
-                  state: canceledJob.type,
-                },
-                result: null,
-                retryScheduled: false,
-                events: [...cancelEvents] as RunAssessmentJobOutput["events"],
-                diagnosticPerPhonemeGop: [],
-              }));
+              return persistCanceledOutput(dependencies, leasedJob, now);
             }
 
             // running 状態へ遷移
@@ -374,49 +454,13 @@ export const createRunAssessmentJob =
                                   runningJob.identifier,
                                 ).andThen((isCanceledBeforeEngine) => {
                                   if (isCanceledBeforeEngine) {
-                                    const { analysisJob: canceledJob, events: cancelEvents } =
-                                      cancelAnalysisJob(runningJob, now);
-                                    return dependencies.analysisJobRepository
-                                      .persist(canceledJob)
-                                      .map(() => ({
-                                        job: {
-                                          identifier: canceledJob.identifier as string,
-                                          engine: canceledJob.engine,
-                                          state: canceledJob.type,
-                                        },
-                                        result: null,
-                                        retryScheduled: false,
-                                        events: [
-                                          ...cancelEvents,
-                                        ] as RunAssessmentJobOutput["events"],
-                                        diagnosticPerPhonemeGop: [],
-                                      }));
+                                    return persistCanceledOutput(dependencies, runningJob, now);
                                   }
 
-                                  // 5. エンジン解決
-                                  const engineResult = dependencies.engineRegistry.find(
-                                    runningJob.engine === "cloud"
-                                      ? {
-                                          type: "cloud" as const,
-                                          identifier: runningJob.engineConfigJson as never,
-                                          displayName: runningJob.engine as never,
-                                          provider: "cloud",
-                                          modelName: "",
-                                          externalSendingRequired: true as const,
-                                          enabled: true,
-                                          configuration: {},
-                                        }
-                                      : {
-                                          type: "oss_worker" as const,
-                                          identifier: runningJob.engineConfigJson as never,
-                                          displayName: runningJob.engine as never,
-                                          workerVersion: "",
-                                          modelName: "",
-                                          rulesetVersion: "",
-                                          enabled: true,
-                                          configuration: {},
-                                        },
-                                  );
+                                  // 5. エンジン解決（記述子は 1 回構築して find と assess 両方に渡す）
+                                  const engineDescriptor = buildEngineDescriptor(runningJob);
+                                  const engineResult =
+                                    dependencies.engineRegistry.find(engineDescriptor);
 
                                   if (engineResult.isErr()) {
                                     return handleJobFailure(
@@ -430,28 +474,6 @@ export const createRunAssessmentJob =
                                   }
 
                                   const engine = engineResult.value;
-                                  const resolvedEngine =
-                                    runningJob.engine === "cloud"
-                                      ? ({
-                                          type: "cloud" as const,
-                                          identifier: runningJob.engineConfigJson as never,
-                                          displayName: runningJob.engine as never,
-                                          provider: "cloud",
-                                          modelName: "",
-                                          externalSendingRequired: true as const,
-                                          enabled: true,
-                                          configuration: {},
-                                        } as const)
-                                      : ({
-                                          type: "oss_worker" as const,
-                                          identifier: runningJob.engineConfigJson as never,
-                                          displayName: runningJob.engine as never,
-                                          workerVersion: "",
-                                          modelName: "",
-                                          rulesetVersion: "",
-                                          enabled: true,
-                                          configuration: {},
-                                        } as const);
 
                                   // 6. エンジン呼び出し（拡張入力を渡す）
                                   return engine
@@ -460,7 +482,7 @@ export const createRunAssessmentJob =
                                       analysisRun: analysisRun.identifier,
                                       recordingAttempt: recordingAttempt.identifier,
                                       section: recordingAttempt.section,
-                                      engine: resolvedEngine,
+                                      engine: engineDescriptor,
                                       sectionBodyText: section.bodyText as string,
                                       audioBuffer,
                                       audioMimeType: audioFile.mimeType as string,
@@ -661,33 +683,7 @@ export const createRunAssessmentJob =
                                           const allInputs = draft.findings
                                             .map((findingDraft, index) => ({
                                               index,
-                                              input: {
-                                                phenomenon: isValidFindingPhenomenon(
-                                                  findingDraft.phenomenon ?? "",
-                                                )
-                                                  ? (findingDraft.phenomenon as FindingPhenomenon)
-                                                  : ("substitution" as const),
-                                                expected: findingDraft.expected,
-                                                detected: findingDraft.detected,
-                                                wordPositionLabel:
-                                                  findingDraft.wordPositionLabel ?? null,
-                                                catalogId: findingDraft.catalogId ?? null,
-                                                wordPair: findingDraft.wordPair ?? null,
-                                                expectedPronunciation:
-                                                  findingDraft.expectedPronunciation ?? null,
-                                                insertedVowel: findingDraft.insertedVowel ?? null,
-                                                insertionPositionMs:
-                                                  findingDraft.insertionPositionMs ?? null,
-                                                detectedTopCandidate:
-                                                  findingDraft.detectedTopCandidate ?? null,
-                                                nBest: findingDraft.nBest ?? null,
-                                                // M-LLM-3 (ADR-021): gop / functionalLoad を配線
-                                                gop: findingDraft.gop ?? null,
-                                                functionalLoad: findingDraft.functionalLoad ?? null,
-                                                // M-APD-15 (ADR-018): acousticEvidence を配線
-                                                acousticEvidence:
-                                                  findingDraft.acousticEvidence ?? null,
-                                              },
+                                              input: toImprovementMessageInput(findingDraft),
                                             }))
                                             // Filter to only selected (top-N) original indices
                                             .filter(({ index }) =>
@@ -787,35 +783,11 @@ export const createRunAssessmentJob =
                                             });
                                           }
 
-                                          // phenomenon を型ガードで確定（invalid なら substitution にフォールバック）
-                                          const phenomenon: FindingPhenomenon =
-                                            isValidFindingPhenomenon(findingDraft.phenomenon ?? "")
-                                              ? (findingDraft.phenomenon as FindingPhenomenon)
-                                              : "substitution";
-
-                                          // M-LLM-3 (ADR-021): generate / generateFeedbackLayers 入力に
-                                          // gop / functionalLoad を配線（両呼び出し点に必須）
-                                          const generateInput = {
-                                            phenomenon: phenomenon ?? "substitution",
-                                            expected: findingDraft.expected,
-                                            detected: findingDraft.detected,
-                                            wordPositionLabel:
-                                              findingDraft.wordPositionLabel ?? null,
-                                            catalogId: findingDraft.catalogId ?? null,
-                                            wordPair: findingDraft.wordPair ?? null,
-                                            expectedPronunciation:
-                                              findingDraft.expectedPronunciation ?? null,
-                                            insertedVowel: findingDraft.insertedVowel ?? null,
-                                            insertionPositionMs:
-                                              findingDraft.insertionPositionMs ?? null,
-                                            detectedTopCandidate:
-                                              findingDraft.detectedTopCandidate ?? null,
-                                            nBest: findingDraft.nBest ?? null,
-                                            gop: findingDraft.gop ?? null,
-                                            functionalLoad: findingDraft.functionalLoad ?? null,
-                                            // M-APD-15 (ADR-018): acousticEvidence を配線
-                                            acousticEvidence: findingDraft.acousticEvidence ?? null,
-                                          };
+                                          // phenomenon 型ガード込みの共通マッピング
+                                          // （toImprovementMessageInput — M-LLM-3 の警告コメント参照）
+                                          const generateInput =
+                                            toImprovementMessageInput(findingDraft);
+                                          const phenomenon = generateInput.phenomenon;
 
                                           // M-LLM-4 (ADR-021): feedbackLayers 解決順序
                                           // findingDraft.feedbackLayers
@@ -992,23 +964,11 @@ export const createRunAssessmentJob =
                                         runningJob.identifier,
                                       ).andThen((isCanceledBeforeSave) => {
                                         if (isCanceledBeforeSave) {
-                                          const { analysisJob: canceledJob, events: cancelEvents } =
-                                            cancelAnalysisJob(runningJob, now);
-                                          return dependencies.analysisJobRepository
-                                            .persist(canceledJob)
-                                            .map(() => ({
-                                              job: {
-                                                identifier: canceledJob.identifier as string,
-                                                engine: canceledJob.engine,
-                                                state: canceledJob.type,
-                                              },
-                                              result: null,
-                                              retryScheduled: false,
-                                              events: [
-                                                ...cancelEvents,
-                                              ] as RunAssessmentJobOutput["events"],
-                                              diagnosticPerPhonemeGop: [],
-                                            }));
+                                          return persistCanceledOutput(
+                                            dependencies,
+                                            runningJob,
+                                            now,
+                                          );
                                         }
 
                                         // 8. AssessmentResult 保存 + Job を succeeded に
