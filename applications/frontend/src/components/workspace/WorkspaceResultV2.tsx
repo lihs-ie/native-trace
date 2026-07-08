@@ -512,6 +512,7 @@ export const WorkspaceResultV2 = ({
         {/* 詳細パネル */}
         {selectedFinding && (
           <DetailPanelV2
+            key={selectedFinding.finding}
             finding={selectedFinding}
             sectionIdentifier={sectionIdentifier}
             onClose={() => setSelectedFinding(null)}
