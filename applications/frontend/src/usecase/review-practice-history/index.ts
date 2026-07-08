@@ -1,4 +1,4 @@
-import { type ResultAsync, errAsync, okAsync } from "neverthrow";
+import { type ResultAsync, errAsync } from "neverthrow";
 import { z } from "zod";
 import { type DomainError, validationFailed } from "../../domain/shared";
 import { createSectionSeriesIdentifier } from "../../domain/section-series";
@@ -10,6 +10,7 @@ import { type AnalysisRunRepository } from "../port/analysis-run-repository";
 import { type AssessmentResultRepository } from "../port/assessment-result-repository";
 import { toDomainPagination, firstPage } from "../shared/pagination";
 import { parseInput } from "../shared/validation";
+import { traverseSequentially } from "../shared/traverse";
 
 // ---- Input ----
 
@@ -123,29 +124,10 @@ const buildRunHistory = (
       })),
     }));
 
-const buildRunsSequentially = (
+const buildAttemptHistory = (
   dependencies: ReviewPracticeHistoryDependencies,
-  runs: ReadonlyArray<import("../../domain/analysis-run").AnalysisRun>,
-  index: number,
-  accumulated: AnalysisRunHistoryOutput[],
-): ResultAsync<AnalysisRunHistoryOutput[], DomainError> => {
-  if (index >= runs.length) return okAsync(accumulated);
-  const run = runs[index];
-  return buildRunHistory(dependencies, run.identifier, run.mode, run.status, run.createdAt).andThen(
-    (runHistory) =>
-      buildRunsSequentially(dependencies, runs, index + 1, [...accumulated, runHistory]),
-  );
-};
-
-const buildAttemptsSequentially = (
-  dependencies: ReviewPracticeHistoryDependencies,
-  attempts: ReadonlyArray<import("../../domain/recording-attempt").RecordingAttempt>,
-  index: number,
-  accumulated: RecordingAttemptHistoryOutput[],
-): ResultAsync<RecordingAttemptHistoryOutput[], DomainError> => {
-  if (index >= attempts.length) return okAsync(accumulated);
-  const attempt = attempts[index];
-
+  attempt: import("../../domain/recording-attempt").RecordingAttempt,
+): ResultAsync<RecordingAttemptHistoryOutput, DomainError> => {
   const attemptCreatedAt =
     attempt.type === "failed"
       ? attempt.failedAt.toISOString()
@@ -161,33 +143,22 @@ const buildAttemptsSequentially = (
       sort: "createdAt_desc",
     })
     .andThen((runPage) =>
-      buildRunsSequentially(dependencies, runPage.items, 0, []).andThen((runs) =>
-        buildAttemptsSequentially(dependencies, attempts, index + 1, [
-          ...accumulated,
-          {
-            identifier: attempt.identifier as string,
-            state: attempt.type,
-            createdAt: attemptCreatedAt,
-            analysisRuns: runs,
-          },
-        ]),
-      ),
+      traverseSequentially(runPage.items, (run) =>
+        buildRunHistory(dependencies, run.identifier, run.mode, run.status, run.createdAt),
+      ).map((analysisRuns) => ({
+        identifier: attempt.identifier as string,
+        state: attempt.type,
+        createdAt: attemptCreatedAt,
+        analysisRuns,
+      })),
     );
 };
 
-const buildSectionVersionsSequentially = (
+const buildSectionVersionHistory = (
   dependencies: ReviewPracticeHistoryDependencies,
-  sections: ReadonlyArray<import("../../domain/section").Section>,
-  index: number,
-  accumulated: SectionVersionHistoryOutput[],
-): ResultAsync<SectionVersionHistoryOutput[], DomainError> => {
-  if (index >= sections.length) return okAsync(accumulated);
-  const section = sections[index];
-  if (section.type !== "active") {
-    return buildSectionVersionsSequentially(dependencies, sections, index + 1, accumulated);
-  }
-
-  return dependencies.recordingAttemptRepository
+  section: import("../../domain/section").Section,
+): ResultAsync<SectionVersionHistoryOutput, DomainError> =>
+  dependencies.recordingAttemptRepository
     .search({
       type: "attemptsInSection",
       section: section.identifier,
@@ -195,20 +166,16 @@ const buildSectionVersionsSequentially = (
       sort: "createdAt_desc",
     })
     .andThen((attemptPage) =>
-      buildAttemptsSequentially(dependencies, attemptPage.items, 0, []).andThen((attempts) =>
-        buildSectionVersionsSequentially(dependencies, sections, index + 1, [
-          ...accumulated,
-          {
-            sectionIdentifier: section.identifier as string,
-            version: section.version as number,
-            bodyText: section.bodyText as string,
-            createdAt: section.createdAt.toISOString(),
-            recordingAttempts: attempts,
-          },
-        ]),
-      ),
+      traverseSequentially(attemptPage.items, (attempt) =>
+        buildAttemptHistory(dependencies, attempt),
+      ).map((recordingAttempts) => ({
+        sectionIdentifier: section.identifier as string,
+        version: section.version as number,
+        bodyText: section.bodyText as string,
+        createdAt: section.createdAt.toISOString(),
+        recordingAttempts,
+      })),
     );
-};
 
 // ---- Implementation ----
 
@@ -246,22 +213,23 @@ export const createReviewPracticeHistory =
             sort: "createdAt_desc",
           })
           .andThen((sectionPage) =>
-            buildSectionVersionsSequentially(dependencies, sectionPage.items, 0, []).map(
-              (sectionVersions) => ({
-                sectionSeriesGroups: [
-                  {
-                    sectionSeriesIdentifier: sectionSeries.identifier as string,
-                    title: sectionSeries.title as string,
-                    sectionVersions,
-                  },
-                ],
-                page: {
-                  offset: pagination.offset as number,
-                  limit: pagination.limit as number,
-                  total: sectionPage.total,
+            traverseSequentially(
+              sectionPage.items.filter((section) => section.type === "active"),
+              (section) => buildSectionVersionHistory(dependencies, section),
+            ).map((sectionVersions) => ({
+              sectionSeriesGroups: [
+                {
+                  sectionSeriesIdentifier: sectionSeries.identifier as string,
+                  title: sectionSeries.title as string,
+                  sectionVersions,
                 },
-              }),
-            ),
+              ],
+              page: {
+                offset: pagination.offset as number,
+                limit: pagination.limit as number,
+                total: sectionPage.total,
+              },
+            })),
           ),
       );
   };

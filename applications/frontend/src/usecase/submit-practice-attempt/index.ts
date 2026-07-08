@@ -1,4 +1,4 @@
-import { type ResultAsync, errAsync, okAsync } from "neverthrow";
+import { type ResultAsync, errAsync } from "neverthrow";
 import { z } from "zod";
 import { type DomainError, type NonEmptyList, validationFailed } from "../../domain/shared";
 import { createSectionIdentifier } from "../../domain/section";
@@ -38,6 +38,7 @@ import { type EntropyProvider } from "../port/entropy-provider";
 import { type Clock } from "../port/clock";
 import { type Logger } from "../port/logger";
 import { parseInput } from "../shared/validation";
+import { traverseSequentially } from "../shared/traverse";
 
 // ---- Constants ----
 
@@ -298,19 +299,15 @@ export const createSubmitPracticeAttempt =
                 );
               }
 
-              // 順次 persist
-              const persistJobs = (index: number): ResultAsync<void, DomainError> => {
-                if (index >= jobCreations.length) return okAsync(undefined);
-                return dependencies.analysisJobRepository
-                  .persist(jobCreations[index].analysisJob)
-                  .andThen(() => persistJobs(index + 1));
-              };
-
               return dependencies.recordingAttemptRepository
                 .persist(readyAttempt)
                 .andThen(() => dependencies.audioFileRepository.persist(storedAudioFile))
                 .andThen(() => dependencies.analysisRunRepository.persist(analysisRun))
-                .andThen(() => persistJobs(0))
+                .andThen(() =>
+                  traverseSequentially(jobCreations, (jobCreation) =>
+                    dependencies.analysisJobRepository.persist(jobCreation.analysisJob),
+                  ),
+                )
                 .map(() => {
                   dependencies.logger.info("submitPracticeAttempt: created", {
                     recordingAttemptIdentifier: recordingAttemptIdentifier as string,

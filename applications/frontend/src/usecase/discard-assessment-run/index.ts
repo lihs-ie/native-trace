@@ -1,4 +1,4 @@
-import { type ResultAsync, errAsync, okAsync } from "neverthrow";
+import { type ResultAsync, errAsync } from "neverthrow";
 import { z } from "zod";
 import { type DomainError, validationFailed } from "../../domain/shared";
 import { createAnalysisRunIdentifier } from "../../domain/analysis-run";
@@ -8,6 +8,7 @@ import { type TransactionManager } from "../port/transaction-manager";
 import { type Clock } from "../port/clock";
 import { type Logger } from "../port/logger";
 import { parseInput } from "../shared/validation";
+import { traverseSequentially } from "../shared/traverse";
 
 // ---- Input ----
 
@@ -66,32 +67,24 @@ export const createDiscardAssessmentRun =
                 analysisRun: analysisRunIdentifier,
               })
               .andThen((jobPage) => {
-                const persistJobs = (index: number): ResultAsync<void, DomainError> => {
-                  if (index >= jobPage.items.length) return okAsync(undefined);
-                  const job = jobPage.items[index];
-                  if (job.type === "queued" || job.type === "leased" || job.type === "running") {
-                    // 未完了ジョブを cancel
-                    const now = dependencies.clock.now();
-                    const { analysisJob: canceledJob } = {
-                      analysisJob: {
-                        type: "canceled" as const,
-                        identifier: job.identifier,
-                        analysisRun: job.analysisRun,
-                        engine: job.engine,
-                        engineConfigJson: job.engineConfigJson,
-                        canceledAt: now,
-                        queuedAt: job.queuedAt,
-                        createdAt: job.createdAt,
-                      },
-                    };
-                    return dependencies.analysisJobRepository
-                      .persist(canceledJob)
-                      .andThen(() => persistJobs(index + 1));
-                  }
-                  return persistJobs(index + 1);
-                };
+                // 未完了ジョブのみ cancel（state フィルタと job 構築は呼び出し側の責務）
+                const jobsToCancel = jobPage.items.filter(
+                  (job) => job.type === "queued" || job.type === "leased" || job.type === "running",
+                );
+                const canceledJobs = jobsToCancel.map((job) => ({
+                  type: "canceled" as const,
+                  identifier: job.identifier,
+                  analysisRun: job.analysisRun,
+                  engine: job.engine,
+                  engineConfigJson: job.engineConfigJson,
+                  canceledAt: dependencies.clock.now(),
+                  queuedAt: job.queuedAt,
+                  createdAt: job.createdAt,
+                }));
 
-                return persistJobs(0);
+                return traverseSequentially(canceledJobs, (canceledJob) =>
+                  dependencies.analysisJobRepository.persist(canceledJob),
+                ).map(() => undefined);
               }),
           )
           .map(() => {

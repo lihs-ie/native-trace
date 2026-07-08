@@ -1,4 +1,4 @@
-import { type ResultAsync, errAsync, okAsync } from "neverthrow";
+import { type ResultAsync, errAsync } from "neverthrow";
 import { z } from "zod";
 import { type DomainError, type NonEmptyList, validationFailed } from "../../domain/shared";
 import { createRecordingAttemptIdentifier } from "../../domain/recording-attempt";
@@ -22,6 +22,7 @@ import { type EntropyProvider } from "../port/entropy-provider";
 import { type Clock } from "../port/clock";
 import { type Logger } from "../port/logger";
 import { parseInput } from "../shared/validation";
+import { traverseSequentially } from "../shared/traverse";
 
 // ---- Input ----
 
@@ -132,16 +133,13 @@ export const createReassessPracticeAttempt =
             );
           }
 
-          const persistJobs = (index: number): ResultAsync<void, DomainError> => {
-            if (index >= jobCreations.length) return okAsync(undefined);
-            return dependencies.analysisJobRepository
-              .persist(jobCreations[index].analysisJob)
-              .andThen(() => persistJobs(index + 1));
-          };
-
           return dependencies.analysisRunRepository
             .persist(analysisRun)
-            .andThen(() => persistJobs(0))
+            .andThen(() =>
+              traverseSequentially(jobCreations, (jobCreation) =>
+                dependencies.analysisJobRepository.persist(jobCreation.analysisJob),
+              ),
+            )
             .map(() => {
               dependencies.logger.info("reassessPracticeAttempt: created", {
                 recordingAttemptIdentifier: recordingAttempt.identifier as string,

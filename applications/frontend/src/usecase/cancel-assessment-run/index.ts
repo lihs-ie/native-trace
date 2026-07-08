@@ -1,4 +1,4 @@
-import { type ResultAsync, errAsync, okAsync } from "neverthrow";
+import { type ResultAsync, errAsync } from "neverthrow";
 import { z } from "zod";
 import {
   type DomainError,
@@ -18,6 +18,7 @@ import { type TransactionManager } from "../port/transaction-manager";
 import { type Clock } from "../port/clock";
 import { type Logger } from "../port/logger";
 import { parseInput } from "../shared/validation";
+import { traverseSequentially } from "../shared/traverse";
 
 // ---- Input ----
 
@@ -59,13 +60,8 @@ export type CancelAssessmentRunDependencies = Readonly<{
 const persistCanceledJobs = (
   repository: AnalysisJobRepository,
   jobs: CanceledAnalysisJob[],
-  index: number,
-): ResultAsync<void, DomainError> => {
-  if (index >= jobs.length) return okAsync(undefined);
-  return repository
-    .persist(jobs[index])
-    .andThen(() => persistCanceledJobs(repository, jobs, index + 1));
-};
+): ResultAsync<void, DomainError> =>
+  traverseSequentially(jobs, (job) => repository.persist(job)).map(() => undefined);
 
 export const createCancelAssessmentRun =
   (dependencies: CancelAssessmentRunDependencies) =>
@@ -109,7 +105,7 @@ export const createCancelAssessmentRun =
 
             const canceledJobs = canceledEntries.map((e) => e.job);
 
-            return persistCanceledJobs(dependencies.analysisJobRepository, canceledJobs, 0).andThen(
+            return persistCanceledJobs(dependencies.analysisJobRepository, canceledJobs).andThen(
               () => {
                 // 全 Job を更新後の状態で再収集して deriveAnalysisRunStatus を再計算
                 const updatedJobs = allJobs.map((job) => {
