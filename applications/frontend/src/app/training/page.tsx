@@ -132,18 +132,6 @@ const formatNextPresentationDate = (isoString: string): string => {
 
 // ---- Component ----
 
-/**
- * 初期 HvptPhase を決める。
- *
- * SSR と初回ハイドレーションでは sessionStorage を参照できないため、決定論的に `loading` を返す。
- * lazy initializer 内で sessionStorage を読むと SSR (window 無し → no_weakness_profile) と
- * client (window 有り → loading) で初期描画が割れ hydration mismatch になるため、ここでは読まない。
- * 実際の phase (no_weakness_profile / session_active) は mount 後の初期化 useEffect で解決する。
- */
-function buildInitialHvptPhase(): HvptPhase {
-  return { type: "loading" };
-}
-
 function readCachedWeaknessProfileId(): string | null {
   try {
     return typeof window !== "undefined"
@@ -156,7 +144,12 @@ function readCachedWeaknessProfileId(): string | null {
 
 export default function TrainingPage() {
   // ---- セッション状態 ----
-  const [hvptPhase, setHvptPhase] = useState<HvptPhase>(buildInitialHvptPhase);
+  // 初期 HvptPhase は決定論的に `loading` を返す（SSR と初回ハイドレーションでは sessionStorage を
+  // 参照できないため）。lazy initializer 内で sessionStorage を読むと SSR (window 無し →
+  // no_weakness_profile) と client (window 有り → loading) で初期描画が割れ hydration mismatch に
+  // なるため、ここでは読まない。実際の phase (no_weakness_profile / session_active) は mount 後の
+  // 初期化 useEffect で解決する。
+  const [hvptPhase, setHvptPhase] = useState<HvptPhase>({ type: "loading" });
   const [weaknessProfileIdentifier] = useState<string | null>(readCachedWeaknessProfileId);
 
   // ---- Rail データ ----
@@ -1285,10 +1278,6 @@ export default function TrainingPage() {
                   className="speed btn btn--ghost btn--sm"
                   onClick={() => {
                     const result = shadowingPhase;
-                    const referenceBytes =
-                      shadowingChunksRef.current.length > 0
-                        ? null // 録音済みのお手本再生は現在非対応
-                        : null;
                     // お手本音声は result state に参照を保持しないためTTSから再取得する
                     // 簡易実装: speed ボタンで TTS を再取得してスロー再生
                     void (async () => {
@@ -1303,7 +1292,6 @@ export default function TrainingPage() {
                       await playShadowingAtSpeed(new Uint8Array(buf), rate);
                       setShadowingPhase({ ...result, playbackRate: rate });
                     })();
-                    void referenceBytes; // suppress unused warning
                   }}
                 >
                   {shadowingPhase.playbackRate === 1.0 ? "0.7x スロー再生" : "1.0x 通常再生"}

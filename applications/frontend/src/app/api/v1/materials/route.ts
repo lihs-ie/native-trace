@@ -24,8 +24,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   });
 
   if (!queryResult.success) {
-    const { domainErrorToResponse: toResp } = await import("../_shared/errors");
-    return toResp({
+    return domainErrorToResponse({
       type: "validationFailed",
       field: "query",
       reason: queryResult.error.errors.map((e) => e.message).join(", "),

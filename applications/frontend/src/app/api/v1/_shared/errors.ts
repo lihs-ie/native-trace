@@ -31,7 +31,9 @@ type DomainErrorMapping = {
   message: string;
 };
 
-const mapDomainError = (error: DomainError): DomainErrorMapping & { details?: ErrorEnvelope["error"]["details"] } => {
+const mapDomainError = (
+  error: DomainError,
+): DomainErrorMapping & { details?: ErrorEnvelope["error"]["details"] } => {
   switch (error.type) {
     case "validationFailed":
       return {
@@ -98,8 +100,4 @@ export const domainErrorToResponse = (error: DomainError): Response => {
     meta: { requestIdentifier: generateRequestIdentifier() },
   };
   return Response.json(envelope, { status: mapping.status });
-};
-
-export const domainErrorToStatus = (error: DomainError): number => {
-  return mapDomainError(error).status;
 };

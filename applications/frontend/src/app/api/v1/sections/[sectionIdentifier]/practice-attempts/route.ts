@@ -29,8 +29,8 @@ const analysisModeSchema = z.enum(["cloudOnly", "ossWorkerOnly", "comparison"]);
 
 // FormData フィールドから analysisMode を UseCase enum へ変換
 const toUseCaseAnalysisMode = (
-  mode: string,
-): "cloud_only" | "oss_worker_only" | "comparison" | null => {
+  mode: "cloudOnly" | "ossWorkerOnly" | "comparison",
+): "cloud_only" | "oss_worker_only" | "comparison" => {
   switch (mode) {
     case "cloudOnly":
       return "cloud_only";
@@ -38,8 +38,6 @@ const toUseCaseAnalysisMode = (
       return "oss_worker_only";
     case "comparison":
       return "comparison";
-    default:
-      return null;
   }
 };
 
@@ -100,13 +98,6 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
   }
 
   const useCaseAnalysisMode = toUseCaseAnalysisMode(analysisModeParseResult.data);
-  if (!useCaseAnalysisMode) {
-    return domainErrorToResponse({
-      type: "validationFailed",
-      field: "analysisMode",
-      reason: "analysisMode の変換に失敗しました",
-    });
-  }
 
   const recordedDurationMsRaw = formData.get("recordedDurationMs");
   const recordedDurationMs = recordedDurationMsRaw !== null ? Number(recordedDurationMsRaw) : NaN;
