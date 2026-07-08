@@ -7,12 +7,7 @@
  * Route Handler のみが import する。UseCase / Domain / ACL からは import しない。
  */
 
-import {
-  createConfig,
-  isClaudeCodeAvailable,
-  buildClaudeCodeChildEnv,
-  type AppConfig,
-} from "./infrastructure/config/index";
+import { createConfig, type AppConfig } from "./infrastructure/config/index";
 import { createDrizzleDatabase, type DrizzleDatabase } from "./infrastructure/drizzle/client";
 import { createDrizzleTransactionManager } from "./infrastructure/drizzle/transaction-manager";
 import { createDrizzleMaterialRepository } from "./infrastructure/drizzle/repositories/material-repository";
@@ -40,11 +35,7 @@ import { createStructuredLogger } from "./infrastructure/logger";
 import { createOpenAiPronunciationAssessmentAdaptor } from "./acl/pronunciation-assessment/openai/create-open-ai-pronunciation-assessment-adaptor";
 import { createOssWorkerPronunciationAssessmentAdaptor } from "./acl/pronunciation-assessment/oss-worker/create-oss-worker-pronunciation-assessment-adaptor";
 import { createPronunciationAssessmentEngineRegistry } from "./acl/pronunciation-assessment/registry/create-pronunciation-assessment-engine-registry";
-import { createRuleBasedImprovementMessageGenerator } from "./acl/improvement-message/rule-based/create-rule-based-improvement-message-generator";
-import { createLlmImprovementMessageGenerator } from "./acl/improvement-message/llm/create-llm-improvement-message-generator";
-import { createClaudeCodeNarrativeInvoker } from "./acl/improvement-message/llm/claude-code-narrative-invoker";
-import { createOllamaNarrativeInvoker } from "./acl/improvement-message/llm/ollama-narrative-invoker";
-import { createDrizzleLlmNarrativeCacheRepository } from "./infrastructure/drizzle/repositories/llm-narrative-cache-repository";
+import { buildImprovementMessageGenerator } from "./registry-improvement-message";
 
 import { createBrowsePracticeMaterials } from "./usecase/browse-practice-materials/index";
 import { createCancelAssessmentRun } from "./usecase/cancel-assessment-run/index";
@@ -366,59 +357,8 @@ const buildContainer = (): Container => {
   });
 
   // ACL: improvement message generator — M-LLM-16 provider branch (ADR-021 D6)
-  const fallbackGenerator = createRuleBasedImprovementMessageGenerator();
-
-  let improvementMessageGenerator: import("./usecase/port/improvement-message-generator").ImprovementMessageGenerator;
-
-  if (config.llmCoachingProvider === "rule-based") {
-    // Default path — unchanged behaviour; generateFeedbackLayersAsync stays undefined.
-    improvementMessageGenerator = fallbackGenerator;
-  } else if (
-    config.llmCoachingProvider === "claude-code" &&
-    !isClaudeCodeAvailable(config.claudeCodeExecutablePath)
-  ) {
-    // M-LLM-7 downgrade: claude executable not resolvable on PATH (covers Docker-without-claude).
-    // generateFeedbackLayersAsync remains undefined → pre-loop batch skipped → rule-based sync path.
-    console.warn(
-      JSON.stringify({
-        level: "warn",
-        message:
-          "LLM coaching provider is 'claude-code' but the claude executable is not available; downgrading to rule-based.",
-        claudeExecutablePath: config.claudeCodeExecutablePath,
-      }),
-    );
-    improvementMessageGenerator = fallbackGenerator;
-  } else {
-    // LLM path: build cache + invoker + LLM adaptor factory.
-    const narrativeCache = createDrizzleLlmNarrativeCacheRepository(database);
-
-    const invoker =
-      config.llmCoachingProvider === "claude-code"
-        ? createClaudeCodeNarrativeInvoker({
-            claudeExecutablePath: config.claudeCodeExecutablePath,
-            providerModel: config.claudeCodeModel,
-            timeoutMs: config.llmNarrativeTimeoutMilliseconds,
-            childEnv: buildClaudeCodeChildEnv(),
-          })
-        : createOllamaNarrativeInvoker({
-            ollamaEndpoint: config.ollamaEndpoint,
-            ollamaModel: config.ollamaModel,
-            timeoutMs: config.llmNarrativeTimeoutMilliseconds,
-          });
-
-    const providerModel =
-      config.llmCoachingProvider === "claude-code" ? config.claudeCodeModel : config.ollamaModel;
-
-    improvementMessageGenerator = createLlmImprovementMessageGenerator({
-      provider: config.llmCoachingProvider,
-      invoker,
-      cache: narrativeCache,
-      fallback: fallbackGenerator,
-      promptVersion: config.llmNarrativePromptVersion,
-      providerModel,
-      logger, // ADR-023 D3 (M-TMO-9): pass structured logger for fallback observability
-    });
-  }
+  // W45: provider 分岐は registry-improvement-message.ts へ純移動。
+  const improvementMessageGenerator = buildImprovementMessageGenerator(config, database, logger);
 
   // Shared deps bundle for convenience
   const sharedRepositories = {
