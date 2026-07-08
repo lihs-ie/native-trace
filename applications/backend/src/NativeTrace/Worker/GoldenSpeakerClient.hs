@@ -14,6 +14,7 @@ import Data.ByteString.Lazy qualified as LBS
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as TextEncoding
+import NativeTrace.Worker.HttpSupport (MultipartPart (..), buildMultipartBody, mimeTypeToExtension, readTimeoutSecondsEnv)
 import NativeTrace.Worker.Types (GoldenSpeakerConversionDto)
 import Network.HTTP.Client (
   Request (..),
@@ -29,7 +30,6 @@ import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Network.HTTP.Types (status200, status500)
 import Servant (Handler, ServerError (..), err502, err503, throwError)
 import System.Environment (lookupEnv)
-import Text.Read (readMaybe)
 
 -- | GOLDEN_SPEAKER_URL を読む。
 -- 未設定の場合は Nothing を返す（軟無効化判定用）。
@@ -37,16 +37,6 @@ resolveGoldenSpeakerUrl :: IO (Maybe Text)
 resolveGoldenSpeakerUrl = do
   maybeUrl <- lookupEnv "GOLDEN_SPEAKER_URL"
   pure (fmap Text.pack maybeUrl)
-
--- | GOLDEN_SPEAKER_TIMEOUT_SECONDS 環境変数を読む。未設定/不正時は 120 秒を返す。
--- golden RVC は CPU 推論（F0 変換 + retrieval index、初回 HF DL）で容易に 30s を超えるため、
--- http-client の default 30s に依存せず明示する（incident 2026-06-14-worker-http-client-default-30s-timeout）。
-resolveGoldenSpeakerTimeoutSeconds :: IO Int
-resolveGoldenSpeakerTimeoutSeconds = do
-  maybeRaw <- lookupEnv "GOLDEN_SPEAKER_TIMEOUT_SECONDS"
-  pure $ case maybeRaw >>= readMaybe of
-    Just n | n > 0 -> n
-    _ -> 120
 
 -- | golden サービスの POST /v1/convert を呼び出し GoldenSpeakerConversionDto を返す。
 -- GOLDEN_SPEAKER_URL が未設定の場合は 503 を返す（M-GRV-9 軟無効化）。
@@ -66,12 +56,29 @@ convertGoldenSpeaker learnerAudioBytes mimeType = do
           { errBody = "Golden speaker service is not configured. Set GOLDEN_SPEAKER_URL to enable."
           }
     Just baseUrl -> do
-      timeoutSeconds <- liftIO resolveGoldenSpeakerTimeoutSeconds
+      timeoutSeconds <- liftIO $ readTimeoutSecondsEnv "GOLDEN_SPEAKER_TIMEOUT_SECONDS"
       let goldenUrl = Text.unpack baseUrl <> "/v1/convert"
       manager <- liftIO $ newManager tlsManagerSettings
       initialRequest <- liftIO $ parseRequest goldenUrl
       let boundary = "native-trace-golden-boundary"
-      let requestBodyBytes = buildGoldenMultipartBody boundary mimeType learnerAudioBytes
+      let ext = mimeTypeToExtension mimeType
+      let metadataJson = "{\"mimeType\":\"" <> TextEncoding.encodeUtf8 mimeType <> "\"}"
+      let requestBodyBytes =
+            buildMultipartBody
+              boundary
+              [ MultipartPart
+                  { partName = "metadata",
+                    partFileName = Nothing,
+                    partContentType = Just "application/json; charset=utf-8",
+                    partBytes = metadataJson
+                  },
+                MultipartPart
+                  { partName = "learner_audio",
+                    partFileName = Just ("learner." <> ext),
+                    partContentType = Just mimeType,
+                    partBytes = learnerAudioBytes
+                  }
+              ]
       let contentTypeHeader =
             ( "Content-Type",
               "multipart/form-data; boundary=" <> TextEncoding.encodeUtf8 boundary
@@ -107,41 +114,3 @@ convertGoldenSpeaker learnerAudioBytes mimeType = do
                         TextEncoding.encodeUtf8 $
                           "unexpected golden speaker status: " <> Text.pack (show httpStatus)
                   }
-
--- | golden /v1/convert 用 multipart body を組み立てる。
--- golden サービスは learner_audio ファイル + metadata JSON（{ mimeType }）を受け取る。
-buildGoldenMultipartBody :: Text -> Text -> ByteString -> ByteString
-buildGoldenMultipartBody boundary mimeType learnerBytes =
-  let sep = TextEncoding.encodeUtf8 ("--" <> boundary)
-      crlf = "\r\n"
-      ext = mimeTypeToExtension mimeType
-      metadataJson = "{\"mimeType\":\"" <> TextEncoding.encodeUtf8 mimeType <> "\"}"
-      metaPart =
-        sep
-          <> crlf
-          <> "Content-Disposition: form-data; name=\"metadata\"\r\n"
-          <> "Content-Type: application/json; charset=utf-8\r\n"
-          <> crlf
-          <> metadataJson
-          <> crlf
-      learnerPart =
-        sep
-          <> crlf
-          <> TextEncoding.encodeUtf8 ("Content-Disposition: form-data; name=\"learner_audio\"; filename=\"learner." <> ext <> "\"\r\n")
-          <> TextEncoding.encodeUtf8 ("Content-Type: " <> mimeType <> "\r\n")
-          <> crlf
-          <> learnerBytes
-          <> crlf
-      closing = sep <> "--\r\n"
-   in metaPart <> learnerPart <> closing
-
--- | MIME タイプから拡張子を返す。未知の場合は "bin"。
-mimeTypeToExtension :: Text -> Text
-mimeTypeToExtension mime
-  | Text.isPrefixOf "audio/wav" mime = "wav"
-  | Text.isPrefixOf "audio/webm" mime = "webm"
-  | Text.isPrefixOf "audio/ogg" mime = "ogg"
-  | Text.isPrefixOf "audio/mpeg" mime = "mp3"
-  | Text.isPrefixOf "audio/mp4" mime = "m4a"
-  | Text.isPrefixOf "audio/flac" mime = "flac"
-  | otherwise = "bin"

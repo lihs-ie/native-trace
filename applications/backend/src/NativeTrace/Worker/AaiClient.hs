@@ -19,6 +19,7 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as TextEncoding
 import NativeTrace.Worker.AnalyzerClient (PhonemeGop (..))
+import NativeTrace.Worker.HttpSupport (MultipartPart (..), buildMultipartBody, mimeTypeToExtension, readTimeoutSecondsEnv)
 import Network.HTTP.Client (
   Request (..),
   RequestBody (..),
@@ -33,23 +34,12 @@ import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Network.HTTP.Types (status200)
 import Servant (Handler)
 import System.Environment (lookupEnv)
-import Text.Read (readMaybe)
 
 -- | AAI_URL 環境変数を読む。未設定の場合は Nothing（軟無効化判定用）。
 resolveAaiUrl :: IO (Maybe Text)
 resolveAaiUrl = do
   maybeUrl <- lookupEnv "AAI_URL"
   pure (fmap Text.pack maybeUrl)
-
--- | AAI_TIMEOUT_SECONDS 環境変数を読む。未設定/不正時は 120 秒を返す。
--- AAI 推論（EMA 座標計算）は CPU 推論で容易に 30s を超えるため、
--- http-client の default 30s に依存せず明示する（incident 2026-06-14-worker-http-client-default-30s-timeout）。
-resolveAaiTimeoutSeconds :: IO Int
-resolveAaiTimeoutSeconds = do
-  maybeRaw <- lookupEnv "AAI_TIMEOUT_SECONDS"
-  pure $ case maybeRaw >>= readMaybe of
-    Just n | n > 0 -> n
-    _ -> 120
 
 -- | AAI サービスの per-phoneme EMA 座標レスポンス（ワイヤー型）。
 -- 6 座標は発話内 z-score 正規化 → [-1,1] クランプ済み（D3-b）。
@@ -106,7 +96,7 @@ callAai learnerAudioBytes mimeType phonemeGops = do
   case maybeBaseUrl of
     Nothing -> pure Nothing
     Just baseUrl -> do
-      timeoutSeconds <- liftIO resolveAaiTimeoutSeconds
+      timeoutSeconds <- liftIO $ readTimeoutSecondsEnv "AAI_TIMEOUT_SECONDS"
       let aaiUrl = Text.unpack baseUrl <> "/v1/articulatory-inversion"
       result <- liftIO $ try (invokeAai aaiUrl timeoutSeconds learnerAudioBytes mimeType phonemeGops)
       case (result :: Either SomeException (Maybe [RawArticulatoryEstimate])) of
@@ -125,7 +115,32 @@ invokeAai aaiUrl timeoutSeconds learnerAudioBytes mimeType phonemeGops = do
   manager <- newManager tlsManagerSettings
   initialRequest <- parseRequest aaiUrl
   let boundary = "native-trace-aai-boundary"
-  let requestBodyBytes = buildAaiMultipartBody boundary mimeType learnerAudioBytes phonemeGops
+  let ext = mimeTypeToExtension mimeType
+  let boundaries = map toBoundaryEntry phonemeGops
+  let metadataValue =
+        LBS.toStrict $
+          Aeson.encode $
+            object
+              [ "mimeType" .= mimeType,
+                "sampleRate" .= (16000 :: Int),
+                "boundaries" .= boundaries
+              ]
+  let requestBodyBytes =
+        buildMultipartBody
+          boundary
+          [ MultipartPart
+              { partName = "metadata",
+                partFileName = Nothing,
+                partContentType = Just "application/json; charset=utf-8",
+                partBytes = metadataValue
+              },
+            MultipartPart
+              { partName = "learner_audio",
+                partFileName = Just ("learner." <> ext),
+                partContentType = Just mimeType,
+                partBytes = learnerAudioBytes
+              }
+          ]
   let contentTypeHeader =
         ( "Content-Type",
           "multipart/form-data; boundary=" <> TextEncoding.encodeUtf8 boundary
@@ -145,41 +160,6 @@ invokeAai aaiUrl timeoutSeconds learnerAudioBytes mimeType phonemeGops = do
       Left _ -> pure Nothing
     else pure Nothing
 
--- | AAI /v1/articulatory-inversion 用 multipart body を組み立てる。
--- learner_audio ファイルパート + metadata JSON パート（mimeType / sampleRate / boundaries）。
-buildAaiMultipartBody :: Text -> Text -> ByteString -> [PhonemeGop] -> ByteString
-buildAaiMultipartBody boundary mimeType learnerBytes phonemeGops =
-  let sep = TextEncoding.encodeUtf8 ("--" <> boundary)
-      crlf = "\r\n"
-      ext = mimeTypeToExtension mimeType
-      boundaries = map toBoundaryEntry phonemeGops
-      metadataValue =
-        LBS.toStrict $
-          Aeson.encode $
-            object
-              [ "mimeType" .= mimeType,
-                "sampleRate" .= (16000 :: Int),
-                "boundaries" .= boundaries
-              ]
-      metaPart =
-        sep
-          <> crlf
-          <> "Content-Disposition: form-data; name=\"metadata\"\r\n"
-          <> "Content-Type: application/json; charset=utf-8\r\n"
-          <> crlf
-          <> metadataValue
-          <> crlf
-      learnerPart =
-        sep
-          <> crlf
-          <> TextEncoding.encodeUtf8 ("Content-Disposition: form-data; name=\"learner_audio\"; filename=\"learner." <> ext <> "\"\r\n")
-          <> TextEncoding.encodeUtf8 ("Content-Type: " <> mimeType <> "\r\n")
-          <> crlf
-          <> learnerBytes
-          <> crlf
-      closing = sep <> "--\r\n"
-   in metaPart <> learnerPart <> closing
-
 -- | PhonemeGop から AAI metadata 境界エントリ JSON オブジェクトへ変換。
 toBoundaryEntry :: PhonemeGop -> Aeson.Value
 toBoundaryEntry phonemeGop =
@@ -188,14 +168,3 @@ toBoundaryEntry phonemeGop =
       "startMs" .= gopStartMs phonemeGop,
       "endMs" .= gopEndMs phonemeGop
     ]
-
--- | MIME タイプから拡張子を返す。未知の場合は "bin"。
-mimeTypeToExtension :: Text -> Text
-mimeTypeToExtension mime
-  | Text.isPrefixOf "audio/wav" mime = "wav"
-  | Text.isPrefixOf "audio/webm" mime = "webm"
-  | Text.isPrefixOf "audio/ogg" mime = "ogg"
-  | Text.isPrefixOf "audio/mpeg" mime = "mp3"
-  | Text.isPrefixOf "audio/mp4" mime = "m4a"
-  | Text.isPrefixOf "audio/flac" mime = "flac"
-  | otherwise = "bin"

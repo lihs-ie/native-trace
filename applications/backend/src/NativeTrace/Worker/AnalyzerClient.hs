@@ -29,6 +29,7 @@ import Data.ByteString.Lazy qualified as LBS
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as TextEncoding
+import NativeTrace.Worker.HttpSupport (MultipartPart (..), buildMultipartBody, mimeTypeToExtension, readTimeoutSecondsEnv)
 import NativeTrace.Worker.Types (PerSegmentLagEntry (..))
 import Network.HTTP.Client (
   Request (..),
@@ -44,7 +45,6 @@ import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Network.HTTP.Types (status200, status500)
 import Servant (Handler, ServerError (..), err502, throwError)
 import System.Environment (lookupEnv)
-import Text.Read (readMaybe)
 
 -- ---- レスポンス型 ----
 
@@ -458,8 +458,8 @@ analyzeAudio ::
   Int ->
   Handler AnalyzerResult
 analyzeAudio audioBytes mimeType referenceText targetAccent durationMilliseconds = do
-  baseUrl <- resolveAnalyzerUrl
-  timeoutSeconds <- resolveAnalyzerTimeoutSeconds
+  baseUrl <- liftIO resolveAnalyzerUrl
+  timeoutSeconds <- liftIO $ readTimeoutSecondsEnv "ANALYZER_TIMEOUT_SECONDS"
   let analyzerUrl = Text.unpack baseUrl <> "/v1/analyze"
   manager <- liftIO $ newManager tlsManagerSettings
   initialRequest <- liftIO $ parseRequest analyzerUrl
@@ -472,7 +472,23 @@ analyzeAudio audioBytes mimeType referenceText targetAccent durationMilliseconds
               analyzerMimeType = mimeType,
               analyzerDurationMilliseconds = durationMilliseconds
             }
-  let requestBody = buildMultipartBody boundary mimeType audioBytes (LBS.toStrict metadataJson)
+  let ext = mimeTypeToExtension mimeType
+  let requestBody =
+        buildMultipartBody
+          boundary
+          [ MultipartPart
+              { partName = "metadata",
+                partFileName = Nothing,
+                partContentType = Just "application/json; charset=utf-8",
+                partBytes = LBS.toStrict metadataJson
+              },
+            MultipartPart
+              { partName = "audio",
+                partFileName = Just ("audio." <> ext),
+                partContentType = Just mimeType,
+                partBytes = audioBytes
+              }
+          ]
   let contentTypeHeader =
         ( "Content-Type",
           "multipart/form-data; boundary=" <> TextEncoding.encodeUtf8 boundary
@@ -525,8 +541,8 @@ analyzeShadowingLag ::
   Int ->
   Handler AnalyzerShadowingLagResult
 analyzeShadowingLag referenceAudioBytes learnerAudioBytes mimeType referenceText durationMilliseconds = do
-  baseUrl <- resolveAnalyzerUrl
-  timeoutSeconds <- resolveAnalyzerTimeoutSeconds
+  baseUrl <- liftIO resolveAnalyzerUrl
+  timeoutSeconds <- liftIO $ readTimeoutSecondsEnv "ANALYZER_TIMEOUT_SECONDS"
   let analyzerUrl = Text.unpack baseUrl <> "/v1/shadowing-lag"
   manager <- liftIO $ newManager tlsManagerSettings
   initialRequest <- liftIO $ parseRequest analyzerUrl
@@ -538,13 +554,29 @@ analyzeShadowingLag referenceAudioBytes learnerAudioBytes mimeType referenceText
               shadowingMetadataMimeType = mimeType,
               shadowingMetadataDurationMilliseconds = durationMilliseconds
             }
+  let ext = mimeTypeToExtension mimeType
   let requestBody =
-        buildShadowingMultipartBody
+        buildMultipartBody
           boundary
-          mimeType
-          referenceAudioBytes
-          learnerAudioBytes
-          (LBS.toStrict metadataJson)
+          [ MultipartPart
+              { partName = "metadata",
+                partFileName = Nothing,
+                partContentType = Just "application/json; charset=utf-8",
+                partBytes = LBS.toStrict metadataJson
+              },
+            MultipartPart
+              { partName = "reference_audio",
+                partFileName = Just ("reference." <> ext),
+                partContentType = Just mimeType,
+                partBytes = referenceAudioBytes
+              },
+            MultipartPart
+              { partName = "learner_audio",
+                partFileName = Just ("learner." <> ext),
+                partContentType = Just mimeType,
+                partBytes = learnerAudioBytes
+              }
+          ]
   let contentTypeHeader =
         ( "Content-Type",
           "multipart/form-data; boundary=" <> TextEncoding.encodeUtf8 boundary
@@ -582,89 +614,7 @@ analyzeShadowingLag referenceAudioBytes learnerAudioBytes mimeType referenceText
               }
 
 -- | ANALYZER_URL 環境変数を読む。未設定時は http://localhost:8788 を返す。
-resolveAnalyzerUrl :: Handler Text
+resolveAnalyzerUrl :: IO Text
 resolveAnalyzerUrl = do
-  maybeUrl <- liftIO $ lookupEnv "ANALYZER_URL"
+  maybeUrl <- lookupEnv "ANALYZER_URL"
   pure $ maybe "http://localhost:8788" Text.pack maybeUrl
-
--- | ANALYZER_TIMEOUT_SECONDS 環境変数を読む。未設定/不正時は 120 秒を返す。
-resolveAnalyzerTimeoutSeconds :: Handler Int
-resolveAnalyzerTimeoutSeconds = do
-  maybeRaw <- liftIO $ lookupEnv "ANALYZER_TIMEOUT_SECONDS"
-  pure $ case maybeRaw >>= readMaybe of
-    Just n | n > 0 -> n
-    _ -> 120
-
--- ---- multipart body 組み立て ----
-
--- | multipart/form-data ボディを組み立てる（audio + metadata）。
--- mimeType を audio パートの Content-Type と filename 拡張子に反映する。
-buildMultipartBody :: Text -> Text -> ByteString -> ByteString -> ByteString
-buildMultipartBody boundary mimeType audioBytes metadataBytes =
-  let sep = TextEncoding.encodeUtf8 ("--" <> boundary)
-      crlf = "\r\n"
-      ext = mimeTypeToExtension mimeType
-      metaPart =
-        sep
-          <> crlf
-          <> "Content-Disposition: form-data; name=\"metadata\"\r\n"
-          <> "Content-Type: application/json; charset=utf-8\r\n"
-          <> crlf
-          <> metadataBytes
-          <> crlf
-      audioPart =
-        sep
-          <> crlf
-          <> TextEncoding.encodeUtf8 ("Content-Disposition: form-data; name=\"audio\"; filename=\"audio." <> ext <> "\"\r\n")
-          <> TextEncoding.encodeUtf8 ("Content-Type: " <> mimeType <> "\r\n")
-          <> crlf
-          <> audioBytes
-          <> crlf
-      closing = sep <> "--\r\n"
-   in metaPart <> audioPart <> closing
-
--- | shadowing-lag 用 multipart body を組み立てる（reference_audio + learner_audio + metadata）。
--- analyzer の POST /v1/shadowing-lag が期待するフィールド名に合わせる（ADR-013）。
-buildShadowingMultipartBody ::
-  Text -> Text -> ByteString -> ByteString -> ByteString -> ByteString
-buildShadowingMultipartBody boundary mimeType referenceBytes learnerBytes metadataBytes =
-  let sep = TextEncoding.encodeUtf8 ("--" <> boundary)
-      crlf = "\r\n"
-      ext = mimeTypeToExtension mimeType
-      metaPart =
-        sep
-          <> crlf
-          <> "Content-Disposition: form-data; name=\"metadata\"\r\n"
-          <> "Content-Type: application/json; charset=utf-8\r\n"
-          <> crlf
-          <> metadataBytes
-          <> crlf
-      referencePart =
-        sep
-          <> crlf
-          <> TextEncoding.encodeUtf8 ("Content-Disposition: form-data; name=\"reference_audio\"; filename=\"reference." <> ext <> "\"\r\n")
-          <> TextEncoding.encodeUtf8 ("Content-Type: " <> mimeType <> "\r\n")
-          <> crlf
-          <> referenceBytes
-          <> crlf
-      learnerPart =
-        sep
-          <> crlf
-          <> TextEncoding.encodeUtf8 ("Content-Disposition: form-data; name=\"learner_audio\"; filename=\"learner." <> ext <> "\"\r\n")
-          <> TextEncoding.encodeUtf8 ("Content-Type: " <> mimeType <> "\r\n")
-          <> crlf
-          <> learnerBytes
-          <> crlf
-      closing = sep <> "--\r\n"
-   in metaPart <> referencePart <> learnerPart <> closing
-
--- | MIME タイプから拡張子を返す。未知の場合は "bin"。
-mimeTypeToExtension :: Text -> Text
-mimeTypeToExtension mime
-  | Text.isPrefixOf "audio/wav" mime = "wav"
-  | Text.isPrefixOf "audio/webm" mime = "webm"
-  | Text.isPrefixOf "audio/ogg" mime = "ogg"
-  | Text.isPrefixOf "audio/mpeg" mime = "mp3"
-  | Text.isPrefixOf "audio/mp4" mime = "m4a"
-  | Text.isPrefixOf "audio/flac" mime = "flac"
-  | otherwise = "bin"
