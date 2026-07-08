@@ -24,11 +24,11 @@ import NativeTrace.Worker.Scoring (
   attachArticulatoryEstimates,
   audioQualityMinSnrDb,
   buildAssessmentScores,
-  checkAudioQuality,
   classifyGopDelta,
   deriveAcousticEvidence,
   generateFindingsFromGop,
   hillenbrandGaVowelFormants,
+  isLowQualityAudio,
   scoreFromGop,
   severityToScoreImpact,
   tokenize,
@@ -91,7 +91,7 @@ fixtureAnalyzerResult =
       analyzedWeakFormRealizations = [],
       analyzedSyllables = [],
       analyzedPhonemeAcoustics = [],
-      analyzerSpeakerSex = "unknown",
+      analyzedSpeakerSex = "unknown",
       analyzedEstimatedSnrDb = 30.0
     }
 
@@ -136,7 +136,7 @@ bodyText = "Hello world"
 rangeTuples :: [AssessmentFinding] -> [(Int, Int)]
 rangeTuples = map ((\r -> (startChar r, endChar r)) . findingTextRange)
 
--- | checkAudioQuality テスト用のデフォルトパラメータ（全基準クリア）。
+-- | isLowQualityAudio テスト用のデフォルトパラメータ（全基準クリア）。
 defaultQualityParams :: (Double, Int, Int, Int, [Double])
 defaultQualityParams = (-20.0, 10000, 9, 10, [-5.0])
 
@@ -227,45 +227,45 @@ spec = do
       let attached = attachArticulatoryEstimates [rawEstimate] fixtureFindings
       all (isNothing . findingArticulatoryEstimate) attached `shouldBe` True
 
-  describe "checkAudioQuality" $ do
+  describe "isLowQualityAudio" $ do
     it "returns False (normal) when all criteria are satisfied" $ do
       let (meanDbfs, durationMs, detected, expected, gopValues) = defaultQualityParams
-      checkAudioQuality meanDbfs durationMs detected expected gopValues defaultEstimatedSnrDb `shouldBe` False
+      isLowQualityAudio meanDbfs durationMs detected expected gopValues defaultEstimatedSnrDb `shouldBe` False
 
     it "returns True (low_quality) when meanDbfs is below threshold (-36.0, speech-active RMS, ADR-015)" $ do
       let (_, durationMs, detected, expected, gopValues) = defaultQualityParams
-      checkAudioQuality (-37.0) durationMs detected expected gopValues defaultEstimatedSnrDb `shouldBe` True
+      isLowQualityAudio (-37.0) durationMs detected expected gopValues defaultEstimatedSnrDb `shouldBe` True
 
     it "returns True (low_quality) when recording duration is below threshold (1000ms)" $ do
       let (meanDbfs, _, detected, expected, gopValues) = defaultQualityParams
-      checkAudioQuality meanDbfs 500 detected expected gopValues defaultEstimatedSnrDb `shouldBe` True
+      isLowQualityAudio meanDbfs 500 detected expected gopValues defaultEstimatedSnrDb `shouldBe` True
 
     it "returns False (normal) when recording duration is sufficient despite pausey recording (10s)" $ do
       let (meanDbfs, _, detected, expected, gopValues) = defaultQualityParams
-      checkAudioQuality meanDbfs 10000 detected expected gopValues defaultEstimatedSnrDb `shouldBe` False
+      isLowQualityAudio meanDbfs 10000 detected expected gopValues defaultEstimatedSnrDb `shouldBe` False
 
     it "returns True (low_quality) when phoneme detection rate is below threshold (0.25)" $ do
       let (meanDbfs, durationMs, _, _, gopValues) = defaultQualityParams
-      checkAudioQuality meanDbfs durationMs 2 10 gopValues defaultEstimatedSnrDb `shouldBe` True
+      isLowQualityAudio meanDbfs durationMs 2 10 gopValues defaultEstimatedSnrDb `shouldBe` True
 
     it "returns True (low_quality) when median GOP is below threshold (-18.0)" $ do
       let (meanDbfs, durationMs, detected, expected, _) = defaultQualityParams
-      checkAudioQuality meanDbfs durationMs detected expected [-20.0, -19.0] defaultEstimatedSnrDb `shouldBe` True
+      isLowQualityAudio meanDbfs durationMs detected expected [-20.0, -19.0] defaultEstimatedSnrDb `shouldBe` True
 
     it "returns True (low_quality) when gopValues list is empty" $ do
       let (meanDbfs, durationMs, detected, expected, _) = defaultQualityParams
-      checkAudioQuality meanDbfs durationMs detected expected [] defaultEstimatedSnrDb `shouldBe` True
+      isLowQualityAudio meanDbfs durationMs detected expected [] defaultEstimatedSnrDb `shouldBe` True
 
     -- ADR-032 D4補正-2 (2026-06-20): SNR gate DISABLED — 13-clip validation proved the fixed WADA
     -- floor is not clip-portable (false-rejects 6/13 clean clips). These tests now assert the
     -- DISABLED state: low estimatedSnrDb does NOT cause low_quality on its own.
     it "returns False (gate disabled) when estimatedSnrDb is below old threshold (WADA floor 0.5, ADR-032 SNR gate DISABLED)" $ do
       let (meanDbfs, durationMs, detected, expected, gopValues) = defaultQualityParams
-      checkAudioQuality meanDbfs durationMs detected expected gopValues (-1.0) `shouldBe` False
+      isLowQualityAudio meanDbfs durationMs detected expected gopValues (-1.0) `shouldBe` False
 
     it "returns False (gate disabled) when estimatedSnrDb is exactly at old threshold (WADA floor 0.5, ADR-032 SNR gate DISABLED)" $ do
       let (meanDbfs, durationMs, detected, expected, gopValues) = defaultQualityParams
-      checkAudioQuality meanDbfs durationMs detected expected gopValues audioQualityMinSnrDb `shouldBe` False
+      isLowQualityAudio meanDbfs durationMs detected expected gopValues audioQualityMinSnrDb `shouldBe` False
 
   describe "generateFindingsFromGop" $ do
     it "produces at least one finding for non-empty body text with low GOP phonemes" $ do

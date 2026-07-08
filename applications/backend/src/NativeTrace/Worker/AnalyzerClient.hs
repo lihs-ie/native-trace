@@ -329,7 +329,7 @@ data AnalyzerResult = AnalyzerResult
     -- | 音素ごとの音響計測値リスト（ADR-018 D1）。analyzer が返さない場合は空リスト。
     analyzedPhonemeAcoustics :: [PhonemeAcoustic],
     -- | 話者性別（ADR-018 D2）。analyzer が返さない場合は "unknown"。値は "M" / "F" / "unknown"。
-    analyzerSpeakerSex :: Text,
+    analyzedSpeakerSex :: Text,
     -- | 推定 SNR（dB）。python-analyzer が計測して付与する（ADR-032 M-SNR-3）。
     -- 旧 analyzer イメージとのローリング再ビルド期間中は 0.0 にフォールバックする。
     analyzedEstimatedSnrDb :: Double
@@ -372,7 +372,7 @@ instance FromJSON AnalyzerResult where
           analyzedWeakFormRealizations = weakFormRealizations,
           analyzedSyllables = syllables,
           analyzedPhonemeAcoustics = phonemeAcoustics,
-          analyzerSpeakerSex = speakerSex,
+          analyzedSpeakerSex = speakerSex,
           analyzedEstimatedSnrDb = estimatedSnrDb
         }
 
@@ -408,7 +408,7 @@ instance FromJSON AnalyzerShadowingLagResult where
 -- | analyzer に渡す metadata JSON。
 -- S-APD-5: speakerSex は wire に乗せていない（AnalyzerMetadata に speakerSex フィールドを追加していない）。
 -- M/F 活性化は UI 収集動線 + FE request-mapper + ここの Haskell 側 metadata 3 層の product 判断。
--- 現状は AnalyzerResult.analyzerSpeakerSex が analyzeAudio 応答の speakerSex echo から取得されるが、
+-- 現状は AnalyzerResult.analyzedSpeakerSex が analyzeAudio 応答の speakerSex echo から取得されるが、
 -- リクエスト metadata 側には speakerSex を送っていないため analyzer 側は常に default "unknown" を返す。
 data AnalyzerMetadata = AnalyzerMetadata
   { analyzerReferenceText :: Text,

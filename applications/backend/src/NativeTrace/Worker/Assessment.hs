@@ -25,8 +25,8 @@ import NativeTrace.Worker.Scoring (
   buildFocusSounds,
   buildPerPhonemeHeatmap,
   buildProsodyOutput,
-  checkAudioQuality,
   generateFindingsFromGop,
+  isLowQualityAudio,
   scoreFromGop,
   tokenize,
  )
@@ -168,7 +168,7 @@ buildAssessmentResponseFromGop request analyzerResult =
       detectedPhonemeCount = length (Text.words (analyzedDetectedIpa analyzerResult))
       expectedPhonemeCount = length (Text.words (analyzedExpectedIpa analyzerResult))
       gopValues = map gopValue (analyzedPerPhonemeGop analyzerResult)
-   in if checkAudioQuality meanDbfs durationMs detectedPhonemeCount expectedPhonemeCount gopValues estimatedSnrDb
+   in if isLowQualityAudio meanDbfs durationMs detectedPhonemeCount expectedPhonemeCount gopValues estimatedSnrDb
         then buildLowQualityResponse request analyzerResult
         else buildNormalResponse request analyzerResult
 

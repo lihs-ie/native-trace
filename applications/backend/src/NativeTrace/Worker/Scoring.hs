@@ -10,7 +10,7 @@ module NativeTrace.Worker.Scoring (
   buildAssessmentScores,
   tokenize,
   -- 音質ガード
-  checkAudioQuality,
+  isLowQualityAudio,
   audioQualityMinMeanDbfs,
   audioQualityMinRecordingDurationMs,
   audioQualityMinPhonemeDetectionRate,
@@ -334,9 +334,9 @@ audioQualityMinSnrDb :: Double
 audioQualityMinSnrDb = 0.5
 
 -- | 音声品質チェック。低品質なら True を返す。
-checkAudioQuality ::
+isLowQualityAudio ::
   Double -> Int -> Int -> Int -> [Double] -> Double -> Bool
-checkAudioQuality meanDbfs durationMilliseconds detectedPhonemeCount expectedPhonemeCount gopValues _estimatedSnrDb =
+isLowQualityAudio meanDbfs durationMilliseconds detectedPhonemeCount expectedPhonemeCount gopValues _estimatedSnrDb =
   -- NOTE: SNR gate DISABLED 2026-06-20 (ADR-032 D4補正-2) — 13-clip validation proved the fixed
   -- WADA floor is not clip-portable (false-rejects 6/13 clean clips). The || estimatedSnrDb <
   -- audioQualityMinSnrDb clause has been removed. estimatedSnrDb plumbing is retained for the
@@ -691,7 +691,7 @@ generateFindingsFromGop sectionBodyText analyzerResult =
               expectedIpa
               detectedIpa
               (analyzedPhonemeAcoustics analyzerResult)
-              (analyzerSpeakerSex analyzerResult)
+              (analyzedSpeakerSex analyzerResult)
           )
           allPhonemeGops
       -- epenthesis findings（M-115）
