@@ -15,18 +15,9 @@ if [ ! -f "$manifest" ]; then
   echo "verify-wiring: $manifest not found (skip)"; exit 0
 fi
 
-base="${BASE_REF:-$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@refs/remotes/@@')}"
-[ -z "${base:-}" ] && base="origin/main"
-if git rev-parse --verify "$base" >/dev/null 2>&1; then
-  changed="$(git diff --name-only --diff-filter=ACMRT "$base"...HEAD)"
-else
-  changed="$(git diff --name-only --diff-filter=ACMRT HEAD~1 2>/dev/null || true)"
-fi
-if [ -z "$changed" ]; then
-  # no committed diff vs base — fall back to working-tree changes so uncommitted/untracked
-  # work is not vacuously passed (CI always has a committed diff, so this branch is CI-inert).
-  changed="$(git diff --name-only --diff-filter=ACMRT HEAD 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null)"
-fi
+source "$repository_root/scripts/lib/changed-files.sh"
+
+changed="$(collect_changed_files "" empty)"
 [ -z "$changed" ] && { echo "verify-wiring: no changes (OK)"; exit 0; }
 
 waivers=""
