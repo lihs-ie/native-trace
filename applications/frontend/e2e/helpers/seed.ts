@@ -14,15 +14,11 @@ import Database from "better-sqlite3";
 import path from "path";
 
 // ---- DB path ----
-// Next.js は CWD=applications/frontend で起動するため DB_PATH もその相対パス
-// import.meta.dirname は Node 24 / ESM で利用可能 (--experimental-strip-types + Playwright TS transform 両対応)
-const _dirname =
-  typeof __dirname !== "undefined"
-    ? __dirname
-    : // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore — Node 24 ESM の import.meta.dirname
-      ((import.meta as { dirname?: string }).dirname ?? process.cwd());
-const DB_PATH = process.env.DB_PATH ?? path.resolve(_dirname, "../../data/native-trace.db");
+// Playwright / vitest / fullcycle driver (node --experimental-strip-types) はいずれも
+// CWD=applications/frontend で起動するため、CWD 基準で解決する (override: DB_PATH)。
+// 注: このファイルに import.meta を書いてはならない。Node 24 の native TS require が
+// ESM 判定し、Playwright の CJS transform 出力が ESM スコープで実行されて load 不能になる。
+const DB_PATH = process.env.DB_PATH ?? path.resolve(process.cwd(), "data/native-trace.db");
 
 // ---- Seed identifiers (固定 ULID-like; E2E run ごとに一意にしたい場合は randomUUID に替えてよい) ----
 export type SeedIdentifiers = {
