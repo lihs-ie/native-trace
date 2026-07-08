@@ -163,84 +163,103 @@ buildAssessmentResponseFromGop ::
   AssessmentResponse
 buildAssessmentResponseFromGop request analyzerResult =
   let durationMs = audioDurationMilliseconds (requestAudio request)
-      bodyText = sectionBodyText request
       meanDbfs = analyzedMeanDbfs analyzerResult
       estimatedSnrDb = analyzedEstimatedSnrDb analyzerResult
       detectedPhonemeCount = length (Text.words (analyzedDetectedIpa analyzerResult))
       expectedPhonemeCount = length (Text.words (analyzedExpectedIpa analyzerResult))
       gopValues = map gopValue (analyzedPerPhonemeGop analyzerResult)
-      meta =
-        WorkerResponseMetadata
-          { responseWorkerVersion = "0.2.0",
-            responseModelVersion = "model-v2",
-            responseRuleSetVersion = "rules-v2",
-            responseScoringRubricVersion = "rubric-v2"
-          }
-      lowQualitySummary =
-        AssessmentSummary
-          { messageJa = "音声品質が不十分です。録音環境を改善して再度お試しください。",
-            messageEn = Just "Audio quality is insufficient. Please improve your recording environment and try again."
-          }
-      zeroScores =
-        AssessmentScores
-          { overall = 0,
-            accuracy = 0,
-            nativeLikeness = 0,
-            pronunciation = 0,
-            connectedSpeech = 0,
-            prosody = 0,
-            intelligibility = 0,
-            cefrOverall = CefrScore {cefrScoreValue = 0, cefrBand = "A2"},
-            cefrSegmental = CefrScore {cefrScoreValue = 0, cefrBand = "A2"},
-            cefrProsodic = CefrScore {cefrScoreValue = 0, cefrBand = "A2"}
-          }
    in if checkAudioQuality meanDbfs durationMs detectedPhonemeCount expectedPhonemeCount gopValues estimatedSnrDb
-        then
-          AssessmentResponse
-            { responseAssessmentSchemaVersion = assessmentSchemaVersion request,
-              responseTokenizerVersion = tokenizerVersion request,
-              responseStatus = AssessmentStatusLowQuality,
-              responseScores = zeroScores,
-              responseSummary = lowQualitySummary,
-              responseFindings = [],
-              responseSegments = [],
-              responseMetadata = meta,
-              responsePerPhonemeGop = [],
-              responseFocusSounds = [],
-              responseProsody = Nothing,
-              responseDiagnosticPerPhonemeGop = map toDiagnosticEntry (analyzedPerPhonemeGop analyzerResult)
-            }
-        else
-          let scoringOutput = scoreFromGop analyzerResult (tokenize bodyText)
-              segments = buildSegments request (outputTokens scoringOutput) durationMs
-              findings = generateFindingsFromGop bodyText analyzerResult
-              scores = buildAssessmentScores scoringOutput findings
-              focusSounds = buildFocusSounds findings
-              prosodyOutput = buildProsodyOutput analyzerResult
-              dynamicSummaryJa = buildDynamicSummary focusSounds scoringOutput
-              summary =
-                AssessmentSummary
-                  { messageJa = dynamicSummaryJa,
-                    messageEn = Nothing
-                  }
-              phonemeGops = analyzedPerPhonemeGop analyzerResult
-              tokens = outputTokens scoringOutput
-              tokenCount = length tokens
-              heatmap = buildPerPhonemeHeatmap phonemeGops tokens tokenCount
-           in AssessmentResponse
-                { responseAssessmentSchemaVersion = assessmentSchemaVersion request,
-                  responseTokenizerVersion = tokenizerVersion request,
-                  responseStatus = AssessmentStatusNormal,
-                  responseScores = scores,
-                  responseSummary = summary,
-                  responseFindings = findings,
-                  responseSegments = segments,
-                  responseMetadata = meta,
-                  responsePerPhonemeGop = heatmap,
-                  responseFocusSounds = focusSounds,
-                  responseProsody = prosodyOutput,
-                  responseDiagnosticPerPhonemeGop = map toDiagnosticEntry (analyzedPerPhonemeGop analyzerResult)
-                }
+        then buildLowQualityResponse request analyzerResult
+        else buildNormalResponse request analyzerResult
+
+-- | 両応答（low_quality / normal）で共有する worker メタデータ。
+sharedResponseMetadata :: WorkerResponseMetadata
+sharedResponseMetadata =
+  WorkerResponseMetadata
+    { responseWorkerVersion = "0.2.0",
+      responseModelVersion = "model-v2",
+      responseRuleSetVersion = "rules-v2",
+      responseScoringRubricVersion = "rubric-v2"
+    }
+
+-- | 両応答（low_quality / normal）で共有する diagnostic per-phoneme GOP マッピング。
+buildDiagnosticEntries :: AnalyzerResult -> [DiagnosticPhonemeGopEntry]
+buildDiagnosticEntries analyzerResult = map toDiagnosticEntry (analyzedPerPhonemeGop analyzerResult)
+
+-- | low_quality 応答（M-CRL-16 / ADR-022 D17）。スコアは全ゼロ、findings / segments /
+-- perPhonemeGop は空のまま、diagnosticPerPhonemeGop のみ充足する。
+buildLowQualityResponse :: AssessmentRequest -> AnalyzerResult -> AssessmentResponse
+buildLowQualityResponse request analyzerResult =
+  AssessmentResponse
+    { responseAssessmentSchemaVersion = assessmentSchemaVersion request,
+      responseTokenizerVersion = tokenizerVersion request,
+      responseStatus = AssessmentStatusLowQuality,
+      responseScores = zeroScores,
+      responseSummary = lowQualitySummary,
+      responseFindings = [],
+      responseSegments = [],
+      responseMetadata = sharedResponseMetadata,
+      responsePerPhonemeGop = [],
+      responseFocusSounds = [],
+      responseProsody = Nothing,
+      responseDiagnosticPerPhonemeGop = buildDiagnosticEntries analyzerResult
+    }
+ where
+  lowQualitySummary =
+    AssessmentSummary
+      { messageJa = "音声品質が不十分です。録音環境を改善して再度お試しください。",
+        messageEn = Just "Audio quality is insufficient. Please improve your recording environment and try again."
+      }
+  zeroScores =
+    AssessmentScores
+      { overall = 0,
+        accuracy = 0,
+        nativeLikeness = 0,
+        pronunciation = 0,
+        connectedSpeech = 0,
+        prosody = 0,
+        intelligibility = 0,
+        cefrOverall = CefrScore {cefrScoreValue = 0, cefrBand = "A2"},
+        cefrSegmental = CefrScore {cefrScoreValue = 0, cefrBand = "A2"},
+        cefrProsodic = CefrScore {cefrScoreValue = 0, cefrBand = "A2"}
+      }
+
+-- | 通常応答。スコアリングパイプライン（build* 7 連）で全フィールドを構築する。
+buildNormalResponse :: AssessmentRequest -> AnalyzerResult -> AssessmentResponse
+buildNormalResponse request analyzerResult =
+  AssessmentResponse
+    { responseAssessmentSchemaVersion = assessmentSchemaVersion request,
+      responseTokenizerVersion = tokenizerVersion request,
+      responseStatus = AssessmentStatusNormal,
+      responseScores = scores,
+      responseSummary = summary,
+      responseFindings = findings,
+      responseSegments = segments,
+      responseMetadata = sharedResponseMetadata,
+      responsePerPhonemeGop = heatmap,
+      responseFocusSounds = focusSounds,
+      responseProsody = prosodyOutput,
+      responseDiagnosticPerPhonemeGop = buildDiagnosticEntries analyzerResult
+    }
+ where
+  durationMs = audioDurationMilliseconds (requestAudio request)
+  bodyText = sectionBodyText request
+  scoringOutput = scoreFromGop analyzerResult (tokenize bodyText)
+  segments = buildSegments request (outputTokens scoringOutput) durationMs
+  findings = generateFindingsFromGop bodyText analyzerResult
+  scores = buildAssessmentScores scoringOutput findings
+  focusSounds = buildFocusSounds findings
+  prosodyOutput = buildProsodyOutput analyzerResult
+  dynamicSummaryJa = buildDynamicSummary focusSounds scoringOutput
+  summary =
+    AssessmentSummary
+      { messageJa = dynamicSummaryJa,
+        messageEn = Nothing
+      }
+  phonemeGops = analyzedPerPhonemeGop analyzerResult
+  tokens = outputTokens scoringOutput
+  tokenCount = length tokens
+  heatmap = buildPerPhonemeHeatmap phonemeGops tokens tokenCount
 
 -- | PhonemeGop から DiagnosticPhonemeGopEntry への変換。
 toDiagnosticEntry :: PhonemeGop -> DiagnosticPhonemeGopEntry
