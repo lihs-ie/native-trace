@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# KIT_VERSION: 1.3.0
 # agent-policy: 本番パスへの test double 混入を検出する。
 # - ファイル名 (mock/stub/fake/dummy/spy.<ext>)
 # - mocking library の import / 呼び出し (jest.mock, vi.mock, sinon, gomock, testify/mock,
@@ -20,6 +21,11 @@ else
     changed="$(git diff --name-only --diff-filter=ACMRT "$base"...HEAD)"
   else
     changed="$(git diff --name-only --diff-filter=ACMRT HEAD~1 2>/dev/null || git ls-files)"
+  fi
+  if [ -z "$changed" ]; then
+    # no committed diff vs base — fall back to working-tree changes so uncommitted/untracked
+    # work is not vacuously passed (CI always has a committed diff, so this branch is CI-inert).
+    changed="$(git diff --name-only --diff-filter=ACMRT HEAD 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null)"
   fi
 fi
 
@@ -61,11 +67,7 @@ while IFS= read -r f; do
     *Mock.hs|*Stub.hs|*Fake.hs|*Dummy.hs|*mock.go|*stub.go|*fake.go|*mock.py|*stub.py|*fake.py|*mock.php|*stub.php)
       name_hits="${name_hits}${f}"$'\n' ;;
   esac
-  # Note: [^a-zA-Z]patch\( targets unittest.mock.patch() but must not match
-  # Next.js App Router HTTP method handlers (export async function PATCH(...)).
-  # We filter out lines containing "function PATCH" before checking.
-  if grep -Ei '[^a-zA-Z]patch\(' "$f" 2>/dev/null | grep -viE 'function\s+PATCH\s*\(' | grep -q . 2>/dev/null \
-    || grep -nEi 'jest\.mock\(|vi\.mock\(|\bsinon\b|gomock|testify/mock|\bmockery\b|unittest\.mock|\bMockito\b|\bmockk\b|createMock|jest\.fn\(\)\.mock' "$f" >/dev/null 2>&1; then
+  if grep -nEi 'jest\.mock\(|vi\.mock\(|\bsinon\b|gomock|testify/mock|\bmockery\b|unittest\.mock|[^a-zA-Z]patch\(|\bMockito\b|\bmockk\b|createMock|jest\.fn\(\)\.mock' "$f" >/dev/null 2>&1; then
     content_hits="${content_hits}${f}: mocking-library usage"$'\n'
   fi
   # Haskell: 非 test の src/app に test double 識別子・モジュール
