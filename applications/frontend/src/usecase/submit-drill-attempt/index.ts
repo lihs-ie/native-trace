@@ -317,10 +317,7 @@ export const createSubmitDrillAttempt =
             const targetEvaluation = evaluateTargetPhonemes(targetFindings, contrastValue);
 
             // 4. 産出成否を決定論判定する
-            const { verdict, reasonJa } = determineVerdict(
-              targetFindings,
-              input.scoringConfig,
-            );
+            const { verdict, reasonJa } = determineVerdict(targetFindings, input.scoringConfig);
 
             // 5. HvptTrial として記録する（産出ドリル trial は DD-203 集約を再利用）
             const trialIdentifierRaw = dependencies.entropyProvider.generateUlid();
@@ -347,9 +344,7 @@ export const createSubmitDrillAttempt =
               String(trainingSession.contrast),
             ) as PhonemeContrast;
             if (!contrast) {
-              return errAsync(
-                validationFailed("contrast", "対立文字列が不正です"),
-              );
+              return errAsync(validationFailed("contrast", "対立文字列が不正です"));
             }
 
             // correctLabel: 期待する産出語（正解）
@@ -398,5 +393,3 @@ export const createSubmitDrillAttempt =
           });
       });
   };
-
-export type SubmitDrillAttemptExecutor = ReturnType<typeof createSubmitDrillAttempt>;

@@ -14,12 +14,6 @@ export type SectionToken = Readonly<{
 export const TOKENIZER_VERSION = "v1";
 
 /**
- * 短縮形パターン。優先して1トークンとして保持する。
- * 代表的な英語短縮形（アポストロフィを含む）。
- */
-const CONTRACTION_PATTERN = /[a-zA-Z]+'[a-zA-Z]+/;
-
-/**
  * 単語の開始位置から1トークンを読み取る。
  * 短縮形を優先し、それ以外はアルファベット・数字・ハイフン連続で1語とする。
  */
@@ -30,14 +24,24 @@ const readWordToken = (text: string, startChar: number): string => {
     if (/[a-zA-Z0-9]/.test(char)) {
       end++;
       // アポストロフィの後にアルファベットが続く場合（短縮形）
-      if (end < text.length && text[end] === "'" && end + 1 < text.length && /[a-zA-Z]/.test(text[end + 1])) {
+      if (
+        end < text.length &&
+        text[end] === "'" &&
+        end + 1 < text.length &&
+        /[a-zA-Z]/.test(text[end + 1])
+      ) {
         end++; // アポストロフィ
         while (end < text.length && /[a-zA-Z]/.test(text[end])) {
           end++;
         }
       }
       // ハイフン連結語（e.g. well-known）
-      if (end < text.length && text[end] === "-" && end + 1 < text.length && /[a-zA-Z]/.test(text[end + 1])) {
+      if (
+        end < text.length &&
+        text[end] === "-" &&
+        end + 1 < text.length &&
+        /[a-zA-Z]/.test(text[end + 1])
+      ) {
         // ハイフンは語内扱いしない（別トークンにする）ため break
         break;
       }
@@ -97,6 +101,3 @@ export const tokenizeSectionBody = (bodyText: string): ReadonlyArray<SectionToke
 
   return tokens;
 };
-
-// 短縮形パターンの型確認用（未使用変数エラー回避）
-void CONTRACTION_PATTERN;

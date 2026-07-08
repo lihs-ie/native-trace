@@ -84,8 +84,6 @@ const submitPracticeAttemptSchema = z.object({
   analysisMode: z.enum(["cloud_only", "oss_worker_only", "comparison"]),
 });
 
-export type BrowserInfoInput = z.infer<typeof browserInfoInputSchema>;
-export type AudioSourceInput = z.infer<typeof audioSourceInputSchema>;
 export type SubmitPracticeAttemptInput = z.infer<typeof submitPracticeAttemptSchema>;
 
 // ---- Output ----

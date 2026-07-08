@@ -3,18 +3,6 @@ import { type DomainError } from "../../domain/shared";
 import { type AssessmentResultIdentifier } from "../../domain/assessment-result";
 
 /**
- * Finding 却下レコード（DB-009: finding_dismissals の読み取り表現）
- */
-export type FindingDismissal = Readonly<{
-  identifier: string;
-  assessmentResult: AssessmentResultIdentifier;
-  findingIdentifier: string;
-  dismissedAt: number;
-  reason: string | null;
-  undoneAt: number | null;
-}>;
-
-/**
  * 却下の記録に必要な入力
  */
 export type RecordDismissalInput = Readonly<{

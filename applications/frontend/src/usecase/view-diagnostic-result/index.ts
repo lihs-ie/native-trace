@@ -131,5 +131,3 @@ export const createViewDiagnosticResult =
         });
     });
   };
-
-export type ViewDiagnosticResultExecutor = ReturnType<typeof createViewDiagnosticResult>;

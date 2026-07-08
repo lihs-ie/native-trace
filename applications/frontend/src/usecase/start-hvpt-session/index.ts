@@ -268,5 +268,3 @@ export const createStartHvptSession =
           });
       });
   };
-
-export type StartHvptSessionExecutor = ReturnType<typeof createStartHvptSession>;

@@ -24,7 +24,10 @@ import {
   createCumulativeTrainingMinutes,
   captureProgressSnapshot,
 } from "../../domain/training";
-import { type AssessmentResult, type AssessmentResultIdentifier } from "../../domain/assessment-result";
+import {
+  type AssessmentResult,
+  type AssessmentResultIdentifier,
+} from "../../domain/assessment-result";
 import { type SectionIdentifier } from "../../domain/section";
 import { type ProgressSnapshotRepository } from "../port/progress-snapshot-repository";
 import { type EntropyProvider } from "../port/entropy-provider";
@@ -65,12 +68,17 @@ export type CaptureProgressSnapshotDependencies = Readonly<{
 
 export const createCaptureProgressSnapshot =
   (dependencies: CaptureProgressSnapshotDependencies) =>
-  (input: CaptureProgressSnapshotInput): ResultAsync<CaptureProgressSnapshotOutput, DomainError> => {
+  (
+    input: CaptureProgressSnapshotInput,
+  ): ResultAsync<CaptureProgressSnapshotOutput, DomainError> => {
     const snapshotIdentifierRaw = dependencies.entropyProvider.generateUlid();
     const snapshotIdentifier = createProgressSnapshotIdentifier(snapshotIdentifierRaw);
     if (!snapshotIdentifier) {
       return errAsync(
-        validationFailed("progressSnapshotIdentifier", "ProgressSnapshot 識別子の生成に失敗しました"),
+        validationFailed(
+          "progressSnapshotIdentifier",
+          "ProgressSnapshot 識別子の生成に失敗しました",
+        ),
       );
     }
 
@@ -111,7 +119,8 @@ export const createCaptureProgressSnapshot =
       return errAsync(cumulativeResult.error);
     }
 
-    const sourceAssessmentIdentifier = input.assessmentResult.identifier as AssessmentResultIdentifier;
+    const sourceAssessmentIdentifier = input.assessmentResult
+      .identifier as AssessmentResultIdentifier;
 
     const captureResult = captureProgressSnapshot({
       identifier: snapshotIdentifier,
@@ -131,11 +140,7 @@ export const createCaptureProgressSnapshot =
 
     const { progressSnapshot } = captureResult.value;
 
-    return dependencies.progressSnapshotRepository
-      .save(progressSnapshot)
-      .map(() => ({
-        progressSnapshotIdentifier: String(progressSnapshot.identifier),
-      }));
+    return dependencies.progressSnapshotRepository.save(progressSnapshot).map(() => ({
+      progressSnapshotIdentifier: String(progressSnapshot.identifier),
+    }));
   };
-
-export type CaptureProgressSnapshotExecutor = ReturnType<typeof createCaptureProgressSnapshot>;

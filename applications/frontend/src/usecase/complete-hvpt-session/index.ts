@@ -303,5 +303,3 @@ export const createCompleteHvptSession =
           });
       });
   };
-
-export type CompleteHvptSessionExecutor = ReturnType<typeof createCompleteHvptSession>;

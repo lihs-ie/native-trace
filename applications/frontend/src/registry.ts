@@ -460,7 +460,6 @@ const buildContainer = (): Container => {
     discardAssessmentRun: createDiscardAssessmentRun({
       analysisRunRepository,
       analysisJobRepository,
-      assessmentResultRepository,
       transactionManager,
       clock,
       logger,

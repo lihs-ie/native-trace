@@ -105,10 +105,7 @@ export const createSubmitHvptTrial =
     }
 
     // correctLabel / response を ResponseLabel に変換する
-    const correctLabelResult = createResponseLabel(
-      input.correctLabelType,
-      input.correctLabelValue,
-    );
+    const correctLabelResult = createResponseLabel(input.correctLabelType, input.correctLabelValue);
     if (correctLabelResult.isErr()) {
       return errAsync(correctLabelResult.error);
     }
@@ -141,9 +138,7 @@ export const createSubmitHvptTrial =
           );
         }
 
-        const contrast = createPhonemeContrast(
-          String(trainingSession.contrast),
-        ) as PhonemeContrast;
+        const contrast = createPhonemeContrast(String(trainingSession.contrast)) as PhonemeContrast;
         if (!contrast) {
           return errAsync(validationFailed("contrast", "訓練セッションの対立文字列が不正です"));
         }
@@ -192,5 +187,3 @@ export const createSubmitHvptTrial =
         );
       });
   };
-
-export type SubmitHvptTrialExecutor = ReturnType<typeof createSubmitHvptTrial>;

@@ -82,5 +82,3 @@ export const createStartDiagnosticSession =
       .persist(diagnosticSession)
       .map(() => ({ diagnosticSession }));
   };
-
-export type StartDiagnosticSessionExecutor = ReturnType<typeof createStartDiagnosticSession>;

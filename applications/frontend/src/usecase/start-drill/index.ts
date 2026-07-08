@@ -157,16 +157,12 @@ export const createStartDrill =
           startedAt: now,
         };
 
-        return dependencies.trainingSessionRepository
-          .persist(trainingSession)
-          .andThen(() =>
-            okAsync({
-              trainingSession,
-              drillContent: capturedDrillContent,
-              contrast: capturedDrillContent.contrast,
-            }),
-          );
+        return dependencies.trainingSessionRepository.persist(trainingSession).andThen(() =>
+          okAsync({
+            trainingSession,
+            drillContent: capturedDrillContent,
+            contrast: capturedDrillContent.contrast,
+          }),
+        );
       });
   };
-
-export type StartDrillExecutor = ReturnType<typeof createStartDrill>;

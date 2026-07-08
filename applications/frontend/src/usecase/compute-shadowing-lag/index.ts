@@ -168,5 +168,3 @@ export const createComputeShadowingLag =
         );
       });
   };
-
-export type ComputeShadowingLagExecutor = ReturnType<typeof createComputeShadowingLag>;

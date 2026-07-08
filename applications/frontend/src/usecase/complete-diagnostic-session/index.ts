@@ -461,5 +461,3 @@ export const createCompleteDiagnosticSession =
         });
     });
   };
-
-export type CompleteDiagnosticSessionExecutor = ReturnType<typeof createCompleteDiagnosticSession>;
