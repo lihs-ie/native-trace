@@ -1,16 +1,10 @@
 // NonEmptyList
 export type NonEmptyList<T> = readonly [T, ...T[]];
 
-export const createNonEmptyList = <T>(
-  items: readonly T[],
-): NonEmptyList<T> | null => {
+export const createNonEmptyList = <T>(items: readonly T[]): NonEmptyList<T> | null => {
   if (items.length === 0) return null;
   return items as NonEmptyList<T>;
 };
-
-export const nonEmptyListHead = <T>(list: NonEmptyList<T>): T => list[0];
-export const nonEmptyListToArray = <T>(list: NonEmptyList<T>): readonly T[] =>
-  list;
 
 // Result / DomainError（neverthrow の Result を使う）
 export type { Result, ResultAsync } from "neverthrow";
@@ -67,19 +61,13 @@ export type DomainError =
   | AssessmentSchemaInvalidError;
 
 // 共通ヘルパー
-export const validationFailed = (
-  field: string,
-  reason: string,
-): ValidationFailedError => ({
+export const validationFailed = (field: string, reason: string): ValidationFailedError => ({
   type: "validationFailed",
   field,
   reason,
 });
 
-export const notFound = (
-  resource: string,
-  identifier: string,
-): NotFoundError => ({
+export const notFound = (resource: string, identifier: string): NotFoundError => ({
   type: "notFound",
   resource,
   identifier,

@@ -83,22 +83,6 @@ export type AudioRange = Readonly<{
   endMilliseconds: number;
 }>;
 
-export const createTextRange = (start: number, end: number): Result<TextRange, DomainError> => {
-  if (start >= end || start < 0)
-    return err(
-      validationFailed("textRange", "textRangeのstartはendより小さく0以上である必要があります"),
-    );
-  return ok({ startOffset: start, endOffset: end });
-};
-
-export const createAudioRange = (start: number, end: number): Result<AudioRange, DomainError> => {
-  if (start >= end || start < 0)
-    return err(
-      validationFailed("audioRange", "audioRangeのstartはendより小さく0以上である必要があります"),
-    );
-  return ok({ startMilliseconds: start, endMilliseconds: end });
-};
-
 export type PronunciationEvidence = Readonly<{
   text: string | null;
   ipa: string | null;

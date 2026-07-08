@@ -5,10 +5,7 @@ import { type AudioFileIdentifier } from "./audio-file";
 declare const __brand: unique symbol;
 type Brand<T, B> = T & { readonly [__brand]: B };
 
-export type RecordingAttemptIdentifier = Brand<
-  string,
-  "RecordingAttemptIdentifier"
->;
+export type RecordingAttemptIdentifier = Brand<string, "RecordingAttemptIdentifier">;
 export type RecordingDuration = Brand<number, "RecordingDuration">;
 export type OriginalFileName = Brand<string, "OriginalFileName">;
 export type RecordingFailureReason = Brand<string, "RecordingFailureReason">;
@@ -18,19 +15,14 @@ export const createRecordingAttemptIdentifier = (
 ): RecordingAttemptIdentifier | null =>
   value.trim().length > 0 ? (value as RecordingAttemptIdentifier) : null;
 
-export const createRecordingDuration = (
-  milliseconds: number,
-): RecordingDuration | null =>
+export const createRecordingDuration = (milliseconds: number): RecordingDuration | null =>
   milliseconds > 0 ? (milliseconds as RecordingDuration) : null;
 
-export const createOriginalFileName = (
-  value: string,
-): OriginalFileName | null =>
+export const createOriginalFileName = (value: string): OriginalFileName | null =>
   value.trim().length > 0 ? (value as OriginalFileName) : null;
 
-export const createRecordingFailureReason = (
-  value: string,
-): RecordingFailureReason => value as RecordingFailureReason;
+export const createRecordingFailureReason = (value: string): RecordingFailureReason =>
+  value as RecordingFailureReason;
 
 export type BrowserInfo = Readonly<{
   browserName: string;
@@ -184,37 +176,6 @@ export const markRecordingAttemptReady = (
         recordingAttempt,
         audioFile,
         occurredAt: new Date(),
-      },
-    ],
-  };
-};
-
-export type MarkRecordingAttemptFailedOutput = Readonly<{
-  recordingAttempt: FailedRecordingAttempt;
-  events: NonEmptyList<RecordingAttemptFailed>;
-}>;
-
-export const markRecordingAttemptFailed = (
-  savingAttempt: SavingRecordingAttempt,
-  failureReason: RecordingFailureReason,
-  now: Date,
-): MarkRecordingAttemptFailedOutput => {
-  const recordingAttempt: FailedRecordingAttempt = {
-    type: "failed",
-    identifier: savingAttempt.identifier,
-    section: savingAttempt.section,
-    inputKind: savingAttempt.inputKind,
-    failedAt: now,
-    failureReason,
-  };
-  return {
-    recordingAttempt,
-    events: [
-      {
-        type: "recordingAttemptFailed",
-        recordingAttempt,
-        failureReason,
-        occurredAt: now,
       },
     ],
   };

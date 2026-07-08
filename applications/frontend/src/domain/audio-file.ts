@@ -8,9 +8,7 @@ export type AudioFileIdentifier = Brand<string, "AudioFileIdentifier">;
 export type AudioMimeType = Brand<string, "AudioMimeType">;
 export type StorageKey = Brand<string, "StorageKey">;
 
-export const createAudioFileIdentifier = (
-  value: string,
-): AudioFileIdentifier | null =>
+export const createAudioFileIdentifier = (value: string): AudioFileIdentifier | null =>
   value.trim().length > 0 ? (value as AudioFileIdentifier) : null;
 
 const ALLOWED_MIME_TYPES = [
@@ -22,9 +20,7 @@ const ALLOWED_MIME_TYPES = [
 ] as const;
 
 export const createAudioMimeType = (value: string): AudioMimeType | null =>
-  (ALLOWED_MIME_TYPES as readonly string[]).includes(value)
-    ? (value as AudioMimeType)
-    : null;
+  (ALLOWED_MIME_TYPES as readonly string[]).includes(value) ? (value as AudioMimeType) : null;
 
 export const createStorageKey = (value: string): StorageKey | null =>
   value.trim().length > 0 ? (value as StorageKey) : null;
@@ -81,19 +77,6 @@ export type AudioFileDeletionRequested = Readonly<{
 export type AudioFileDeleted = Readonly<{
   type: "audioFileDeleted";
   audioFile: DeletedAudioFile;
-  occurredAt: Date;
-}>;
-
-export type AudioFileDeletionFailed = Readonly<{
-  type: "audioFileDeletionFailed";
-  audioFile: DeleteFailedAudioFile;
-  occurredAt: Date;
-}>;
-
-export type AudioFileStored = Readonly<{
-  type: "audioFileStored";
-  audioFile: StoredAudioFile;
-  recordingAttempt: RecordingAttemptIdentifier;
   occurredAt: Date;
 }>;
 

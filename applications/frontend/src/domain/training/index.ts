@@ -701,14 +701,6 @@ export type TrainingSession =
 
 // ---- TrainingSession domain events (DD-284/285/286) ----
 
-export type TrainingSessionStarted = Readonly<{
-  type: "trainingSessionStarted";
-  trainingSession: InProgressTrainingSession;
-  kind: TrainingKind;
-  contrast: PhonemeContrast;
-  occurredAt: Date;
-}>;
-
 export type TrainingSessionCompleted = Readonly<{
   type: "trainingSessionCompleted";
   trainingSession: CompletedTrainingSession;
@@ -717,31 +709,11 @@ export type TrainingSessionCompleted = Readonly<{
   occurredAt: Date;
 }>;
 
-export type TrainingSessionAborted = Readonly<{
-  type: "trainingSessionAborted";
-  trainingSession: AbortedTrainingSession;
-  occurredAt: Date;
-}>;
-
-// ---- StartTrainingSessionOutput ----
-
-export type StartTrainingSessionOutput = Readonly<{
-  session: InProgressTrainingSession;
-  events: NonEmptyList<TrainingSessionStarted>;
-}>;
-
 // ---- CompleteTrainingSessionOutput (DD-264) ----
 
 export type CompleteTrainingSessionOutput = Readonly<{
   session: CompletedTrainingSession;
   events: NonEmptyList<TrainingSessionCompleted>;
-}>;
-
-// ---- AbortTrainingSessionOutput ----
-
-export type AbortTrainingSessionOutput = Readonly<{
-  session: AbortedTrainingSession;
-  events: NonEmptyList<TrainingSessionAborted>;
 }>;
 
 // ---- SpacingSchedulerConfig — config 由来の確定値 (DD-293 / ADR-011) ----
@@ -993,16 +965,6 @@ export type SpacingSchedule = Readonly<{
   nextPresentationAt: Date;
   recentAccuracy: Accuracy0To1 | null;
   updatedAt: Date;
-}>;
-
-// ---- SpacingSchedule domain event (DD-288) ----
-
-export type SpacingScheduleAdvanced = Readonly<{
-  type: "spacingScheduleAdvanced";
-  spacingSchedule: SpacingSchedule;
-  state: SpacingState;
-  nextPresentationAt: Date;
-  occurredAt: Date;
 }>;
 
 /**
