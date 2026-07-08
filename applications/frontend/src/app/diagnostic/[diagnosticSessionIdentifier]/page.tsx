@@ -28,15 +28,7 @@ import { diagnosticSessionKey } from "@/lib/session-storage-keys";
 import { detectBrowserInfo } from "@/lib/browser-environment";
 import { formatMinutesSeconds } from "@/lib/format-time";
 import { PHENOMENON_LABELS } from "@/lib/phenomenon";
-import {
-  accumulateLowDurationMs,
-  applyPeakHold,
-  computeRmsLevel,
-  LOW_VOLUME_DISPLAY_THRESHOLD,
-  PEAK_HOLD_RELEASE_RATE_PER_MS,
-  rmsLevelToDisplayPercentage,
-  SUSTAINED_LOW_MS,
-} from "@/components/workspace/volume-meter";
+import { useRecordingWithVolumeMeter } from "@/components/workspace/use-recording-with-volume-meter";
 
 // ---- 録音状態 ----
 type RecordingState = "idle" | "recording" | "analyzing" | "done" | "failed";
@@ -147,22 +139,9 @@ export default function DiagnosticSessionPage({ params }: PageProps) {
   const [currentPromptIndex, setCurrentPromptIndex] = useState(0);
   const [promptResults, setPromptResults] = useState<PromptResult[]>([]);
   const [recordingState, setRecordingState] = useState<RecordingState>("idle");
-  const [recSeconds, setRecSeconds] = useState(0);
-  const [volumeLevel, setVolumeLevel] = useState(0);
-  // D4: debounced label state — true only after SUSTAINED_LOW_MS of continuous sub-threshold level
-  const [isLowVolume, setIsLowVolume] = useState(false);
   const [completing, setCompleting] = useState(false);
 
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
   const startedAtRef = useRef<number>(0);
-  const recTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
-  const previousVolumeLevelRef = useRef<number>(0);
-  const lastMeterTimestampRef = useRef<number>(0);
-  // D4: accumulated sub-threshold duration for label debounce
-  const lowDurationRef = useRef<number>(0);
 
   // 完了済みセッションを結果ページへリダイレクト（非同期 API 確認）
   useEffect(() => {
@@ -176,36 +155,6 @@ export default function DiagnosticSessionPage({ params }: PageProps) {
         // セッション確認失敗は無視（sessionStorage のデータで続行）
       });
   }, [diagnosticSessionIdentifier, router]);
-
-  // AudioContext cleanup
-  useEffect(() => {
-    return () => {
-      if (animationFrameRef.current !== null) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-      if (audioContextRef.current !== null) {
-        void audioContextRef.current.close();
-      }
-    };
-  }, []);
-
-  const cleanupAudioContext = useCallback(() => {
-    if (animationFrameRef.current !== null) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
-    if (audioContextRef.current !== null) {
-      void audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
-    // WARN-2: reset peak-hold state so a second recording does not inherit a stale held peak.
-    previousVolumeLevelRef.current = 0;
-    lastMeterTimestampRef.current = 0;
-    setVolumeLevel(0);
-    // D4: reset label debounce state so a second recording starts with label off.
-    lowDurationRef.current = 0;
-    setIsLowVolume(false);
-  }, []);
 
   // workspace API をポーリングして AssessmentResult 識別子を取得
   const pollWorkspaceForAssessmentResult = useCallback(
@@ -281,89 +230,41 @@ export default function DiagnosticSessionPage({ params }: PageProps) {
     [diagnosticSessionIdentifier, pollWorkspaceForAssessmentResult],
   );
 
-  const startRecording = useCallback(async () => {
-    setRecordError(null);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          autoGainControl: false,
-          noiseSuppression: false,
-          echoCancellation: false,
-        },
-      });
-
-      const audioContext = new AudioContext();
-      audioContextRef.current = audioContext;
-      const analyserNode = audioContext.createAnalyser();
-      analyserNode.fftSize = 512;
-      const mediaStreamSource = audioContext.createMediaStreamSource(stream);
-      mediaStreamSource.connect(analyserNode);
-
-      const timeDomainBuffer = new Uint8Array(analyserNode.fftSize);
-      const updateVolumeMeter = (timestamp: DOMHighResTimeStamp) => {
-        analyserNode.getByteTimeDomainData(timeDomainBuffer);
-        const rmsLevel = computeRmsLevel(timeDomainBuffer);
-        const rawPercent = rmsLevelToDisplayPercentage(rmsLevel);
-        const dtMs =
-          lastMeterTimestampRef.current > 0 ? timestamp - lastMeterTimestampRef.current : 0;
-        lastMeterTimestampRef.current = timestamp;
-        const releaseAmount = PEAK_HOLD_RELEASE_RATE_PER_MS * dtMs;
-        const smoothed = applyPeakHold(rawPercent, previousVolumeLevelRef.current, releaseAmount);
-        previousVolumeLevelRef.current = smoothed;
-        setVolumeLevel(smoothed);
-        // D4: label debounce — accumulate sub-threshold duration; fire label only when sustained.
-        lowDurationRef.current = accumulateLowDurationMs(
-          lowDurationRef.current,
-          smoothed,
-          LOW_VOLUME_DISPLAY_THRESHOLD,
-          dtMs,
-        );
-        setIsLowVolume(lowDurationRef.current >= SUSTAINED_LOW_MS);
-        animationFrameRef.current = requestAnimationFrame(updateVolumeMeter);
-      };
-      animationFrameRef.current = requestAnimationFrame(updateVolumeMeter);
-
-      const recorder = new MediaRecorder(stream);
-      chunksRef.current = [];
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) chunksRef.current.push(event.data);
-      };
-
+  // W35: getUserMedia 制約・AnalyserNode・peak-hold ループ・タイマー・cleanup は
+  // use-recording-with-volume-meter.ts に一本化（sections ページと共有）。
+  // currentPrompt を束ねた 2 引数 submitRecording 呼び出しと、その guard
+  // （currentPrompt が無ければ何もしない）はページ側に残す。元実装は録音開始前に
+  // guard していたが、.rec-btn は currentPrompt 存在時にしか描画されない
+  // （下の `{currentPrompt && (...)}` 参照）ため実質到達しない分岐であり、
+  // onStop 側で再評価しても観測可能な挙動は変わらない。
+  const {
+    recSeconds,
+    volumeLevel,
+    isLowVolume,
+    startRecording: startRecordingWithVolumeMeter,
+    stopRecording: stopRecordingWithVolumeMeter,
+  } = useRecordingWithVolumeMeter({
+    onStart: (startedAt) => {
+      startedAtRef.current = startedAt;
+      setRecordingState("recording");
+    },
+    onStop: (blob) => {
       const currentPrompt = diagnosticSession?.promptSet.prompts[currentPromptIndex];
       if (!currentPrompt) return;
+      void submitRecording(blob, currentPrompt);
+    },
+    onError: (message) => setRecordError(message),
+  });
 
-      recorder.onstop = () => {
-        stream.getTracks().forEach((track) => track.stop());
-        cleanupAudioContext();
-        const audioBlob = new Blob(chunksRef.current, {
-          type: recorder.mimeType || "audio/webm",
-        });
-        void submitRecording(audioBlob, currentPrompt);
-      };
-
-      startedAtRef.current = nowMs();
-      setRecSeconds(0);
-      mediaRecorderRef.current = recorder;
-      recorder.start();
-      setRecordingState("recording");
-
-      recTimerRef.current = setInterval(() => {
-        setRecSeconds((seconds) => seconds + 1);
-      }, 1000);
-    } catch {
-      cleanupAudioContext();
-      setRecordError("マイクへのアクセスに失敗しました。ブラウザの権限を確認してください。");
-    }
-  }, [diagnosticSession, currentPromptIndex, submitRecording, cleanupAudioContext]);
+  const startRecording = useCallback(async () => {
+    setRecordError(null);
+    await startRecordingWithVolumeMeter();
+  }, [startRecordingWithVolumeMeter]);
 
   const stopRecording = useCallback(() => {
-    if (recTimerRef.current) {
-      clearInterval(recTimerRef.current);
-      recTimerRef.current = null;
-    }
-    mediaRecorderRef.current?.stop();
+    stopRecordingWithVolumeMeter();
     setRecordingState("idle");
-  }, []);
+  }, [stopRecordingWithVolumeMeter]);
 
   const advanceToNextPrompt = useCallback(() => {
     if (!diagnosticSession) return;
