@@ -13,6 +13,7 @@ import logging
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 
 from python_analyzer.domain.audio import AudioInput
+from python_analyzer.infrastructure.dtw_lag import DtwLagComputer
 from python_analyzer.infrastructure.espeak_g2p import EspeakG2P
 from python_analyzer.infrastructure.prosody_analyzer import ProsodyAnalyzer
 from python_analyzer.infrastructure.speech_rate import SpeechRateAnalyzer
@@ -68,9 +69,11 @@ def create_app() -> FastAPI:
     )
 
     # shadowing lag usecase を生成して http_handler に DI する（ADR-013 / M-SHL-1 ORPHAN-1）
+    lag_computation = DtwLagComputer()
     shadowing_lag_use_case = ComputeShadowingLagUseCase(
         g2p_port=g2p,
         aligner_port=aligner,
+        lag_computation_port=lag_computation,
     )
     http_handler.set_shadowing_lag_use_case(shadowing_lag_use_case)
 

@@ -19,7 +19,8 @@ import pytest
 
 from python_analyzer.domain.audio import AudioInput
 from python_analyzer.domain.phoneme import AlignmentBoundary, IpaSequence, PhonemeLabel
-from python_analyzer.infrastructure.dtw_lag import compute_lag
+from python_analyzer.domain.shadowing_lag import ShadowingLagMeasurement
+from python_analyzer.infrastructure.dtw_lag import DtwLagComputer, compute_lag
 from python_analyzer.usecase.compute_shadowing_lag import ComputeShadowingLagUseCase
 
 
@@ -110,6 +111,32 @@ class _FixedAligner:
 
     def measure_audio_quality(self, audio: AudioInput) -> tuple[float, float, float]:
         return -20.0, 0.5, 30.0
+
+
+class _FixedLagComputationPort:
+    """LagComputationPort のテストダブル（W41）。
+
+    実 DTW 実装（infrastructure.dtw_lag.DtwLagComputer）にそのまま委譲し、
+    ComputeShadowingLagUseCase の挙動保存（waveform 抽出 + DTW ラグ計測）を
+    そのまま検証できるようにする（テスト専用 double）。
+    """
+
+    def __init__(self) -> None:
+        self._delegate = DtwLagComputer()
+
+    def compute(
+        self,
+        reference_boundaries: tuple[AlignmentBoundary, ...],
+        learner_boundaries: tuple[AlignmentBoundary, ...],
+        reference_audio: AudioInput,
+        learner_audio: AudioInput,
+    ) -> ShadowingLagMeasurement:
+        return self._delegate.compute(
+            reference_boundaries=reference_boundaries,
+            learner_boundaries=learner_boundaries,
+            reference_audio=reference_audio,
+            learner_audio=learner_audio,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -304,6 +331,7 @@ class TestComputeShadowingLagUseCase:
         slow_use_case = ComputeShadowingLagUseCase(
             g2p_port=_FixedG2P(["h", "ɛ", "l", "oʊ"]),
             aligner_port=slow_aligner,
+            lag_computation_port=_FixedLagComputationPort(),
         )
         slow_result = slow_use_case.execute(
             reference_audio=_make_audio_input(ref_wav, 1000),
@@ -316,6 +344,7 @@ class TestComputeShadowingLagUseCase:
         fast_use_case = ComputeShadowingLagUseCase(
             g2p_port=_FixedG2P(["h", "ɛ", "l", "oʊ"]),
             aligner_port=fast_aligner,
+            lag_computation_port=_FixedLagComputationPort(),
         )
         fast_result = fast_use_case.execute(
             reference_audio=_make_audio_input(ref_wav, 1000),
@@ -349,6 +378,7 @@ class TestComputeShadowingLagUseCase:
         use_case = ComputeShadowingLagUseCase(
             g2p_port=_FixedG2P(["h", "ɛ", "l", "oʊ"]),
             aligner_port=aligner,
+            lag_computation_port=_FixedLagComputationPort(),
         )
 
         ref_wav = _make_sine_wav(440.0, 1.0)
