@@ -472,9 +472,7 @@ type NativeTraceGlobal = typeof globalThis & {
 | `ANALYSIS_JOB_POLL_INTERVAL_MS` | Runner tick間隔 |
 | `ANALYSIS_JOB_LEASE_DURATION_MS` | lease期限 |
 | `ANALYSIS_JOB_MAX_ATTEMPTS` | 最大retry回数 |
-| `OPENAI_RAW_RESPONSE_MAX_BYTES` | OpenAI raw response保存上限 |
 | `OSS_WORKER_TIMEOUT_MS` | OSS Worker timeout |
-| `LOCAL_AUDIO_MAX_BYTES` | ローカル音声保存上限 |
 
 `OPENAI_API_KEY` はブラウザ、ログ、エラー本文へ露出させない。UseCaseには必要な検証済み設定だけを渡す。
 

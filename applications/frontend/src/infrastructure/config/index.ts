@@ -28,10 +28,6 @@ const configSchema = z.object({
    * env OSS_WORKER_TIMEOUT_MS で上書き可能。
    */
   ossWorkerTimeoutMilliseconds: z.coerce.number().int().positive().default(150000),
-  /** infrastructure.md §11.1: ローカル音声保存上限 bytes。デフォルト 100MiB。 */
-  localAudioMaxBytes: z.coerce.number().int().positive().default(104857600),
-  /** infrastructure.md §11.1: OpenAI raw response 保存上限 bytes。デフォルト 1MiB。 */
-  openaiRawResponseMaxBytes: z.coerce.number().int().positive().default(1048576),
 
   // Training Context — OQ-1: sentinel LearnerIdentifier (fixed singleton for local MVP)
   // DD-293: Training Context の全テーブルの learner 列はこの単一値を常に取る
@@ -48,8 +44,6 @@ const configSchema = z.object({
   diagnosticFocusWeightW2: z.coerce.number().min(0).max(10).default(0.3),
   /** diagnosticFocusWeightW3 — (1−習熟度)重み（三項式第3項）。デフォルト 0.2 */
   diagnosticFocusWeightW3: z.coerce.number().min(0).max(10).default(0.2),
-  /** diagnosticFocusAlpha — EWMA 平滑化係数（0〜1）。デフォルト 0.3 */
-  diagnosticFocusAlpha: z.coerce.number().min(0).max(1).default(0.3),
   /**
    * diagnosticGopRangeFloor — GOP 正規化下限（この値以下が mastery 0 に対応）。
    * Haskell worker の gopFloor = -20.0 に対応 (DD-293 config 隔離)。
@@ -173,13 +167,10 @@ export const createConfig = (): AppConfig => {
     analysisJobLeaseDurationMilliseconds: process.env.ANALYSIS_JOB_LEASE_DURATION_MS,
     analysisJobMaxAttempts: process.env.ANALYSIS_JOB_MAX_ATTEMPTS,
     ossWorkerTimeoutMilliseconds: process.env.OSS_WORKER_TIMEOUT_MS,
-    localAudioMaxBytes: process.env.LOCAL_AUDIO_MAX_BYTES,
-    openaiRawResponseMaxBytes: process.env.OPENAI_RAW_RESPONSE_MAX_BYTES,
     diagnosticSentinelLearnerIdentifier: process.env.DIAGNOSTIC_SENTINEL_LEARNER_IDENTIFIER,
     diagnosticFocusWeightW1: process.env.DIAGNOSTIC_FOCUS_WEIGHT_W1,
     diagnosticFocusWeightW2: process.env.DIAGNOSTIC_FOCUS_WEIGHT_W2,
     diagnosticFocusWeightW3: process.env.DIAGNOSTIC_FOCUS_WEIGHT_W3,
-    diagnosticFocusAlpha: process.env.DIAGNOSTIC_FOCUS_ALPHA,
     diagnosticGopRangeFloor: process.env.DIAGNOSTIC_GOP_RANGE_FLOOR,
     diagnosticGopRangeCeiling: process.env.DIAGNOSTIC_GOP_RANGE_CEILING,
     spacingIntervalHours: process.env.SPACING_INTERVAL_HOURS,
