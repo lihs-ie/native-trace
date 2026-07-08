@@ -15,7 +15,7 @@ jobs:
   policy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: No production test doubles
@@ -38,7 +38,7 @@ jobs:
         run: bash scripts/verify-allowlist-expiry.sh
       - name: Upload policy evidence
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: policy-evidence
           path: |
@@ -49,7 +49,7 @@ jobs:
     needs: [policy]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Smoke (v1 declare-only)
         run: |
           echo "integration_smoke: v1 では smoke は wiring_manifest.yml に宣言のみ。" | tee smoke.log
@@ -58,7 +58,7 @@ jobs:
           echo "follow-up で実行を有効化する。" | tee -a smoke.log
       - name: Upload smoke evidence
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: smoke-evidence
           path: smoke.log
@@ -69,7 +69,7 @@ jobs:
     needs: [policy]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Codex review (AGENTS.md の review guideline に従う)
@@ -80,7 +80,7 @@ jobs:
           output-file: codex-output.md
       - name: Upload codex review
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: codex-review
           path: codex-output.md
@@ -91,7 +91,7 @@ jobs:
     needs: [policy]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Claude review (CLAUDE.md / AGENTS.md の review guideline に従う)
