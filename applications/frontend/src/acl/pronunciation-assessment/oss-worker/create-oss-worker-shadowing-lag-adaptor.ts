@@ -37,15 +37,16 @@ export const createOssWorkerShadowingLagAdaptor = (
 
     const formData = new FormData();
 
-    // reference_audio パート (Uint8Array は BlobPart に直接使えないため ArrayBuffer に変換)
-    const referenceAudioBlob = new Blob(
-      [input.referenceAudioBytes.buffer.slice(0) as ArrayBuffer],
-      { type: input.referenceAudioMimeType },
-    );
+    // reference_audio パート
+    // (view の byteOffset/byteLength を尊重するため new Uint8Array(...) でコピーする。
+    //  buffer.slice(0) は underlying ArrayBuffer 全体をコピーしてしまう — request-mapper.ts と同形)
+    const referenceAudioBlob = new Blob([new Uint8Array(input.referenceAudioBytes)], {
+      type: input.referenceAudioMimeType,
+    });
     formData.append("reference_audio", referenceAudioBlob);
 
     // learner_audio パート
-    const learnerAudioBlob = new Blob([input.learnerAudioBytes.buffer.slice(0) as ArrayBuffer], {
+    const learnerAudioBlob = new Blob([new Uint8Array(input.learnerAudioBytes)], {
       type: input.learnerAudioMimeType,
     });
     formData.append("learner_audio", learnerAudioBlob);
