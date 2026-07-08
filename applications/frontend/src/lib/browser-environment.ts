@@ -3,7 +3,7 @@
  * multipart フィールド `browserInfo`（契約・凍結）の値を組み立てるために使う。
  */
 
-export const detectBrowserInfo = () => ({
+export const detectBrowserEnvironment = () => ({
   browserName: navigator.userAgent.includes("Chrome")
     ? "Chrome"
     : navigator.userAgent.includes("Firefox")

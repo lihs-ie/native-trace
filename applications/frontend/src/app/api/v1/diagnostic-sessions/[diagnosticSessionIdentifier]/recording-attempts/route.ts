@@ -128,7 +128,7 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
         reason: browserRecordingFormResult.error.reason,
       });
     }
-    const { startedAt, endedAt, browserInfo } = browserRecordingFormResult.value;
+    const { startedAt, endedAt, browserEnvironment } = browserRecordingFormResult.value;
 
     const result = await container.usecases.submitPracticeAttempt({
       section: sectionIdentifier,
@@ -140,7 +140,7 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
         durationMilliseconds: recordedDurationMs,
         startedAt,
         endedAt,
-        browserInfo,
+        browserEnvironment,
       },
     });
 

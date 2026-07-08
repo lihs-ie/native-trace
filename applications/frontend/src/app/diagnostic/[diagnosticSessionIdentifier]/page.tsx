@@ -25,7 +25,7 @@ import { apiGet, apiPost, apiPostForm, isApiClientError } from "@/lib/api-client
 import { nowMs } from "@/lib/now";
 import type { DiagnosticSessionDto, DiagnosticPromptDto, WorkspaceDto } from "@/lib/api-types";
 import { diagnosticSessionKey } from "@/lib/session-storage-keys";
-import { detectBrowserInfo } from "@/lib/browser-environment";
+import { detectBrowserEnvironment } from "@/lib/browser-environment";
 import { formatMinutesSeconds } from "@/lib/format-time";
 import { PHENOMENON_LABELS } from "@/lib/phenomenon";
 import { useRecordingWithVolumeMeter } from "@/components/workspace/use-recording-with-volume-meter";
@@ -197,7 +197,7 @@ export default function DiagnosticSessionPage({ params }: PageProps) {
       formData.append("recordedDurationMs", String(durationMs));
       formData.append("startedAt", new Date(startedAtRef.current).toISOString());
       formData.append("endedAt", new Date(endedAt).toISOString());
-      formData.append("browserInfo", JSON.stringify(detectBrowserInfo()));
+      formData.append("browserInfo", JSON.stringify(detectBrowserEnvironment()));
 
       try {
         const recordingResponse = await apiPostForm<DiagnosticRecordingAttemptResponse>(

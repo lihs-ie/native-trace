@@ -234,7 +234,7 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
       durationMilliseconds: recordedDurationMs,
       startedAt: now,
       endedAt: new Date(now.getTime() + recordedDurationMs),
-      browserInfo: {
+      browserEnvironment: {
         browserName: "MediaRecorder",
         deviceType: "pc",
         recordingApiType: "MediaRecorder",

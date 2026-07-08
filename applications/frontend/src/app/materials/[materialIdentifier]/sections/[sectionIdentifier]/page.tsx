@@ -4,7 +4,7 @@ import Link from "next/link";
 import { use, useCallback, useEffect, useRef, useState } from "react";
 import { apiGet, apiPost, apiPostForm, isApiClientError } from "@/lib/api-client";
 import { nowMs } from "@/lib/now";
-import { detectBrowserInfo } from "@/lib/browser-environment";
+import { detectBrowserEnvironment } from "@/lib/browser-environment";
 import { formatMinutesSeconds } from "@/lib/format-time";
 import {
   type AnalysisMode,
@@ -137,7 +137,7 @@ export default function WorkspacePage({ params }: PageProps) {
       formData.append("recordedDurationMs", String(durationMs));
       formData.append("startedAt", new Date(startedAtRef.current).toISOString());
       formData.append("endedAt", new Date(endedAt).toISOString());
-      formData.append("browserInfo", JSON.stringify(detectBrowserInfo()));
+      formData.append("browserInfo", JSON.stringify(detectBrowserEnvironment()));
 
       try {
         await apiPostForm(`/api/v1/sections/${sectionIdentifier}/practice-attempts`, formData);

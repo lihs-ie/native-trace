@@ -21,7 +21,7 @@ export const createOriginalFileName = (value: string): OriginalFileName | null =
 export const createRecordingFailureReason = (value: string): RecordingFailureReason =>
   value as RecordingFailureReason;
 
-export type BrowserInfo = Readonly<{
+export type BrowserEnvironment = Readonly<{
   browserName: string;
   deviceType: "pc" | "mobile";
   recordingApiType: string;
@@ -33,7 +33,7 @@ export type RecordingOrigin =
       type: "browser_recording";
       startedAt: Date;
       endedAt: Date;
-      browserInfo: BrowserInfo;
+      browserEnvironment: BrowserEnvironment;
     }>
   | Readonly<{
       type: "uploaded_file";

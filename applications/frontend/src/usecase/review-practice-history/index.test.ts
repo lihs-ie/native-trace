@@ -40,7 +40,7 @@ const makeReadyRecordingAttempt = (): RecordingAttempt => ({
     type: "browser_recording",
     startedAt: new Date("2026-01-02T00:00:00Z"),
     endedAt: new Date("2026-01-02T00:01:00Z"),
-    browserInfo: {
+    browserEnvironment: {
       browserName: "Chrome",
       deviceType: "pc",
       recordingApiType: "MediaRecorder",

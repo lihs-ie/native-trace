@@ -54,7 +54,7 @@ const SUPPORTED_MIME_TYPES = [
 
 // ---- Input ----
 
-const browserInfoInputSchema = z.object({
+const browserEnvironmentInputSchema = z.object({
   browserName: z.string().min(1),
   deviceType: z.enum(["pc", "mobile"]),
   recordingApiType: z.string().min(1),
@@ -69,7 +69,7 @@ const audioSourceInputSchema = z.discriminatedUnion("type", [
     durationMilliseconds: z.number().int().positive(),
     startedAt: z.date(),
     endedAt: z.date(),
-    browserInfo: browserInfoInputSchema,
+    browserEnvironment: browserEnvironmentInputSchema,
   }),
   z.object({
     type: z.literal("uploaded_file"),
@@ -199,11 +199,11 @@ export const createSubmitPracticeAttempt =
               type: "browser_recording",
               startedAt: audioSource.startedAt,
               endedAt: audioSource.endedAt,
-              browserInfo: {
-                browserName: audioSource.browserInfo.browserName,
-                deviceType: audioSource.browserInfo.deviceType,
-                recordingApiType: audioSource.browserInfo.recordingApiType,
-                userAgent: audioSource.browserInfo.userAgent,
+              browserEnvironment: {
+                browserName: audioSource.browserEnvironment.browserName,
+                deviceType: audioSource.browserEnvironment.deviceType,
+                recordingApiType: audioSource.browserEnvironment.recordingApiType,
+                userAgent: audioSource.browserEnvironment.userAgent,
               },
             };
           } else {

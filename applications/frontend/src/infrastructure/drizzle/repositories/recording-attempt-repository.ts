@@ -12,7 +12,7 @@ import {
   type RecordingAttemptIdentifier,
   type RecordingDuration,
   type RecordingOrigin,
-  type BrowserInfo,
+  type BrowserEnvironment,
   type OriginalFileName,
   createRecordingAttemptIdentifier,
   createRecordingFailureReason,
@@ -65,14 +65,14 @@ const rowToRecordingAttempt = (row: RecordingAttemptRow): RecordingAttempt => {
   // ready
   let origin: RecordingOrigin;
   if (row.inputKind === "browser_recording") {
-    const browserInfo = row.browserInfoJson
-      ? (JSON.parse(row.browserInfoJson) as BrowserInfo)
+    const browserEnvironment = row.browserInfoJson
+      ? (JSON.parse(row.browserInfoJson) as BrowserEnvironment)
       : { browserName: "", deviceType: "pc" as const, recordingApiType: "", userAgent: "" };
     origin = {
       type: "browser_recording",
       startedAt: new Date(row.startedAt ?? row.createdAt),
       endedAt: new Date(row.endedAt ?? row.updatedAt),
-      browserInfo,
+      browserEnvironment,
     };
   } else {
     origin = {
@@ -150,7 +150,7 @@ const recordingAttemptToRow = (attempt: RecordingAttempt): RecordingAttemptRow =
       ...row,
       startedAt: attempt.origin.startedAt.toISOString(),
       endedAt: attempt.origin.endedAt.toISOString(),
-      browserInfoJson: JSON.stringify(attempt.origin.browserInfo),
+      browserInfoJson: JSON.stringify(attempt.origin.browserEnvironment),
     };
   }
 

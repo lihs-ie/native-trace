@@ -24,7 +24,7 @@ export const isSupportedAudioMimeType = (value: string): value is SupportedAudio
 
 export type MultipartFieldError = Readonly<{ field: string; reason: string }>;
 
-const browserInfoSchema = z.object({
+const browserEnvironmentSchema = z.object({
   browserName: z.string().min(1),
   browserVersion: z.string().optional(),
   deviceType: z.string().optional(),
@@ -33,7 +33,7 @@ const browserInfoSchema = z.object({
 export type ParsedBrowserRecordingForm = Readonly<{
   startedAt: Date;
   endedAt: Date;
-  browserInfo: Readonly<{
+  browserEnvironment: Readonly<{
     browserName: string;
     deviceType: "mobile" | "pc";
     recordingApiType: "MediaRecorder";
@@ -51,7 +51,7 @@ export const parseBrowserRecordingForm = (
 ): Result<ParsedBrowserRecordingForm, MultipartFieldError> => {
   const startedAtRaw = formData.get("startedAt");
   const endedAtRaw = formData.get("endedAt");
-  const browserInfoRaw = formData.get("browserInfo");
+  const browserEnvironmentRaw = formData.get("browserInfo");
 
   if (!startedAtRaw || typeof startedAtRaw !== "string") {
     return err({ field: "startedAt", reason: "browser_recording では startedAt が必須です" });
@@ -59,20 +59,23 @@ export const parseBrowserRecordingForm = (
   if (!endedAtRaw || typeof endedAtRaw !== "string") {
     return err({ field: "endedAt", reason: "browser_recording では endedAt が必須です" });
   }
-  if (!browserInfoRaw || typeof browserInfoRaw !== "string") {
+  if (!browserEnvironmentRaw || typeof browserEnvironmentRaw !== "string") {
     return err({ field: "browserInfo", reason: "browser_recording では browserInfo が必須です" });
   }
 
-  let browserInfoParsed: unknown;
+  let browserEnvironmentParsed: unknown;
   try {
-    browserInfoParsed = JSON.parse(browserInfoRaw);
+    browserEnvironmentParsed = JSON.parse(browserEnvironmentRaw);
   } catch {
     return err({ field: "browserInfo", reason: "browserInfo は JSON 文字列で指定してください" });
   }
 
-  const browserInfoResult = browserInfoSchema.safeParse(browserInfoParsed);
-  if (!browserInfoResult.success) {
-    const { field, reason } = zodErrorToValidationFailed(browserInfoResult.error, "browserInfo");
+  const browserEnvironmentResult = browserEnvironmentSchema.safeParse(browserEnvironmentParsed);
+  if (!browserEnvironmentResult.success) {
+    const { field, reason } = zodErrorToValidationFailed(
+      browserEnvironmentResult.error,
+      "browserInfo",
+    );
     return err({ field, reason });
   }
 
@@ -88,11 +91,12 @@ export const parseBrowserRecordingForm = (
   return ok({
     startedAt,
     endedAt,
-    browserInfo: {
-      browserName: browserInfoResult.data.browserName,
-      deviceType: browserInfoResult.data.deviceType === "mobile" ? "mobile" : "pc",
+    browserEnvironment: {
+      browserName: browserEnvironmentResult.data.browserName,
+      deviceType: browserEnvironmentResult.data.deviceType === "mobile" ? "mobile" : "pc",
       recordingApiType: "MediaRecorder",
-      userAgent: browserInfoResult.data.browserVersion ?? browserInfoResult.data.browserName,
+      userAgent:
+        browserEnvironmentResult.data.browserVersion ?? browserEnvironmentResult.data.browserName,
     },
   });
 };

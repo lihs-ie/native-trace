@@ -187,7 +187,7 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
         reason: browserRecordingFormResult.error.reason,
       });
     }
-    const { startedAt, endedAt, browserInfo } = browserRecordingFormResult.value;
+    const { startedAt, endedAt, browserEnvironment } = browserRecordingFormResult.value;
 
     // Step 1: 既存 recording→analysis パスで録音を投入する（ADR-004）
     const submitResult = await container.usecases.submitPracticeAttempt({
@@ -200,7 +200,7 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
         durationMilliseconds: recordedDurationMs,
         startedAt,
         endedAt,
-        browserInfo,
+        browserEnvironment,
       },
     });
 
