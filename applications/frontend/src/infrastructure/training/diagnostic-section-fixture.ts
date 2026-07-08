@@ -9,11 +9,13 @@
  *
  * 各 DiagnosticPrompt に対応する Section を 1:1 で作成・取得する。
  * Section が存在しない場合のみ INSERT する（idempotent）。
+ *
+ * ensure-upsert の共通実装は sentinel-section-fixture.ts の ensureSentinelSectionExists に
+ * パラメータ化抽出済み（W27）。本ファイルは固定識別子・タイトル定数と薄い委譲のみを持つ。
  */
 
-import { eq } from "drizzle-orm";
 import type { DrizzleDatabase } from "../drizzle/client";
-import { materials, sectionSeries, sections } from "../drizzle/schema";
+import { ensureSentinelSectionExists } from "./sentinel-section-fixture";
 
 // ---- 診断用 Material / SectionSeries の固定識別子 ----
 // OQ-1 解決: シングルトン学習者と同様に、診断用 Material も sentinel 定数で管理する
@@ -39,70 +41,16 @@ export const ensureDiagnosticSectionExists = async (
   promptText: string,
 ): Promise<string> => {
   const sectionIdentifier = toSectionIdentifier(promptIdentifier);
-  const now = new Date().toISOString();
+  const bodyTextHash = Buffer.from(promptText).toString("base64").slice(0, 32);
 
-  // Material が存在しない場合は INSERT
-  const existingMaterial = await database
-    .select({ identifier: materials.identifier })
-    .from(materials)
-    .where(eq(materials.identifier, DIAGNOSTIC_MATERIAL_ID))
-    .limit(1);
-
-  if (existingMaterial.length === 0) {
-    await database
-      .insert(materials)
-      .values({
-        identifier: DIAGNOSTIC_MATERIAL_ID,
-        title: "診断テスト（システム生成）",
-        sourceJson: null,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoNothing();
-  }
-
-  // SectionSeries が存在しない場合は INSERT
-  const existingSeriesRows = await database
-    .select({ identifier: sectionSeries.identifier })
-    .from(sectionSeries)
-    .where(eq(sectionSeries.identifier, DIAGNOSTIC_SECTION_SERIES_ID))
-    .limit(1);
-
-  if (existingSeriesRows.length === 0) {
-    await database
-      .insert(sectionSeries)
-      .values({
-        identifier: DIAGNOSTIC_SECTION_SERIES_ID,
-        material: DIAGNOSTIC_MATERIAL_ID,
-        title: "診断プロンプトセット",
-        displayOrder: 0,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoNothing();
-  }
-
-  // Section が存在しない場合は INSERT
-  const existingSectionRows = await database
-    .select({ identifier: sections.identifier })
-    .from(sections)
-    .where(eq(sections.identifier, sectionIdentifier))
-    .limit(1);
-
-  if (existingSectionRows.length === 0) {
-    const bodyTextHash = Buffer.from(promptText).toString("base64").slice(0, 32);
-    await database
-      .insert(sections)
-      .values({
-        identifier: sectionIdentifier,
-        sectionSeries: DIAGNOSTIC_SECTION_SERIES_ID,
-        versionNumber: 1,
-        bodyText: promptText,
-        bodyTextHash,
-        createdAt: now,
-      })
-      .onConflictDoNothing();
-  }
-
-  return sectionIdentifier;
+  return ensureSentinelSectionExists({
+    database,
+    materialIdentifier: DIAGNOSTIC_MATERIAL_ID,
+    seriesIdentifier: DIAGNOSTIC_SECTION_SERIES_ID,
+    materialTitle: "診断テスト（システム生成）",
+    seriesTitle: "診断プロンプトセット",
+    sectionIdentifier,
+    bodyText: promptText,
+    bodyTextHash,
+  });
 };

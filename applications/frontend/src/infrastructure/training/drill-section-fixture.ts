@@ -11,12 +11,12 @@
  * 各 TrainingSession × exampleSentence に対応する Section を 1:1 で作成・取得する。
  * Section が存在しない場合のみ INSERT する（idempotent）。
  *
- * 診断パターン（diagnostic-section-fixture.ts）と同じ設計。
+ * ensure-upsert の共通実装は sentinel-section-fixture.ts の ensureSentinelSectionExists に
+ * パラメータ化抽出済み（W27）。本ファイルは固定識別子・タイトル定数と薄い委譲のみを持つ。
  */
 
-import { eq } from "drizzle-orm";
 import type { DrizzleDatabase } from "../drizzle/client";
-import { materials, sectionSeries, sections } from "../drizzle/schema";
+import { ensureSentinelSectionExists } from "./sentinel-section-fixture";
 
 // ---- 産出ドリル用 Material / SectionSeries の固定識別子 ----
 
@@ -42,70 +42,16 @@ export const ensureDrillSectionExists = async (
   exampleSentence: string,
 ): Promise<string> => {
   const sectionIdentifier = toDrillSectionIdentifier(trainingSessionIdentifier);
-  const now = new Date().toISOString();
+  const bodyTextHash = Buffer.from(exampleSentence).toString("base64").slice(0, 32);
 
-  // Material が存在しない場合は INSERT
-  const existingMaterial = await database
-    .select({ identifier: materials.identifier })
-    .from(materials)
-    .where(eq(materials.identifier, DRILL_MATERIAL_ID))
-    .limit(1);
-
-  if (existingMaterial.length === 0) {
-    await database
-      .insert(materials)
-      .values({
-        identifier: DRILL_MATERIAL_ID,
-        title: "産出ドリル（システム生成）",
-        sourceJson: null,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoNothing();
-  }
-
-  // SectionSeries が存在しない場合は INSERT
-  const existingSeriesRows = await database
-    .select({ identifier: sectionSeries.identifier })
-    .from(sectionSeries)
-    .where(eq(sectionSeries.identifier, DRILL_SECTION_SERIES_ID))
-    .limit(1);
-
-  if (existingSeriesRows.length === 0) {
-    await database
-      .insert(sectionSeries)
-      .values({
-        identifier: DRILL_SECTION_SERIES_ID,
-        material: DRILL_MATERIAL_ID,
-        title: "産出ドリル例文セット",
-        displayOrder: 0,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoNothing();
-  }
-
-  // Section が存在しない場合は INSERT
-  const existingSectionRows = await database
-    .select({ identifier: sections.identifier })
-    .from(sections)
-    .where(eq(sections.identifier, sectionIdentifier))
-    .limit(1);
-
-  if (existingSectionRows.length === 0) {
-    const bodyTextHash = Buffer.from(exampleSentence).toString("base64").slice(0, 32);
-    await database
-      .insert(sections)
-      .values({
-        identifier: sectionIdentifier,
-        sectionSeries: DRILL_SECTION_SERIES_ID,
-        versionNumber: 1,
-        bodyText: exampleSentence,
-        bodyTextHash,
-        createdAt: now,
-      })
-      .onConflictDoNothing();
-  }
-
-  return sectionIdentifier;
+  return ensureSentinelSectionExists({
+    database,
+    materialIdentifier: DRILL_MATERIAL_ID,
+    seriesIdentifier: DRILL_SECTION_SERIES_ID,
+    materialTitle: "産出ドリル（システム生成）",
+    seriesTitle: "産出ドリル例文セット",
+    sectionIdentifier,
+    bodyText: exampleSentence,
+    bodyTextHash,
+  });
 };
