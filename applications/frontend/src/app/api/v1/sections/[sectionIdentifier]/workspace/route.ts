@@ -5,6 +5,7 @@
 import { type NextRequest } from "next/server";
 import { getContainer } from "../../../../../../registry";
 import { domainErrorToResponse } from "../../../_shared/errors";
+import { generateRequestIdentifier } from "../../../_shared/response";
 
 type RouteContext = { params: Promise<{ sectionIdentifier: string }> };
 
@@ -130,7 +131,7 @@ export async function GET(_request: NextRequest, context: RouteContext): Promise
   const envelope = {
     data,
     meta: {
-      requestIdentifier: `req_${globalThis.crypto.randomUUID().replace(/-/g, "")}`,
+      requestIdentifier: generateRequestIdentifier(),
       serverTime,
     },
   };

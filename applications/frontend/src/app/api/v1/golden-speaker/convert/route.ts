@@ -13,35 +13,32 @@
 import { type NextRequest } from "next/server";
 import { createConfig } from "../../../../../infrastructure/config";
 import { parseGoldenConversionResponse } from "../../../../../acl/golden-speaker/schema";
-
-const buildErrorResponse = (status: number, code: string, message: string): Response => {
-  const requestIdentifier = `req_${globalThis.crypto.randomUUID().replace(/-/g, "")}`;
-  return Response.json({ error: { code, message }, meta: { requestIdentifier } }, { status });
-};
+import { errorResponse } from "../../_shared/errors";
+import { generateRequestIdentifier } from "../../_shared/response";
 
 export async function POST(request: NextRequest): Promise<Response> {
   let formData: FormData;
   try {
     formData = await request.formData();
   } catch {
-    return buildErrorResponse(400, "validationFailed", "multipart/form-data のパースに失敗しました");
+    return errorResponse(400, "validationFailed", "multipart/form-data のパースに失敗しました");
   }
 
   const learnerAudio = formData.get("learnerAudio");
   if (!learnerAudio || !(learnerAudio instanceof File)) {
-    return buildErrorResponse(400, "validationFailed", "learnerAudio フィールドが必須です");
+    return errorResponse(400, "validationFailed", "learnerAudio フィールドが必須です");
   }
 
   const metadataRaw = formData.get("metadata");
   if (!metadataRaw || typeof metadataRaw !== "string") {
-    return buildErrorResponse(400, "validationFailed", "metadata フィールドが必須です");
+    return errorResponse(400, "validationFailed", "metadata フィールドが必須です");
   }
 
   let metadata: unknown;
   try {
     metadata = JSON.parse(metadataRaw);
   } catch {
-    return buildErrorResponse(400, "validationFailed", "metadata は JSON 文字列で指定してください");
+    return errorResponse(400, "validationFailed", "metadata は JSON 文字列で指定してください");
   }
 
   if (
@@ -49,11 +46,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     metadata === null ||
     typeof (metadata as Record<string, unknown>)["mimeType"] !== "string"
   ) {
-    return buildErrorResponse(
-      400,
-      "validationFailed",
-      "metadata.mimeType が必須です",
-    );
+    return errorResponse(400, "validationFailed", "metadata.mimeType が必須です");
   }
 
   const config = createConfig();
@@ -73,7 +66,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       body: workerFormData,
     });
   } catch {
-    return buildErrorResponse(
+    return errorResponse(
       502,
       "goldenSpeakerUnavailable",
       "Golden speaker サービスとの通信に失敗しました",
@@ -81,7 +74,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   }
 
   if (workerResponse.status === 503) {
-    return buildErrorResponse(
+    return errorResponse(
       503,
       "goldenSpeakerUnavailable",
       "Golden speaker サービスが利用できません",
@@ -89,29 +82,22 @@ export async function POST(request: NextRequest): Promise<Response> {
   }
 
   if (!workerResponse.ok) {
-    return buildErrorResponse(
-      502,
-      "goldenSpeakerError",
-      "Golden speaker サービスがエラーを返しました",
-    );
+    return errorResponse(502, "goldenSpeakerError", "Golden speaker サービスがエラーを返しました");
   }
 
   let rawBody: unknown;
   try {
     rawBody = await (workerResponse.json() as Promise<unknown>);
   } catch {
-    return buildErrorResponse(502, "goldenSpeakerError", "レスポンスの JSON パースに失敗しました");
+    return errorResponse(502, "goldenSpeakerError", "レスポンスの JSON パースに失敗しました");
   }
 
   // ORPHAN-4: qualityGatePassed=false 時は audioBase64 を null に強制
   const parsed = parseGoldenConversionResponse(rawBody);
   if (!parsed) {
-    return buildErrorResponse(502, "goldenSpeakerError", "レスポンスのスキーマ検証に失敗しました");
+    return errorResponse(502, "goldenSpeakerError", "レスポンスのスキーマ検証に失敗しました");
   }
 
-  const requestIdentifier = `req_${globalThis.crypto.randomUUID().replace(/-/g, "")}`;
-  return Response.json(
-    { data: parsed, meta: { requestIdentifier } },
-    { status: 200 },
-  );
+  const requestIdentifier = generateRequestIdentifier();
+  return Response.json({ data: parsed, meta: { requestIdentifier } }, { status: 200 });
 }

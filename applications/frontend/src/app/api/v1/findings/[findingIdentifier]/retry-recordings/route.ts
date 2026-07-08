@@ -49,6 +49,7 @@ import {
   type SupportedAudioMimeType,
   parseRecordedDurationMilliseconds,
 } from "../../../_shared/multipart";
+import { errorResponse } from "../../../_shared/errors";
 
 type RouteContext = {
   params: Promise<{ findingIdentifier: string }>;
@@ -63,17 +64,9 @@ const unprocessableResponse = (message: string): Response =>
   Response.json({ message }, { status: 422 });
 
 const badRequestResponse = (field: string, reason: string): Response =>
-  Response.json(
-    {
-      error: {
-        code: "validationFailed",
-        message: "入力値が不正です",
-        details: { fieldErrors: [{ field, message: reason }] },
-      },
-      meta: { requestIdentifier: `req_${globalThis.crypto.randomUUID().replace(/-/g, "")}` },
-    },
-    { status: 400 },
-  );
+  errorResponse(400, "validationFailed", "入力値が不正です", {
+    fieldErrors: [{ field, message: reason }],
+  });
 
 type PollResult =
   | { kind: "succeeded"; assessmentResultIdentifier: string }

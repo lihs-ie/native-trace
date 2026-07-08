@@ -13,6 +13,7 @@
 import { z } from "zod";
 import { type Result, ok, err } from "../../../../domain/shared";
 import { SUPPORTED_AUDIO_MIME_TYPES } from "../../../../domain/audio-file";
+import { zodErrorToValidationFailed } from "./validation";
 
 export { SUPPORTED_AUDIO_MIME_TYPES };
 
@@ -71,10 +72,8 @@ export const parseBrowserRecordingForm = (
 
   const browserInfoResult = browserInfoSchema.safeParse(browserInfoParsed);
   if (!browserInfoResult.success) {
-    return err({
-      field: "browserInfo",
-      reason: browserInfoResult.error.errors.map((e) => e.message).join(", "),
-    });
+    const { field, reason } = zodErrorToValidationFailed(browserInfoResult.error, "browserInfo");
+    return err({ field, reason });
   }
 
   const startedAt = new Date(startedAtRaw);

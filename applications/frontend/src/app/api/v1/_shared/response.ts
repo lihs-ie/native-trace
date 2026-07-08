@@ -24,15 +24,13 @@ export type PaginatedEnvelope<T> = Readonly<{
   }>;
 }>;
 
-const generateRequestIdentifier = (): string => {
+/** `req_` + UUID(ハイフン除去) のリクエスト ID を生成する（W31: 生成形式の唯一の定義） */
+export const generateRequestIdentifier = (): string => {
   const uuid = globalThis.crypto.randomUUID().replace(/-/g, "");
   return `req_${uuid}`;
 };
 
-export const successResponse = <T>(
-  data: T,
-  status: number = 200,
-): Response => {
+export const successResponse = <T>(data: T, status: number = 200): Response => {
   const envelope: SuccessEnvelope<T> = {
     data,
     meta: { requestIdentifier: generateRequestIdentifier() },

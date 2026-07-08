@@ -8,6 +8,7 @@ import { z } from "zod";
 import { getContainer } from "../../../../registry";
 import { successResponse, paginatedResponse } from "../_shared/response";
 import { domainErrorToResponse } from "../_shared/errors";
+import { zodErrorToValidationFailed } from "../_shared/validation";
 
 // ---- GET /api/v1/materials ----
 
@@ -24,11 +25,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   });
 
   if (!queryResult.success) {
-    return domainErrorToResponse({
-      type: "validationFailed",
-      field: "query",
-      reason: queryResult.error.errors.map((e) => e.message).join(", "),
-    });
+    return domainErrorToResponse(zodErrorToValidationFailed(queryResult.error, "query"));
   }
 
   const container = getContainer();
@@ -91,11 +88,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   const parseResult = postBodySchema.safeParse(body);
   if (!parseResult.success) {
-    return domainErrorToResponse({
-      type: "validationFailed",
-      field: "body",
-      reason: parseResult.error.errors.map((e) => e.message).join(", "),
-    });
+    return domainErrorToResponse(zodErrorToValidationFailed(parseResult.error, "body"));
   }
 
   const container = getContainer();

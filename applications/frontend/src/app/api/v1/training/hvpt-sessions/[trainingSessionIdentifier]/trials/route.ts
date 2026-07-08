@@ -23,6 +23,7 @@ import { z } from "zod";
 import { getContainer } from "../../../../../../../registry";
 import { successResponse } from "../../../../_shared/response";
 import { domainErrorToResponse } from "../../../../_shared/errors";
+import { zodErrorToValidationFailed } from "../../../../_shared/validation";
 import type { HvptTrialResultDto, HvptChoiceDto } from "../../../../../../../lib/api-types";
 
 type RouteContext = {
@@ -62,11 +63,7 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
 
   const parsedBody = submitHvptTrialBodySchema.safeParse(body);
   if (!parsedBody.success) {
-    return domainErrorToResponse({
-      type: "validationFailed",
-      field: "body",
-      reason: parsedBody.error.errors.map((e) => e.message).join(", "),
-    });
+    return domainErrorToResponse(zodErrorToValidationFailed(parsedBody.error, "body"));
   }
 
   const container = getContainer();
