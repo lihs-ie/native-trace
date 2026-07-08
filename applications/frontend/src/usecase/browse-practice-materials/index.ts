@@ -2,7 +2,7 @@ import { type ResultAsync } from "neverthrow";
 import { z } from "zod";
 import { errAsync } from "../../domain/shared";
 import { type DomainError } from "../../domain/shared";
-import { type MaterialIdentifier } from "../../domain/material";
+import { type ActiveMaterial, type MaterialIdentifier } from "../../domain/material";
 import { type MaterialRepository } from "../port/material-repository";
 import { type LibraryStatsRepository } from "../port/library-stats-repository";
 import { toDomainPagination } from "../shared/pagination";
@@ -104,14 +104,15 @@ export const createBrowsePracticeMaterials =
         sort: "updatedAt_desc",
       })
       .andThen((page) => {
-        const activeMaterials = page.items.filter((m) => m.type === "active");
+        const activeMaterials = page.items.filter(
+          (material): material is ActiveMaterial => material.type === "active",
+        );
         const identifiers = activeMaterials.map((m) => m.identifier as string);
 
         return dependencies.libraryStatsRepository
           .findStatsByMaterials(identifiers)
           .map((statsMap) => ({
             materials: activeMaterials.map((m) => {
-              if (m.type !== "active") throw new Error("unreachable");
               const rawStats = statsMap.get(m.identifier as string);
               const stats: MaterialStatsOutput = rawStats
                 ? {

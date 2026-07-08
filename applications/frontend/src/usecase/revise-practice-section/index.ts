@@ -1,4 +1,4 @@
-import { type ResultAsync, errAsync, okAsync } from "neverthrow";
+import { type ResultAsync, errAsync, ok, okAsync } from "neverthrow";
 import { z } from "zod";
 import { type DomainError, type NonEmptyList, validationFailed } from "../../domain/shared";
 import {
@@ -118,11 +118,7 @@ export const createRevisePracticeSection =
           if (parsed.title !== undefined) {
             newTitleResult = createSectionTitle(parsed.title);
           } else {
-            newTitleResult = {
-              isOk: () => true,
-              isErr: () => false,
-              value: existingSeries.title,
-            } as ReturnType<typeof createSectionTitle>;
+            newTitleResult = ok(existingSeries.title);
           }
           if (newTitleResult.isErr()) return errAsync(newTitleResult.error);
           const newTitle = newTitleResult.value;
@@ -131,11 +127,7 @@ export const createRevisePracticeSection =
           if (parsed.displayOrder !== undefined) {
             newDisplayOrderResult = createSectionDisplayOrder(parsed.displayOrder);
           } else {
-            newDisplayOrderResult = {
-              isOk: () => true,
-              isErr: () => false,
-              value: existingSeries.displayOrder,
-            } as ReturnType<typeof createSectionDisplayOrder>;
+            newDisplayOrderResult = ok(existingSeries.displayOrder);
           }
           if (newDisplayOrderResult.isErr()) return errAsync(newDisplayOrderResult.error);
           const newDisplayOrder = newDisplayOrderResult.value;

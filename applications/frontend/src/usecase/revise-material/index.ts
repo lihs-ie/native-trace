@@ -1,4 +1,4 @@
-import { type ResultAsync, errAsync } from "neverthrow";
+import { type ResultAsync, errAsync, ok } from "neverthrow";
 import { z } from "zod";
 import { type DomainError, type NonEmptyList, validationFailed } from "../../domain/shared";
 import {
@@ -90,11 +90,7 @@ export const createReviseMaterial =
       dependencies.materialRepository.find(identifierResult).andThen((existing) => {
         // タイトルの決定（変更あり or 現行維持）
         const newTitleResult =
-          parsed.title !== undefined
-            ? createMaterialTitle(parsed.title)
-            : ({ isOk: () => true, isErr: () => false, value: existing.title } as ReturnType<
-                typeof createMaterialTitle
-              >);
+          parsed.title !== undefined ? createMaterialTitle(parsed.title) : ok(existing.title);
 
         if (newTitleResult.isErr()) return errAsync(newTitleResult.error);
         const newTitle = newTitleResult.value;
