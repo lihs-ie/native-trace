@@ -7,6 +7,7 @@
  */
 
 import { z } from "zod";
+import type { GoldenConversionResponse } from "../../lib/api-types";
 
 export const goldenConversionResponseSchema = z.object({
   audioBase64: z.string().nullable(),
@@ -14,8 +15,6 @@ export const goldenConversionResponseSchema = z.object({
   withholdReason: z.string().nullable(),
   targetVoice: z.string(),
 });
-
-export type GoldenConversionResponse = z.infer<typeof goldenConversionResponseSchema>;
 
 /**
  * parseGoldenConversionResponse — worker レスポンスを検証し、

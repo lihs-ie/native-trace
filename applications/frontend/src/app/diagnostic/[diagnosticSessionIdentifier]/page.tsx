@@ -24,21 +24,12 @@ import { useRouter } from "next/navigation";
 import { apiGet, apiPost, apiPostForm, isApiClientError } from "@/lib/api-client";
 import { nowMs } from "@/lib/now";
 import type { DiagnosticSessionDto, DiagnosticPromptDto, WorkspaceDto } from "@/lib/api-types";
-import {
-  accumulateLowDurationMs,
-  applyPeakHold,
-  computeRmsLevel,
-  PEAK_HOLD_RELEASE_RATE_PER_MS,
-  rmsLevelToDisplayPercentage,
-  SUSTAINED_LOW_MS,
-} from "@/components/workspace/volume-meter";
-
-// dBFS display scale threshold aligned to ADR-015 worker gate (-36 dBFS, S-PH-1 / ADR-016 D2).
-// Derivation: ((-36 - FLOOR_DB) / (CEILING_DB - FLOOR_DB)) * (100 - MIN_DISPLAY_PERCENTAGE) + MIN_DISPLAY_PERCENTAGE
-//           = ((-36 + 60) / 60) * 98 + 2 = (24/60)*98 + 2 ≈ 41.2 → 41
-// Confirmed by simulation (scripts/simulate_meter_peak_hold.py, 2026-06-18):
-//   gate-rejected recordings (speech_active < -36 dBFS) peak at 37.9% < 41% after smoothing.
-const LOW_VOLUME_DISPLAY_THRESHOLD = 41;
+import { diagnosticSessionKey } from "@/lib/session-storage-keys";
+import { detectBrowserEnvironment } from "@/lib/browser-environment";
+import { formatMinutesSeconds } from "@/lib/format-time";
+import { PHENOMENON_LABELS } from "@/lib/phenomenon";
+import { useRecordingWithVolumeMeter } from "@/components/workspace/use-recording-with-volume-meter";
+import { AppTop } from "@/components/chrome";
 
 // ---- 録音状態 ----
 type RecordingState = "idle" | "recording" | "analyzing" | "done" | "failed";
@@ -49,31 +40,12 @@ type PromptResult = {
   assessmentResultIdentifier: string;
 };
 
-// ---- phenomenon アイコン・ラベル写像 ----
+// ---- phenomenon アイコン写像（ラベルは lib/phenomenon.ts の PHENOMENON_LABELS を使用） ----
 const PHENOMENON_ICONS: Record<DiagnosticPromptDto["phenomenon"], string> = {
   segmental: "⇄",
   epenthesis: "‸",
   prosodic: "ˈ",
 };
-
-const PHENOMENON_LABELS: Record<DiagnosticPromptDto["phenomenon"], string> = {
-  segmental: "分節音対立",
-  epenthesis: "母音挿入",
-  prosodic: "韻律・強勢",
-};
-
-// ---- ブラウザ情報 ----
-const detectBrowserInfo = () => ({
-  browserName: navigator.userAgent.includes("Chrome")
-    ? "Chrome"
-    : navigator.userAgent.includes("Firefox")
-      ? "Firefox"
-      : navigator.userAgent.includes("Safari")
-        ? "Safari"
-        : "Unknown",
-  browserVersion: navigator.userAgent,
-  deviceType: /Mobi|Android|iPhone/i.test(navigator.userAgent) ? "mobile" : "desktop",
-});
 
 // ---- ポーリング設定 ----
 const POLL_INTERVAL_MS = 1500;
@@ -112,7 +84,7 @@ const sessionSnapshotCache = new Map<
 >();
 
 function readSessionFromStorage(diagnosticSessionIdentifier: string): DiagnosticSessionDto | null {
-  const key = `diagnostic-session-${diagnosticSessionIdentifier}`;
+  const key = diagnosticSessionKey(diagnosticSessionIdentifier);
   const stored = sessionStorage.getItem(key);
   const cached = sessionSnapshotCache.get(key);
   if (cached !== undefined && cached.raw === stored) {
@@ -168,22 +140,9 @@ export default function DiagnosticSessionPage({ params }: PageProps) {
   const [currentPromptIndex, setCurrentPromptIndex] = useState(0);
   const [promptResults, setPromptResults] = useState<PromptResult[]>([]);
   const [recordingState, setRecordingState] = useState<RecordingState>("idle");
-  const [recSeconds, setRecSeconds] = useState(0);
-  const [volumeLevel, setVolumeLevel] = useState(0);
-  // D4: debounced label state — true only after SUSTAINED_LOW_MS of continuous sub-threshold level
-  const [isLowVolume, setIsLowVolume] = useState(false);
   const [completing, setCompleting] = useState(false);
 
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
   const startedAtRef = useRef<number>(0);
-  const recTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
-  const previousVolumeLevelRef = useRef<number>(0);
-  const lastMeterTimestampRef = useRef<number>(0);
-  // D4: accumulated sub-threshold duration for label debounce
-  const lowDurationRef = useRef<number>(0);
 
   // 完了済みセッションを結果ページへリダイレクト（非同期 API 確認）
   useEffect(() => {
@@ -197,36 +156,6 @@ export default function DiagnosticSessionPage({ params }: PageProps) {
         // セッション確認失敗は無視（sessionStorage のデータで続行）
       });
   }, [diagnosticSessionIdentifier, router]);
-
-  // AudioContext cleanup
-  useEffect(() => {
-    return () => {
-      if (animationFrameRef.current !== null) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-      if (audioContextRef.current !== null) {
-        void audioContextRef.current.close();
-      }
-    };
-  }, []);
-
-  const cleanupAudioContext = useCallback(() => {
-    if (animationFrameRef.current !== null) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
-    if (audioContextRef.current !== null) {
-      void audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
-    // WARN-2: reset peak-hold state so a second recording does not inherit a stale held peak.
-    previousVolumeLevelRef.current = 0;
-    lastMeterTimestampRef.current = 0;
-    setVolumeLevel(0);
-    // D4: reset label debounce state so a second recording starts with label off.
-    lowDurationRef.current = 0;
-    setIsLowVolume(false);
-  }, []);
 
   // workspace API をポーリングして AssessmentResult 識別子を取得
   const pollWorkspaceForAssessmentResult = useCallback(
@@ -268,7 +197,7 @@ export default function DiagnosticSessionPage({ params }: PageProps) {
       formData.append("recordedDurationMs", String(durationMs));
       formData.append("startedAt", new Date(startedAtRef.current).toISOString());
       formData.append("endedAt", new Date(endedAt).toISOString());
-      formData.append("browserInfo", JSON.stringify(detectBrowserInfo()));
+      formData.append("browserInfo", JSON.stringify(detectBrowserEnvironment()));
 
       try {
         const recordingResponse = await apiPostForm<DiagnosticRecordingAttemptResponse>(
@@ -302,89 +231,41 @@ export default function DiagnosticSessionPage({ params }: PageProps) {
     [diagnosticSessionIdentifier, pollWorkspaceForAssessmentResult],
   );
 
-  const startRecording = useCallback(async () => {
-    setRecordError(null);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          autoGainControl: false,
-          noiseSuppression: false,
-          echoCancellation: false,
-        },
-      });
-
-      const audioContext = new AudioContext();
-      audioContextRef.current = audioContext;
-      const analyserNode = audioContext.createAnalyser();
-      analyserNode.fftSize = 512;
-      const mediaStreamSource = audioContext.createMediaStreamSource(stream);
-      mediaStreamSource.connect(analyserNode);
-
-      const timeDomainBuffer = new Uint8Array(analyserNode.fftSize);
-      const updateVolumeMeter = (timestamp: DOMHighResTimeStamp) => {
-        analyserNode.getByteTimeDomainData(timeDomainBuffer);
-        const rmsLevel = computeRmsLevel(timeDomainBuffer);
-        const rawPercent = rmsLevelToDisplayPercentage(rmsLevel);
-        const dtMs =
-          lastMeterTimestampRef.current > 0 ? timestamp - lastMeterTimestampRef.current : 0;
-        lastMeterTimestampRef.current = timestamp;
-        const releaseAmount = PEAK_HOLD_RELEASE_RATE_PER_MS * dtMs;
-        const smoothed = applyPeakHold(rawPercent, previousVolumeLevelRef.current, releaseAmount);
-        previousVolumeLevelRef.current = smoothed;
-        setVolumeLevel(smoothed);
-        // D4: label debounce — accumulate sub-threshold duration; fire label only when sustained.
-        lowDurationRef.current = accumulateLowDurationMs(
-          lowDurationRef.current,
-          smoothed,
-          LOW_VOLUME_DISPLAY_THRESHOLD,
-          dtMs,
-        );
-        setIsLowVolume(lowDurationRef.current >= SUSTAINED_LOW_MS);
-        animationFrameRef.current = requestAnimationFrame(updateVolumeMeter);
-      };
-      animationFrameRef.current = requestAnimationFrame(updateVolumeMeter);
-
-      const recorder = new MediaRecorder(stream);
-      chunksRef.current = [];
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) chunksRef.current.push(event.data);
-      };
-
+  // W35: getUserMedia 制約・AnalyserNode・peak-hold ループ・タイマー・cleanup は
+  // use-recording-with-volume-meter.ts に一本化（sections ページと共有）。
+  // currentPrompt を束ねた 2 引数 submitRecording 呼び出しと、その guard
+  // （currentPrompt が無ければ何もしない）はページ側に残す。元実装は録音開始前に
+  // guard していたが、.rec-btn は currentPrompt 存在時にしか描画されない
+  // （下の `{currentPrompt && (...)}` 参照）ため実質到達しない分岐であり、
+  // onStop 側で再評価しても観測可能な挙動は変わらない。
+  const {
+    recSeconds,
+    volumeLevel,
+    isLowVolume,
+    startRecording: startRecordingWithVolumeMeter,
+    stopRecording: stopRecordingWithVolumeMeter,
+  } = useRecordingWithVolumeMeter({
+    onStart: (startedAt) => {
+      startedAtRef.current = startedAt;
+      setRecordingState("recording");
+    },
+    onStop: (blob) => {
       const currentPrompt = diagnosticSession?.promptSet.prompts[currentPromptIndex];
       if (!currentPrompt) return;
+      void submitRecording(blob, currentPrompt);
+    },
+    onError: (message) => setRecordError(message),
+  });
 
-      recorder.onstop = () => {
-        stream.getTracks().forEach((track) => track.stop());
-        cleanupAudioContext();
-        const audioBlob = new Blob(chunksRef.current, {
-          type: recorder.mimeType || "audio/webm",
-        });
-        void submitRecording(audioBlob, currentPrompt);
-      };
-
-      startedAtRef.current = nowMs();
-      setRecSeconds(0);
-      mediaRecorderRef.current = recorder;
-      recorder.start();
-      setRecordingState("recording");
-
-      recTimerRef.current = setInterval(() => {
-        setRecSeconds((seconds) => seconds + 1);
-      }, 1000);
-    } catch {
-      cleanupAudioContext();
-      setRecordError("マイクへのアクセスに失敗しました。ブラウザの権限を確認してください。");
-    }
-  }, [diagnosticSession, currentPromptIndex, submitRecording, cleanupAudioContext]);
+  const startRecording = useCallback(async () => {
+    setRecordError(null);
+    await startRecordingWithVolumeMeter();
+  }, [startRecordingWithVolumeMeter]);
 
   const stopRecording = useCallback(() => {
-    if (recTimerRef.current) {
-      clearInterval(recTimerRef.current);
-      recTimerRef.current = null;
-    }
-    mediaRecorderRef.current?.stop();
+    stopRecordingWithVolumeMeter();
     setRecordingState("idle");
-  }, []);
+  }, [stopRecordingWithVolumeMeter]);
 
   const advanceToNextPrompt = useCallback(() => {
     if (!diagnosticSession) return;
@@ -449,15 +330,13 @@ export default function DiagnosticSessionPage({ params }: PageProps) {
   );
   const allPromptsCompleted = promptResults.length === totalPrompts;
 
-  const formattedRecTime = `${Math.floor(recSeconds / 60)}:${String(recSeconds % 60).padStart(2, "0")}`;
+  const formattedRecTime = formatMinutesSeconds(recSeconds);
 
   return (
     <div className="ws" data-state={recordingState}>
       {/* app-top */}
       <div className="app-top">
-        <div className="app-brand">
-          NativeTrace <span className="ipa">/ˈneɪtɪv treɪs/</span>
-        </div>
+        <AppTop />
         <div className="crumb" style={{ marginLeft: "16px" }}>
           <b>診断テスト</b>
           <span className="sep">·</span>

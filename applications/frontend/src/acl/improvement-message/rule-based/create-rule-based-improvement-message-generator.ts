@@ -11,19 +11,8 @@ import {
   type FeedbackLayersOutput,
 } from "../../../usecase/port/improvement-message-generator";
 import { type AcousticEvidenceDto } from "../../../lib/api-types";
-import {
-  findCatalogEntryById,
-  findCatalogEntry,
-  findStepsForSubstitute,
-} from "../../../domain/error-catalog";
-
-/**
- * expected/detected から表示用テキストを取得する。
- * text が非 null なら text、null なら ipa、両方 null なら null。
- */
-const resolveDisplayText = (
-  evidence: Readonly<{ text: string | null; ipa: string | null }>,
-): string | null => evidence.text ?? evidence.ipa ?? null;
+import { findStepsForSubstitute } from "../../../domain/error-catalog";
+import { resolveDisplayText, resolveCatalogEntry } from "../shared";
 
 /**
  * 位置ラベルを日本語に変換する。
@@ -128,8 +117,7 @@ const generateFeedbackLayersFromInput = (
   const positionLabel = resolvePositionLabel(input.wordPositionLabel ?? null);
 
   // カタログエントリを取得（catalogId 優先、なければ phenomenon + contrast で検索）
-  const catalogEntry = (input.catalogId ?? null) ? findCatalogEntryById(input.catalogId!) : null;
-  const fallbackEntry = catalogEntry ?? findCatalogEntry(input.phenomenon, detectedDisplay);
+  const fallbackEntry = resolveCatalogEntry(input.catalogId, input.phenomenon, detectedDisplay);
 
   // ① what: 観測層（期待/検出/位置）
   let whatJa: string;

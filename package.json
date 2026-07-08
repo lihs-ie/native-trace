@@ -17,7 +17,7 @@
     "backend:test": "cabal test --project-dir=applications/backend",
     "fitness": "bash scripts/fitness/check.sh",
     "test:fullcycle": "pnpm --filter @native-trace/frontend test:fullcycle",
-    "test:drift": "pnpm --filter @native-trace/frontend fullcycle:up && python3 applications/python-analyzer/test/selfeval/drift_check.py --analyzer-url http://localhost:8788"
+    "test:drift": "pnpm --filter @native-trace/frontend fullcycle:up && python3 applications/python-analyzer/test/selfeval/drift_check.py"
   },
   "devDependencies": {
     "@ast-grep/cli": "^0.43.0"

@@ -5,7 +5,7 @@ import Data.ByteString.Lazy.Char8 qualified as LBS8
 import Data.Map.Strict qualified as Map
 import Data.Maybe (isJust, isNothing)
 import Data.Text qualified as Text
-import NativeTrace.Worker.AaiClient (callAai)
+import NativeTrace.Worker.AaiClient (RawArticulatoryEstimate (..), callAai)
 import NativeTrace.Worker.AnalyzerClient (
   AnalyzerResult (..),
   InsertedVowelInfo (..),
@@ -19,19 +19,19 @@ import NativeTrace.Worker.AnalyzerClient (
  )
 import NativeTrace.Worker.Assessment (buildAssessmentResponseFromGop)
 import NativeTrace.Worker.Scoring (
-  ScoringInput (..),
   aaiDisplayEligibilityThreshold,
   articulatoryDisplayGuardrail,
+  attachArticulatoryEstimates,
   audioQualityMinSnrDb,
   buildAssessmentScores,
-  checkAudioQuality,
   classifyGopDelta,
   deriveAcousticEvidence,
   generateFindingsFromGop,
   hillenbrandGaVowelFormants,
-  scoreAssessment,
+  isLowQualityAudio,
   scoreFromGop,
   severityToScoreImpact,
+  tokenize,
  )
 import NativeTrace.Worker.Types (
   AcousticEvidence (..),
@@ -91,7 +91,7 @@ fixtureAnalyzerResult =
       analyzedWeakFormRealizations = [],
       analyzedSyllables = [],
       analyzedPhonemeAcoustics = [],
-      analyzerSpeakerSex = "unknown",
+      analyzedSpeakerSex = "unknown",
       analyzedEstimatedSnrDb = 30.0
     }
 
@@ -136,7 +136,7 @@ bodyText = "Hello world"
 rangeTuples :: [AssessmentFinding] -> [(Int, Int)]
 rangeTuples = map ((\r -> (startChar r, endChar r)) . findingTextRange)
 
--- | checkAudioQuality テスト用のデフォルトパラメータ（全基準クリア）。
+-- | isLowQualityAudio テスト用のデフォルトパラメータ（全基準クリア）。
 defaultQualityParams :: (Double, Int, Int, Int, [Double])
 defaultQualityParams = (-20.0, 10000, 9, 10, [-5.0])
 
@@ -183,45 +183,89 @@ spec = do
            in findingScoreImpact enriched `shouldBe` findingScoreImpact finding
         [] -> expectationFailure "expected >=1 finding in fixture"
 
-  describe "checkAudioQuality" $ do
+  describe "attachArticulatoryEstimates (ADR-019 D5 / W39)" $ do
+    -- fixtureAnalyzerResult は audioRange (100,200)/(200,300)/(600,700) の 3 finding を生成する
+    -- （期待値は移設前の Application.hs ハンドラの挙動から導出）。
+    let fixtureFindings = generateFindingsFromGop bodyText fixtureAnalyzerResult
+    it "attaches a guardrail-passing estimate only to the matching finding (midpoint containment)" $ do
+      let rawEstimate =
+            RawArticulatoryEstimate
+              { raePhoneme = "ɛ",
+                raeStartMs = 100,
+                raeEndMs = 160,
+                raeTongueTipX = 0.10,
+                raeTongueTipY = 0.20,
+                raeTongueDorsumX = 0.30,
+                raeTongueDorsumY = 0.40,
+                raeLipApertureX = 0.50,
+                raeLipApertureY = 0.60,
+                raeDisplayEligibility = 0.6
+              }
+      let attached = attachArticulatoryEstimates [rawEstimate] fixtureFindings
+      -- midpoint 130ms は先頭 finding の audioRange (100,200) のみに含まれる
+      map (isJust . findingArticulatoryEstimate) attached `shouldBe` [True, False, False]
+      case attached of
+        (first : _) ->
+          findingArticulatoryEstimate first
+            `shouldBe` Just (ArticulatoryEstimate 0.10 0.20 0.30 0.40 0.50 0.60 0.6)
+        [] -> expectationFailure "expected >=1 finding in fixture"
+    it "ignores a guardrail-passing estimate that matches no finding (all stay Nothing)" $ do
+      let rawEstimate =
+            RawArticulatoryEstimate
+              { raePhoneme = "iː",
+                raeStartMs = 400,
+                raeEndMs = 460,
+                raeTongueTipX = 0.10,
+                raeTongueTipY = 0.20,
+                raeTongueDorsumX = 0.30,
+                raeTongueDorsumY = 0.40,
+                raeLipApertureX = 0.50,
+                raeLipApertureY = 0.60,
+                raeDisplayEligibility = 0.9
+              }
+      -- midpoint 430ms はどの finding の audioRange にも含まれず、phoneme "iː" も一致しない
+      let attached = attachArticulatoryEstimates [rawEstimate] fixtureFindings
+      all (isNothing . findingArticulatoryEstimate) attached `shouldBe` True
+
+  describe "isLowQualityAudio" $ do
     it "returns False (normal) when all criteria are satisfied" $ do
       let (meanDbfs, durationMs, detected, expected, gopValues) = defaultQualityParams
-      checkAudioQuality meanDbfs durationMs detected expected gopValues defaultEstimatedSnrDb `shouldBe` False
+      isLowQualityAudio meanDbfs durationMs detected expected gopValues defaultEstimatedSnrDb `shouldBe` False
 
     it "returns True (low_quality) when meanDbfs is below threshold (-36.0, speech-active RMS, ADR-015)" $ do
       let (_, durationMs, detected, expected, gopValues) = defaultQualityParams
-      checkAudioQuality (-37.0) durationMs detected expected gopValues defaultEstimatedSnrDb `shouldBe` True
+      isLowQualityAudio (-37.0) durationMs detected expected gopValues defaultEstimatedSnrDb `shouldBe` True
 
     it "returns True (low_quality) when recording duration is below threshold (1000ms)" $ do
       let (meanDbfs, _, detected, expected, gopValues) = defaultQualityParams
-      checkAudioQuality meanDbfs 500 detected expected gopValues defaultEstimatedSnrDb `shouldBe` True
+      isLowQualityAudio meanDbfs 500 detected expected gopValues defaultEstimatedSnrDb `shouldBe` True
 
     it "returns False (normal) when recording duration is sufficient despite pausey recording (10s)" $ do
       let (meanDbfs, _, detected, expected, gopValues) = defaultQualityParams
-      checkAudioQuality meanDbfs 10000 detected expected gopValues defaultEstimatedSnrDb `shouldBe` False
+      isLowQualityAudio meanDbfs 10000 detected expected gopValues defaultEstimatedSnrDb `shouldBe` False
 
     it "returns True (low_quality) when phoneme detection rate is below threshold (0.25)" $ do
       let (meanDbfs, durationMs, _, _, gopValues) = defaultQualityParams
-      checkAudioQuality meanDbfs durationMs 2 10 gopValues defaultEstimatedSnrDb `shouldBe` True
+      isLowQualityAudio meanDbfs durationMs 2 10 gopValues defaultEstimatedSnrDb `shouldBe` True
 
     it "returns True (low_quality) when median GOP is below threshold (-18.0)" $ do
       let (meanDbfs, durationMs, detected, expected, _) = defaultQualityParams
-      checkAudioQuality meanDbfs durationMs detected expected [-20.0, -19.0] defaultEstimatedSnrDb `shouldBe` True
+      isLowQualityAudio meanDbfs durationMs detected expected [-20.0, -19.0] defaultEstimatedSnrDb `shouldBe` True
 
     it "returns True (low_quality) when gopValues list is empty" $ do
       let (meanDbfs, durationMs, detected, expected, _) = defaultQualityParams
-      checkAudioQuality meanDbfs durationMs detected expected [] defaultEstimatedSnrDb `shouldBe` True
+      isLowQualityAudio meanDbfs durationMs detected expected [] defaultEstimatedSnrDb `shouldBe` True
 
     -- ADR-032 D4補正-2 (2026-06-20): SNR gate DISABLED — 13-clip validation proved the fixed WADA
     -- floor is not clip-portable (false-rejects 6/13 clean clips). These tests now assert the
     -- DISABLED state: low estimatedSnrDb does NOT cause low_quality on its own.
     it "returns False (gate disabled) when estimatedSnrDb is below old threshold (WADA floor 0.5, ADR-032 SNR gate DISABLED)" $ do
       let (meanDbfs, durationMs, detected, expected, gopValues) = defaultQualityParams
-      checkAudioQuality meanDbfs durationMs detected expected gopValues (-1.0) `shouldBe` False
+      isLowQualityAudio meanDbfs durationMs detected expected gopValues (-1.0) `shouldBe` False
 
     it "returns False (gate disabled) when estimatedSnrDb is exactly at old threshold (WADA floor 0.5, ADR-032 SNR gate DISABLED)" $ do
       let (meanDbfs, durationMs, detected, expected, gopValues) = defaultQualityParams
-      checkAudioQuality meanDbfs durationMs detected expected gopValues audioQualityMinSnrDb `shouldBe` False
+      isLowQualityAudio meanDbfs durationMs detected expected gopValues audioQualityMinSnrDb `shouldBe` False
 
   describe "generateFindingsFromGop" $ do
     it "produces at least one finding for non-empty body text with low GOP phonemes" $ do
@@ -255,15 +299,15 @@ spec = do
     it "high-FL error causes larger intelligibility penalty than low-FL error" $ do
       let highFlFindings = generateFindingsFromGop bodyText fixtureHighFlAnalyzerResult
       let lowFlFindings = generateFindingsFromGop bodyText fixtureLowFlAnalyzerResult
-      let baseScoringOutput = scoreAssessment (ScoringInput bodyText 0 3000)
-      let highFlScores = buildAssessmentScores (scoreFromGop fixtureHighFlAnalyzerResult baseScoringOutput) highFlFindings
-      let lowFlScores = buildAssessmentScores (scoreFromGop fixtureLowFlAnalyzerResult baseScoringOutput) lowFlFindings
+      let tokens = tokenize bodyText
+      let highFlScores = buildAssessmentScores (scoreFromGop fixtureHighFlAnalyzerResult tokens) highFlFindings
+      let lowFlScores = buildAssessmentScores (scoreFromGop fixtureLowFlAnalyzerResult tokens) lowFlFindings
       -- 高FL誤りの intelligibility は低FL誤りより低い（減点が大きい）
       intelligibility highFlScores `shouldSatisfy` (<= intelligibility lowFlScores)
 
   describe "CEFR band mapping (M-111)" $ do
     it "score >= 80 maps to C1" $ do
-      let baseScoringOutput = scoreAssessment (ScoringInput bodyText 0 3000)
+      let tokens = tokenize bodyText
       -- 高GOP（良い発音）の場合は高スコア → C1 近辺
       let goodResult =
             fixtureAnalyzerResult
@@ -273,7 +317,7 @@ spec = do
                   ]
               }
       let findings = generateFindingsFromGop bodyText goodResult
-      let scores = buildAssessmentScores (scoreFromGop goodResult baseScoringOutput) findings
+      let scores = buildAssessmentScores (scoreFromGop goodResult tokens) findings
       -- cefrSegmental band は空でないことを確認
       cefrBand (cefrSegmental scores) `shouldSatisfy` (not . null . Text.unpack)
 

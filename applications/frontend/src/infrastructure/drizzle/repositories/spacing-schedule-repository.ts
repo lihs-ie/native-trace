@@ -14,8 +14,9 @@ import {
   createAccuracy0To1,
 } from "../../../domain/training";
 import { type WeaknessProfileIdentifier } from "../../../domain/training";
-import { type DomainError } from "../../../domain/shared";
+import { notFound } from "../../../domain/shared";
 import { okAsync, errAsync } from "neverthrow";
+import { tryPersistence, tryPersistenceResult } from "./try-persistence";
 
 type SpacingScheduleRow = typeof spacingSchedules.$inferSelect;
 
@@ -75,122 +76,98 @@ export const createDrizzleSpacingScheduleRepository = (
   db: DrizzleDatabase,
 ): SpacingScheduleRepository => ({
   find: (identifier: SpacingScheduleIdentifier) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = db
-          .select()
-          .from(spacingSchedules)
-          .where(
-            and(
-              eq(spacingSchedules.identifier, String(identifier)),
-              isNull(spacingSchedules.deletedAt),
-            ),
-          )
-          .get();
+    return tryPersistenceResult(() => {
+      const row = db
+        .select()
+        .from(spacingSchedules)
+        .where(
+          and(
+            eq(spacingSchedules.identifier, String(identifier)),
+            isNull(spacingSchedules.deletedAt),
+          ),
+        )
+        .get();
 
-        if (!row) {
-          return errAsync({
-            type: "notFound",
-            resource: "SpacingSchedule",
-            identifier: String(identifier),
-          } as DomainError);
-        }
-
-        return okAsync(rowToSpacingSchedule(row));
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
+      if (!row) {
+        return errAsync(notFound("SpacingSchedule", String(identifier)));
       }
+
+      return okAsync(rowToSpacingSchedule(row));
     });
   },
 
   findByLearnerAndContrast: (learner: LearnerIdentifier, contrast: string) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = db
-          .select()
-          .from(spacingSchedules)
-          .where(
-            and(
-              eq(spacingSchedules.learner, String(learner)),
-              eq(spacingSchedules.contrast, contrast),
-              isNull(spacingSchedules.deletedAt),
-            ),
-          )
-          .get();
+    return tryPersistence(() => {
+      const row = db
+        .select()
+        .from(spacingSchedules)
+        .where(
+          and(
+            eq(spacingSchedules.learner, String(learner)),
+            eq(spacingSchedules.contrast, contrast),
+            isNull(spacingSchedules.deletedAt),
+          ),
+        )
+        .get();
 
-        if (!row) {
-          return okAsync(null);
-        }
-
-        return okAsync(rowToSpacingSchedule(row));
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
+      if (!row) {
+        return null;
       }
+
+      return rowToSpacingSchedule(row);
     });
   },
 
   findDueByLearner: (learner: LearnerIdentifier) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const rows = db
-          .select()
-          .from(spacingSchedules)
-          .where(
-            and(
-              eq(spacingSchedules.learner, String(learner)),
-              eq(spacingSchedules.state, "due"),
-              isNull(spacingSchedules.deletedAt),
-            ),
-          )
-          .orderBy(asc(spacingSchedules.nextPresentationAt))
-          .all();
+    return tryPersistence(() => {
+      const rows = db
+        .select()
+        .from(spacingSchedules)
+        .where(
+          and(
+            eq(spacingSchedules.learner, String(learner)),
+            eq(spacingSchedules.state, "due"),
+            isNull(spacingSchedules.deletedAt),
+          ),
+        )
+        .orderBy(asc(spacingSchedules.nextPresentationAt))
+        .all();
 
-        return okAsync(rows.map(rowToSpacingSchedule));
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
-      }
+      return rows.map(rowToSpacingSchedule);
     });
   },
 
   findAllByLearner: (learner: LearnerIdentifier) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const rows = db
-          .select()
-          .from(spacingSchedules)
-          .where(
-            and(eq(spacingSchedules.learner, String(learner)), isNull(spacingSchedules.deletedAt)),
-          )
-          .orderBy(asc(spacingSchedules.nextPresentationAt))
-          .all();
+    return tryPersistence(() => {
+      const rows = db
+        .select()
+        .from(spacingSchedules)
+        .where(
+          and(eq(spacingSchedules.learner, String(learner)), isNull(spacingSchedules.deletedAt)),
+        )
+        .orderBy(asc(spacingSchedules.nextPresentationAt))
+        .all();
 
-        return okAsync(rows.map(rowToSpacingSchedule));
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
-      }
+      return rows.map(rowToSpacingSchedule);
     });
   },
 
   persist: (schedule: SpacingSchedule) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = spacingScheduleToRow(schedule);
-        db.insert(spacingSchedules)
-          .values(row)
-          .onConflictDoUpdate({
-            target: spacingSchedules.identifier,
-            set: {
-              state: row.state,
-              nextPresentationAt: row.nextPresentationAt,
-              recentAccuracy: row.recentAccuracy,
-              updatedAt: row.updatedAt,
-            },
-          })
-          .run();
-        return okAsync(undefined);
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
-      }
+    return tryPersistence(() => {
+      const row = spacingScheduleToRow(schedule);
+      db.insert(spacingSchedules)
+        .values(row)
+        .onConflictDoUpdate({
+          target: spacingSchedules.identifier,
+          set: {
+            state: row.state,
+            nextPresentationAt: row.nextPresentationAt,
+            recentAccuracy: row.recentAccuracy,
+            updatedAt: row.updatedAt,
+          },
+        })
+        .run();
+      return undefined;
     });
   },
 });

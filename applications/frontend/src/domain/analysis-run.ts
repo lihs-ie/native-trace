@@ -1,14 +1,11 @@
-import { type NonEmptyList } from "./shared";
+import { type Brand, type NonEmptyList, createNonEmptyBrandedString } from "./shared";
 import { type RecordingAttemptIdentifier } from "./recording-attempt";
 import { type AnalysisJob } from "./analysis-job";
-
-declare const __brand: unique symbol;
-type Brand<T, B> = T & { readonly [__brand]: B };
 
 export type AnalysisRunIdentifier = Brand<string, "AnalysisRunIdentifier">;
 
 export const createAnalysisRunIdentifier = (value: string): AnalysisRunIdentifier | null =>
-  value.trim().length > 0 ? (value as AnalysisRunIdentifier) : null;
+  createNonEmptyBrandedString<AnalysisRunIdentifier>(value);
 
 export type AnalysisMode = "cloud_only" | "oss_worker_only" | "comparison";
 export type AnalysisRunStatus =

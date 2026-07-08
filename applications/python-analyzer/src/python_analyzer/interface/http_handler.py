@@ -1,9 +1,10 @@
-"""HTTP ルーター: GET /health + POST /v1/tts + GET /v1/stimuli + POST /v1/shadowing-lag。
+"""HTTP ルーター: GET /health + POST /v1/tts + GET /v1/stimuli + POST /v1/analyze + POST /v1/shadowing-lag。
 
 app.py の Composition Root で include_router して登録される。
-/v1/analyze の実装は app.py の DI 結線後に追加される。
+use case を要するルート（/v1/analyze / /v1/shadowing-lag）は setter で DI される（W42）。
 /v1/tts は Kokoro-82M TTS を使って General American 音声を合成する（C2, M-124）。
 /v1/stimuli は ADR-009 の curated stimulus assets を配信する（REQ-122 / W-1）。
+/v1/analyze は発音解析エンドポイント（生計測。採点は Haskell worker）。
 /v1/shadowing-lag は ADR-013 の DTW ラグ計測エンドポイントを提供する（M-SHL-1）。
 """
 
@@ -16,11 +17,15 @@ from pathlib import Path
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 
+from python_analyzer.domain.audio import AudioInput
 from python_analyzer.infrastructure.kokoro_tts import (
     DEFAULT_VOICE,
     synthesize_speech,
 )
+from python_analyzer.interface.analysis_response_mapper import to_analysis_response
 from python_analyzer.interface.schema import (
+    AnalysisMetadata,
+    AnalysisResponse,
     ErrorDetail,
     ErrorResponse,
     HealthResponse,
@@ -227,6 +232,133 @@ async def get_stimuli(
 
 
 # ---------------------------------------------------------------------------
+# Pronunciation analysis endpoint (/v1/analyze).
+# DI は app.py の Composition Root で行う（W42: setter パターンで移設）。
+# ここでは router に endpoint を定義して include_router で結線する。
+# ---------------------------------------------------------------------------
+
+# Composition Root から注入された AnalyzePronunciationUseCase を保持する module-level 変数。
+# app.py の create_app() が set_analyze_pronunciation_use_case() で設定する。
+_analyze_pronunciation_use_case: "AnalyzePronunciationUseCase | None" = None
+
+
+def set_analyze_pronunciation_use_case(use_case: "AnalyzePronunciationUseCase") -> None:  # noqa: ANN001
+    """Composition Root から発音解析 use case を注入する。
+
+    app.py の create_app() が呼び出す。
+    """
+    global _analyze_pronunciation_use_case  # noqa: PLW0603
+    _analyze_pronunciation_use_case = use_case
+
+
+@router.post(
+    "/v1/analyze",
+    response_model=AnalysisResponse,
+    responses={
+        500: {"model": ErrorResponse},
+        400: {"model": ErrorResponse},
+    },
+)
+async def analyze(  # noqa: B008
+    audio: UploadFile = File(..., description="音声バイナリ（WAV/WebM/OGG）"),  # noqa: B008
+    metadata: str = Form(..., description="application/json メタデータ"),  # noqa: B008
+) -> AnalysisResponse:
+    """発音解析エンドポイント。
+
+    multipart/form-data で音声と metadata を受け取り生計測結果を返す。採点はしない。
+    C1 全フィールド（NBest/F0/wordStress/rhythm/weakForm/syllables）を返す。
+    """
+    if _analyze_pronunciation_use_case is None:
+        raise HTTPException(
+            status_code=500,
+            detail=ErrorResponse(
+                error=ErrorDetail(
+                    code="USE_CASE_NOT_INITIALIZED",
+                    message="発音解析 use case が初期化されていません",
+                    retryable=False,
+                )
+            ).model_dump(),
+        )
+
+    # metadata を JSON パースする
+    try:
+        meta = AnalysisMetadata.model_validate(json.loads(metadata))
+    except Exception as parse_error:
+        logger.error("metadata パースエラー: %s", parse_error)
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse(
+                error=ErrorDetail(
+                    code="INVALID_METADATA",
+                    message=f"metadata のパースに失敗しました: {parse_error}",
+                    retryable=False,
+                )
+            ).model_dump(),
+        ) from parse_error
+
+    # 音声バイナリを読み込む
+    try:
+        audio_bytes = await audio.read()
+    except Exception as read_error:
+        logger.error("音声読み込みエラー: %s", read_error)
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorResponse(
+                error=ErrorDetail(
+                    code="AUDIO_READ_ERROR",
+                    message=f"音声の読み込みに失敗しました: {read_error}",
+                    retryable=True,
+                )
+            ).model_dump(),
+        ) from read_error
+
+    audio_input = AudioInput(
+        content=audio_bytes,
+        mime_type=meta.mimeType,
+        duration_milliseconds=meta.durationMilliseconds,
+    )
+
+    # ユースケースを実行する
+    try:
+        result = _analyze_pronunciation_use_case.execute(
+            audio=audio_input,
+            reference_text=meta.referenceText,
+            target_accent=meta.targetAccent,
+            include_reference_f0=meta.includeReferenceF0,
+            speaker_sex=meta.speakerSex,
+        )
+    except Exception as execution_error:
+        logger.error("発音解析エラー: %s", execution_error, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=ErrorResponse(
+                error=ErrorDetail(
+                    code="ANALYSIS_ERROR",
+                    message=f"発音解析中にエラーが発生しました: {execution_error}",
+                    retryable=True,
+                )
+            ).model_dump(),
+        ) from execution_error
+
+    # per_phoneme_gop が空の場合は 500 を返す（task-contract §HTTP 契約）
+    if not result.per_phoneme_gop:
+        logger.error("per_phoneme_gop が空: 整列に失敗している可能性がある")
+        raise HTTPException(
+            status_code=500,
+            detail=ErrorResponse(
+                error=ErrorDetail(
+                    code="ALIGNMENT_FAILED",
+                    message="音素整列に失敗しました（perPhonemeGop が空）",
+                    retryable=True,
+                )
+            ).model_dump(),
+        )
+
+    # 応答マッピングは純関数に委譲する（W42）
+    return to_analysis_response(result, meta.speakerSex)
+
+
+# ---------------------------------------------------------------------------
 # Shadowing lag measurement endpoint (ADR-013 / M-SHL-1).
 # DI は app.py の Composition Root で行う。
 # ここでは router に endpoint を定義して include_router で結線する。
@@ -272,8 +404,6 @@ async def shadowing_lag(  # noqa: B008
     wav2vec2 強制整列 + DTW で対応づけ、追随ラグ（ミリ秒）を計測して返す。
     lagMilliseconds は実音声由来の計測値（固定値・乱数禁止: ADR-013 制約）。
     """
-    from python_analyzer.domain.audio import AudioInput
-
     if _shadowing_lag_use_case is None:
         raise HTTPException(
             status_code=500,
@@ -366,4 +496,5 @@ async def shadowing_lag(  # noqa: B008
 
 
 # 型アノテーション用の forward reference を解決する
+from python_analyzer.usecase.analyze_pronunciation import AnalyzePronunciationUseCase  # noqa: E402
 from python_analyzer.usecase.compute_shadowing_lag import ComputeShadowingLagUseCase  # noqa: E402

@@ -18,10 +18,6 @@
 import { type ResultAsync, errAsync, okAsync } from "neverthrow";
 import { type DomainError, validationFailed } from "../../domain/shared";
 import {
-  type TrainingSessionIdentifier,
-  type HvptTrialIdentifier,
-  type StimulusIdentifier,
-  type PhonemeContrast,
   createHvptTrialIdentifier,
   createTrainingSessionIdentifier,
   createStimulusIdentifier,
@@ -29,6 +25,7 @@ import {
   createResponseLabel,
   recordHvptTrial,
 } from "../../domain/training";
+import { generateIdentifier } from "../shared/identifier";
 import { type TrainingSessionRepository } from "../port/training-session-repository";
 import { type HvptTrialRepository } from "../port/hvpt-trial-repository";
 import { type EntropyProvider } from "../port/entropy-provider";
@@ -90,25 +87,20 @@ export const createSubmitHvptTrial =
   (input: SubmitHvptTrialInput): ResultAsync<SubmitHvptTrialOutput, DomainError> => {
     const trainingSessionIdentifier = createTrainingSessionIdentifier(
       input.trainingSessionIdentifier,
-    ) as TrainingSessionIdentifier;
+    );
     if (!trainingSessionIdentifier) {
       return errAsync(
         validationFailed("trainingSessionIdentifier", "不正な訓練セッション識別子です"),
       );
     }
 
-    const stimulusIdentifier = createStimulusIdentifier(
-      input.stimulusIdentifier,
-    ) as StimulusIdentifier;
+    const stimulusIdentifier = createStimulusIdentifier(input.stimulusIdentifier);
     if (!stimulusIdentifier) {
       return errAsync(validationFailed("stimulusIdentifier", "不正な刺激識別子です"));
     }
 
     // correctLabel / response を ResponseLabel に変換する
-    const correctLabelResult = createResponseLabel(
-      input.correctLabelType,
-      input.correctLabelValue,
-    );
+    const correctLabelResult = createResponseLabel(input.correctLabelType, input.correctLabelValue);
     if (correctLabelResult.isErr()) {
       return errAsync(correctLabelResult.error);
     }
@@ -141,23 +133,21 @@ export const createSubmitHvptTrial =
           );
         }
 
-        const contrast = createPhonemeContrast(
-          String(trainingSession.contrast),
-        ) as PhonemeContrast;
+        const contrast = createPhonemeContrast(String(trainingSession.contrast));
         if (!contrast) {
           return errAsync(validationFailed("contrast", "訓練セッションの対立文字列が不正です"));
         }
 
         // 2. HvptTrial 識別子を生成する
-        const trialIdentifierRaw = dependencies.entropyProvider.generateUlid();
-        const trialIdentifier = createHvptTrialIdentifier(
-          trialIdentifierRaw,
-        ) as HvptTrialIdentifier;
-        if (!trialIdentifier) {
-          return errAsync(
-            validationFailed("trialIdentifier", "HvptTrial 識別子の生成に失敗しました"),
-          );
+        const trialIdentifierResult = generateIdentifier(
+          dependencies.entropyProvider,
+          createHvptTrialIdentifier,
+          "trialIdentifier",
+        );
+        if (trialIdentifierResult.isErr()) {
+          return errAsync(trialIdentifierResult.error);
         }
+        const trialIdentifier = trialIdentifierResult.value;
 
         // 3. recordHvptTrial (domain) で正誤を導出する（DD-265）
         // 不変条件 1: correct は correctLabel と response の一致から導出（DD-203）
@@ -192,5 +182,3 @@ export const createSubmitHvptTrial =
         );
       });
   };
-
-export type SubmitHvptTrialExecutor = ReturnType<typeof createSubmitHvptTrial>;

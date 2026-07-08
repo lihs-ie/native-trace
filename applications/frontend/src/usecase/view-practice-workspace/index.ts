@@ -3,6 +3,7 @@ import { z } from "zod";
 import { type DomainError, validationFailed, createNonEmptyList } from "../../domain/shared";
 import { createSectionIdentifier } from "../../domain/section";
 import { deriveAnalysisRunStatus } from "../../domain/analysis-run";
+import { type EngineType } from "../../domain/analysis-job";
 import { type SectionRepository } from "../port/section-repository";
 import { type RecordingAttemptRepository } from "../port/recording-attempt-repository";
 import { type AnalysisRunRepository } from "../port/analysis-run-repository";
@@ -11,6 +12,8 @@ import { type AssessmentResultRepository } from "../port/assessment-result-repos
 import { type FindingDismissalRepository } from "../port/finding-dismissal-repository";
 import { type AudioFileRepository } from "../port/audio-file-repository";
 import { tokenizeSectionBody, type SectionToken } from "../shared/tokenizer";
+import { firstPage } from "../shared/pagination";
+import { parseInput } from "../shared/validation";
 
 // ---- Input ----
 
@@ -67,7 +70,7 @@ export type HighlightRangeOutput = Readonly<{
 
 export type EngineHighlightRangesOutput = Readonly<{
   analysisEngine: string;
-  engineKind: "cloud" | "oss_worker";
+  engineKind: EngineType;
   result: string;
   highlights: ReadonlyArray<HighlightRangeOutput>;
 }>;
@@ -148,7 +151,7 @@ export type ProsodyOutput = Readonly<{
 
 export type EngineResultOutput = Readonly<{
   result: string;
-  engineKind: "cloud" | "oss_worker";
+  engineKind: EngineType;
   engineName: string;
   modelName: string | null;
   scores: Readonly<{
@@ -221,14 +224,13 @@ const resolveTokenRange = (
 export const createViewPracticeWorkspace =
   (dependencies: ViewPracticeWorkspaceDependencies) =>
   (input: ViewPracticeWorkspaceInput): ResultAsync<ViewPracticeWorkspaceOutput, DomainError> => {
-    const parsed = viewPracticeWorkspaceSchema.safeParse(input);
-    if (!parsed.success) {
-      return errAsync(
-        validationFailed("input", parsed.error.errors.map((e) => e.message).join(", ")),
-      );
+    const parsedInput = parseInput(viewPracticeWorkspaceSchema, input);
+    if (parsedInput.isErr()) {
+      return errAsync(parsedInput.error);
     }
+    const parsed = parsedInput.value;
 
-    const sectionIdentifier = createSectionIdentifier(parsed.data.section);
+    const sectionIdentifier = createSectionIdentifier(parsed.section);
     if (!sectionIdentifier) {
       return errAsync(validationFailed("section", "不正なセクションIDです"));
     }
@@ -255,7 +257,7 @@ export const createViewPracticeWorkspace =
       const recordingAttemptResult = dependencies.recordingAttemptRepository.search({
         type: "attemptsInSection",
         section: section.identifier,
-        pagination: { type: "offset", offset: 0 as never, limit: 50 as never },
+        pagination: firstPage(50),
         sort: "createdAt_desc",
       });
 
@@ -297,7 +299,7 @@ export const createViewPracticeWorkspace =
           .search({
             type: "runsByRecordingAttempt",
             recordingAttempt: latestReady.identifier,
-            pagination: { type: "offset", offset: 0 as never, limit: 10 as never },
+            pagination: firstPage(10),
             sort: "createdAt_desc",
           })
           .andThen((runPage) => {

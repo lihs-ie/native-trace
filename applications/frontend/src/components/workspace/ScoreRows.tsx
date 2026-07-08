@@ -1,5 +1,7 @@
 "use client";
 
+import { SCORE_WARN_THRESHOLD } from "@/lib/score-bands";
+
 type ScoreEntry = {
   label: string;
   value: number;
@@ -27,13 +29,9 @@ export const ScoreRows = ({ scores }: ScoreRowsProps) => {
   return (
     <div className="score-rows" style={{ flex: 1 }}>
       {entries.map((entry) => {
-        const barColor = entry.value < 75 ? "var(--sev-major)" : "var(--accent)";
+        const barColor = entry.value < SCORE_WARN_THRESHOLD ? "var(--sev-major)" : "var(--accent)";
         return (
-          <div
-            key={entry.label}
-            className="srow"
-            style={{ gridTemplateColumns: "74px 1fr 26px" }}
-          >
+          <div key={entry.label} className="srow" style={{ gridTemplateColumns: "74px 1fr 26px" }}>
             <span className="srl">{entry.label}</span>
             <span className="sbar">
               <i style={{ width: `${entry.value}%`, background: barColor }} />

@@ -19,6 +19,7 @@ import { type AssessmentResultRepository } from "../port/assessment-result-repos
 import { type TransactionManager } from "../port/transaction-manager";
 import { type Clock } from "../port/clock";
 import { type Logger } from "../port/logger";
+import { parseInput } from "../shared/validation";
 
 // ---- Input ----
 
@@ -59,16 +60,13 @@ export const createDiscardRecordingAttempt =
   (
     input: DiscardRecordingAttemptInput,
   ): ResultAsync<DiscardRecordingAttemptOutput, DomainError> => {
-    const parsed = discardRecordingAttemptSchema.safeParse(input);
-    if (!parsed.success) {
-      return errAsync(
-        validationFailed("input", parsed.error.errors.map((e) => e.message).join(", ")),
-      );
+    const parsedInput = parseInput(discardRecordingAttemptSchema, input);
+    if (parsedInput.isErr()) {
+      return errAsync(parsedInput.error);
     }
+    const parsed = parsedInput.value;
 
-    const recordingAttemptIdentifier = createRecordingAttemptIdentifier(
-      parsed.data.recordingAttempt,
-    );
+    const recordingAttemptIdentifier = createRecordingAttemptIdentifier(parsed.recordingAttempt);
     if (!recordingAttemptIdentifier) {
       return errAsync(validationFailed("recordingAttempt", "不正な録音試行IDです"));
     }

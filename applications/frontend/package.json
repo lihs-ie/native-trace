@@ -16,7 +16,7 @@
     "format:check": "prettier --check .",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "fitness": "ast-grep scan && eslint --rule 'import/no-restricted-paths: error' src/ && bash ../../scripts/verify-no-harness-import-in-prod.sh",
+    "fitness": "bash ../../scripts/fitness/check.sh",
     "test:fullcycle": "node --experimental-strip-types test/fullcycle/driver.ts",
     "fullcycle:up": "docker compose up -d --build --wait worker analyzer",
     "fullcycle:down": "docker compose down"

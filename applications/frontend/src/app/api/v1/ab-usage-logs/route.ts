@@ -9,6 +9,7 @@ import { type NextRequest } from "next/server";
 import { z } from "zod";
 import { getContainer } from "../../../../registry";
 import { domainErrorToResponse } from "../_shared/errors";
+import { zodErrorToValidationFailed } from "../_shared/validation";
 import { successResponse } from "../_shared/response";
 
 const requestBodySchema = z.object({
@@ -30,11 +31,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   const parseResult = requestBodySchema.safeParse(body);
   if (!parseResult.success) {
-    return domainErrorToResponse({
-      type: "validationFailed",
-      field: "body",
-      reason: parseResult.error.errors.map((error) => error.message).join(", "),
-    });
+    return domainErrorToResponse(zodErrorToValidationFailed(parseResult.error, "body"));
   }
 
   const { source, qualityGatePassed } = parseResult.data;

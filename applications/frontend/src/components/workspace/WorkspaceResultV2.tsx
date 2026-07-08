@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import type { EngineFindingDto, EngineResultDto } from "@/lib/api-types";
+import type { EngineFindingDto, EngineResultDto, GoldenConversionResponse } from "@/lib/api-types";
+import { engineColorVariable } from "@/lib/engine-display";
 import { HighlightedWorkspaceText } from "./HighlightedWorkspaceText";
 import { GopHeatmap } from "./GopHeatmap";
 import { F0Chart } from "./F0Chart";
 import { DetailPanelV2 } from "./DetailPanelV2";
 import { RailV2 } from "./RailV2";
-import type { GoldenConversionResponse } from "@/acl/golden-speaker/schema";
+import { useTtsPlayback } from "./use-tts-playback";
 
 type ViewMode = "highlight" | "gopmap" | "f0";
 type AudioSource = "self" | "model" | "golden";
@@ -89,8 +90,12 @@ export const WorkspaceResultV2 = ({
   const [goldenState, setGoldenState] = useState<GoldenAudioState>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  /** TTS キャッシュ: キー = `${text}__${speed}` */
-  const ttsCache = useRef<Map<string, HTMLAudioElement>>(new Map());
+  // W34: TTS キャッシュ (`${text}__${speed}` キー) と objectURL の revoke 管理は共通 hook に委譲
+  const { getCachedTtsAudio, fetchTtsAudioElement, manageAudioBlob } = useTtsPlayback({
+    cacheAudioElements: true,
+  });
+  /** W34: attachAudioEvents の cleanup を保存し stopCurrentAudio / unmount で必ず呼ぶ */
+  const audioEventsCleanupRef = useRef<(() => void) | null>(null);
 
   const findings = engineResult.findings;
 
@@ -117,6 +122,8 @@ export const WorkspaceResultV2 = ({
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current = null;
+      audioEventsCleanupRef.current?.();
+      audioEventsCleanupRef.current = null;
       setIsPlaying(false);
       setCurrentTime(0);
       setDuration(0);
@@ -135,12 +142,15 @@ export const WorkspaceResultV2 = ({
     }
   }, [playSpeed, activeAudioSource]);
 
-  // アンマウント時の cleanup
+  // アンマウント時の cleanup（objectURL の revoke は useTtsPlayback が担う）
   useEffect(() => {
     return () => {
       if (audioRef.current) {
         audioRef.current.pause();
+        audioRef.current = null;
       }
+      audioEventsCleanupRef.current?.();
+      audioEventsCleanupRef.current = null;
     };
   }, []);
 
@@ -165,12 +175,9 @@ export const WorkspaceResultV2 = ({
       );
       if (!response.ok) return;
       const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
+      const audio = manageAudioBlob(blob);
       audio.playbackRate = playSpeed;
-      const cleanup = attachAudioEvents(audio);
-      // store cleanup ref — we don't need to call it explicitly on pause, only on unmount/source change
-      void cleanup; // linter: intentionally unused but attach was called for side effects
+      audioEventsCleanupRef.current = attachAudioEvents(audio);
       audioRef.current = audio;
       void audio.play();
       setIsPlaying(true);
@@ -178,33 +185,28 @@ export const WorkspaceResultV2 = ({
     } catch {
       // fetch unavailable — no-op
     }
-  }, [activeRecordingAttemptIdentifier, isPlaying, playSpeed, attachAudioEvents]);
+  }, [activeRecordingAttemptIdentifier, isPlaying, playSpeed, attachAudioEvents, manageAudioBlob]);
 
   /** model ソース: TTS を取得・再生 (M-AB-b) */
   const playModelAudio = useCallback(async () => {
-    const cacheKey = `${bodyText}__${String(playSpeed)}`;
+    // キャッシュ確認 (M-AB-b: 同一テキスト・同一速度では再利用)
+    const cachedAudio = getCachedTtsAudio(bodyText, playSpeed);
 
-    if (audioRef.current) {
-      const cached = ttsCache.current.get(cacheKey);
-      if (cached && audioRef.current === cached) {
-        if (isPlaying) {
-          audioRef.current.pause();
-          setIsPlaying(false);
-        } else {
-          void audioRef.current.play();
-          setIsPlaying(true);
-        }
-        return;
+    if (audioRef.current && cachedAudio && audioRef.current === cachedAudio) {
+      if (isPlaying) {
+        audioRef.current.pause();
+        setIsPlaying(false);
+      } else {
+        void audioRef.current.play();
+        setIsPlaying(true);
       }
+      return;
     }
 
-    // キャッシュ確認 (M-AB-b: 同一テキスト・同一速度では再利用)
-    const cachedAudio = ttsCache.current.get(cacheKey);
     if (cachedAudio) {
       stopCurrentAudio();
       cachedAudio.currentTime = 0;
-      const cleanup = attachAudioEvents(cachedAudio);
-      void cleanup;
+      audioEventsCleanupRef.current = attachAudioEvents(cachedAudio);
       audioRef.current = cachedAudio;
       void cachedAudio.play();
       setIsPlaying(true);
@@ -213,19 +215,10 @@ export const WorkspaceResultV2 = ({
     }
 
     try {
-      const response = await fetch("/api/v1/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: bodyText, speed: playSpeed }),
-      });
-      if (!response.ok) return;
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      const cleanup = attachAudioEvents(audio);
-      void cleanup;
-      ttsCache.current.set(cacheKey, audio);
+      const audio = await fetchTtsAudioElement(bodyText, playSpeed);
+      if (!audio) return;
       stopCurrentAudio();
+      audioEventsCleanupRef.current = attachAudioEvents(audio);
       audioRef.current = audio;
       void audio.play();
       setIsPlaying(true);
@@ -233,7 +226,15 @@ export const WorkspaceResultV2 = ({
     } catch {
       // TTS unavailable — no-op
     }
-  }, [bodyText, playSpeed, isPlaying, stopCurrentAudio, attachAudioEvents]);
+  }, [
+    bodyText,
+    playSpeed,
+    isPlaying,
+    stopCurrentAudio,
+    attachAudioEvents,
+    getCachedTtsAudio,
+    fetchTtsAudioElement,
+  ]);
 
   /**
    * golden ソース: worker POST /golden-speaker/convert を呼び出し、
@@ -342,10 +343,8 @@ export const WorkspaceResultV2 = ({
       const binaryString = atob(conversionResult.audioBase64);
       const bytes = Uint8Array.from(binaryString, (char) => char.charCodeAt(0));
       const wavBlob = new Blob([bytes], { type: "audio/wav" });
-      const url = URL.createObjectURL(wavBlob);
-      const audio = new Audio(url);
-      const cleanup = attachAudioEvents(audio);
-      void cleanup;
+      const audio = manageAudioBlob(wavBlob);
+      audioEventsCleanupRef.current = attachAudioEvents(audio);
       audioRef.current = audio;
       void audio.play();
       setIsPlaying(true);
@@ -358,6 +357,7 @@ export const WorkspaceResultV2 = ({
     activeRecordingAttemptIdentifier,
     attachAudioEvents,
     stopCurrentAudio,
+    manageAudioBlob,
   ]);
 
   /** player 再生/一時停止ボタンのハンドラ */
@@ -426,8 +426,7 @@ export const WorkspaceResultV2 = ({
           <span
             className="eng-dot"
             style={{
-              background:
-                engineResult.engineKind === "cloud" ? "var(--engine-openai)" : "var(--engine-rust)",
+              background: engineColorVariable(engineResult.engineKind),
               marginTop: "5px",
             }}
           />
@@ -512,6 +511,7 @@ export const WorkspaceResultV2 = ({
         {/* 詳細パネル */}
         {selectedFinding && (
           <DetailPanelV2
+            key={selectedFinding.finding}
             finding={selectedFinding}
             sectionIdentifier={sectionIdentifier}
             onClose={() => setSelectedFinding(null)}

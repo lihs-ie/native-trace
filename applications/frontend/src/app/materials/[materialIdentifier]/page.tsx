@@ -5,27 +5,15 @@ import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useState } from "react";
 import { apiDelete, apiGet, isApiClientError } from "@/lib/api-client";
 import type { PracticePlanDto } from "@/lib/api-types";
+import { SOURCE_TYPE_LABELS, isTed } from "@/lib/material-source";
 import { AppBar } from "@/components/chrome";
 
 type PageProps = {
   params: Promise<{ materialIdentifier: string }>;
 };
 
-const SOURCE_TYPE_LABELS: Record<string, string> = {
-  ted: "TED",
-  youtube: "YouTube",
-  speech: "スピーチ",
-  article: "記事",
-  book: "書籍",
-  other: "その他",
-};
-
 function sourceTypeLabel(sourceType: string): string {
   return SOURCE_TYPE_LABELS[sourceType] ?? sourceType;
-}
-
-function isTed(sourceType: string): boolean {
-  return sourceType === "ted";
 }
 
 function formatDate(isoString: string): string {

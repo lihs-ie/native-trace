@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 type HomeNavProps = {
-  active: "library" | "history" | "diagnostic" | "progress" | "training";
+  active: "library" | "history" | "progress" | "training";
 };
 
 export const HomeNav = ({ active }: HomeNavProps) => {

@@ -16,8 +16,8 @@
  * - 本文 `.hl-ico` が描画される
  */
 
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import type { EngineFindingDto, EngineResultDto } from "@/lib/api-types";
 import { DetailPanelV2 } from "./DetailPanelV2";
 import { GopHeatmap } from "./GopHeatmap";
@@ -444,5 +444,44 @@ describe("WorkspaceResultV2", () => {
       el.textContent?.includes("Golden"),
     ) as HTMLButtonElement | undefined;
     expect(goldenBtn?.disabled).toBe(false);
+  });
+
+  it("finding A を却下後に finding B へ切り替えると DetailPanelV2 が初期状態で描画される (W50)", async () => {
+    // dismissal POST を成功させる fetch モック（key remount 検証が目的）
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const findingA = buildFinding(); // finding-01, textRange {0,5} = "world"
+      const findingB = buildFinding({
+        finding: "finding-02",
+        textRange: { startChar: 6, endChar: 11 },
+        expected: { text: "hello", ipa: "/həloʊ/" },
+        detected: { text: "haro", ipa: "/haɾo/" },
+      });
+      const result = buildEngineResult({ findings: [findingA, findingB] });
+      const { container } = render(
+        <WorkspaceResultV2
+          bodyText="world hello"
+          engineResult={result}
+          sectionIdentifier="sec-01"
+          latestRecordingAttemptIdentifier="attempt-01"
+        />,
+      );
+
+      // finding A を選択して却下 → dismissed 表示になる
+      fireEvent.click(container.querySelector('[data-ann="finding-01"]')!);
+      fireEvent.click(container.querySelector(".dismiss-btn")!);
+      await waitFor(() => {
+        expect(container.querySelector(".finding--dismissed")).toBeInTheDocument();
+      });
+
+      // finding B に切り替えると key remount により初期状態（非 dismissed）で描画される
+      fireEvent.click(container.querySelector('[data-ann="finding-02"]')!);
+      expect(container.querySelector(".panel")).toBeInTheDocument();
+      expect(container.querySelector(".finding--dismissed")).not.toBeInTheDocument();
+      expect(container.querySelector(".dismissed-note")).not.toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

@@ -117,14 +117,14 @@ sweep の全結果: `.agent-evidence/meter-rate-sweep.txt`。
 - **確定値（2026-06-18, シミュレーション確認済み）：**
   `PEAK_HOLD_RELEASE_RATE_PER_MS = 0.327` %/ms（≈ 98% / 300ms = 全スケール 300ms 減衰）、
   60fps 時 5.45 %/frame。`LOW_VOLUME_DISPLAY_THRESHOLD = 41`（-36 dBFS = ((-36+60)/60)*98+2 = 41.20% → 41%）。
-  シミュレーション結果（scripts/simulate_meter_peak_hold.py、corpus 30 件）:
+  シミュレーション結果（scripts/calibration/simulate_meter_peak_hold.py、corpus 30 件）:
   A2 PASS: gate-rejected ファイル（speech_active = -39.5 dBFS）の平滑ピーク = 37.9% < 41%（「音量小」維持）。
   判定基準の改訂（2026-06-18, D4）: 当初の per-frame「発話中 < 41% が ≤5%」目標は pure-decay バー
   平滑化では達成不可（release-rate sweep で floor ~10%、2450ms latency でも normal 9.96%、現実的な
   0.15=653ms で 13.98%。`.agent-evidence/meter-rate-sweep.txt`）、かつ瞬時フレームを判定軸にしていた
   点が誤り。D4 で「音量小」を持続低下（`SUSTAINED_LOW_MS` 連続）判定に変更し、受入を『通常発話でラベルが
   出ない / ゲート棄却の静音（≤ -36 dBFS）でラベルが出る』に改めた。A2（バー平滑ピーク 37.9% < 41）は確認済み。
-  **D4 確定値（2026-06-18, `scripts/simulate_label_debounce.py` キャリブレーション済み）：**
+  **D4 確定値（2026-06-18, `scripts/calibration/simulate_label_debounce.py` キャリブレーション済み）：**
   `SUSTAINED_LOW_MS = 500`（ms）。gate-rejected ファイル（01KTV6FJ, -39.5 dBFS）:
   label_on_at_end = True, label_time_pct = 100%（「音量小」常時 ON）。通常〜大きい声（>= -25 dBFS）:
   瞬間的な谷では SUSTAINED_LOW_MS に達せずラベルが即時フリックしない（per-frame ちらつき解消）。

@@ -7,9 +7,12 @@ import { type SectionRepository } from "../port/section-repository";
 import { type MaterialRepository } from "../port/material-repository";
 import { type SectionSeriesRepository } from "../port/section-series-repository";
 import {
-  type MaterialDetailStatsRepository,
+  type SectionSeriesStatsRepository,
   type SectionSeriesStats,
-} from "../port/material-detail-stats-repository";
+} from "../port/section-series-stats-repository";
+import { firstPage, unboundedPage } from "../shared/pagination";
+import { parseInput } from "../shared/validation";
+import { countWords } from "../shared/tokenizer";
 
 // ---- Input ----
 
@@ -87,7 +90,7 @@ export type ViewMaterialPracticePlanDependencies = Readonly<{
   materialRepository: MaterialRepository;
   sectionSeriesRepository: SectionSeriesRepository;
   sectionRepository: SectionRepository;
-  materialDetailStatsRepository: MaterialDetailStatsRepository;
+  sectionSeriesStatsRepository: SectionSeriesStatsRepository;
 }>;
 
 // ---- Helpers ----
@@ -105,7 +108,7 @@ const buildSectionSeriesItemWithoutStats = async (
     sectionRepository.search({
       type: "sectionVersionsInSeries",
       sectionSeries: series.identifier,
-      pagination: { type: "offset", offset: 0 as never, limit: 100 as never },
+      pagination: firstPage(100),
       sort: "version_desc",
     }),
   ]);
@@ -135,7 +138,7 @@ const buildSectionSeriesItemWithoutStats = async (
 };
 
 const emptyStats = (bodyText: string | null): SectionSeriesStatsOutput => ({
-  wordCount: bodyText !== null ? bodyText.trim().split(/\s+/).filter(Boolean).length : null,
+  wordCount: bodyText !== null ? countWords(bodyText) : null,
   recordingAttemptCount: 0,
   bestOverallScore: null,
   overallScoreHistory: [],
@@ -155,14 +158,13 @@ export const createViewMaterialPracticePlan =
   (
     input: ViewMaterialPracticePlanInput,
   ): ResultAsync<ViewMaterialPracticePlanOutput, DomainError> => {
-    const parsed = viewMaterialPracticePlanSchema.safeParse(input);
-    if (!parsed.success) {
-      return errAsync(
-        validationFailed("input", parsed.error.errors.map((e) => e.message).join(", ")),
-      );
+    const parsedInput = parseInput(viewMaterialPracticePlanSchema, input);
+    if (parsedInput.isErr()) {
+      return errAsync(parsedInput.error);
     }
+    const parsed = parsedInput.value;
 
-    const identifierResult = createMaterialIdentifier(parsed.data.material);
+    const identifierResult = createMaterialIdentifier(parsed.material);
     if (!identifierResult) {
       return errAsync(validationFailed("material", "不正な素材IDです"));
     }
@@ -174,7 +176,7 @@ export const createViewMaterialPracticePlan =
           .search({
             type: "activeSeriesInMaterial",
             material: identifierResult,
-            pagination: { type: "offset", offset: 0 as never, limit: 1000 as never },
+            pagination: unboundedPage(),
             sort: "displayOrder_asc",
           })
           .andThen((seriesPage) => {
@@ -198,7 +200,7 @@ export const createViewMaterialPracticePlan =
 
               const seriesIdentifiers = itemsWithoutStats.map((item) => item.identifier);
 
-              return dependencies.materialDetailStatsRepository
+              return dependencies.sectionSeriesStatsRepository
                 .findStatsBySectionSeries(seriesIdentifiers, latestBodyTextBySeries)
                 .map((statsMap) => {
                   const sectionSeriesItems: SectionSeriesItemOutput[] = itemsWithoutStats.map(

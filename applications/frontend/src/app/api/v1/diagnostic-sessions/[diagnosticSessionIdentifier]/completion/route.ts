@@ -14,6 +14,7 @@ import { z } from "zod";
 import { getContainer } from "../../../../../../registry";
 import { successResponse } from "../../../_shared/response";
 import { domainErrorToResponse } from "../../../_shared/errors";
+import { zodErrorToValidationFailed } from "../../../_shared/validation";
 import { createLearnerIdentifier } from "../../../../../../domain/training";
 import { createSectionIdentifier } from "../../../../../../domain/section";
 
@@ -44,11 +45,7 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
 
   const parsedBody = completionBodySchema.safeParse(body);
   if (!parsedBody.success) {
-    return domainErrorToResponse({
-      type: "validationFailed",
-      field: "body",
-      reason: parsedBody.error.errors.map((e) => e.message).join(", "),
-    });
+    return domainErrorToResponse(zodErrorToValidationFailed(parsedBody.error, "body"));
   }
 
   const container = getContainer();

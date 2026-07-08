@@ -1,4 +1,4 @@
-import { type ResultAsync, errAsync } from "neverthrow";
+import { type ResultAsync, errAsync, ok } from "neverthrow";
 import { z } from "zod";
 import { type DomainError, type NonEmptyList, validationFailed } from "../../domain/shared";
 import {
@@ -13,6 +13,7 @@ import { type MaterialRepository } from "../port/material-repository";
 import { type TransactionManager } from "../port/transaction-manager";
 import { type Clock } from "../port/clock";
 import { type Logger } from "../port/logger";
+import { parseInput } from "../shared/validation";
 
 // ---- Input ----
 
@@ -67,21 +68,20 @@ const toMaterialOutput = (material: ActiveMaterial): ReviseMaterialMaterialOutpu
 export const createReviseMaterial =
   (dependencies: ReviseMaterialDependencies) =>
   (input: ReviseMaterialInput): ResultAsync<ReviseMaterialOutput, DomainError> => {
-    const parsed = reviseMaterialSchema.safeParse(input);
-    if (!parsed.success) {
-      return errAsync(
-        validationFailed("input", parsed.error.errors.map((e) => e.message).join(", "))
-      );
+    const parsedInput = parseInput(reviseMaterialSchema, input);
+    if (parsedInput.isErr()) {
+      return errAsync(parsedInput.error);
     }
+    const parsed = parsedInput.value;
 
     // 少なくとも1つのフィールドが更新対象でなければならない
-    if (parsed.data.title === undefined && parsed.data.source === undefined) {
+    if (parsed.title === undefined && parsed.source === undefined) {
       return errAsync(
-        validationFailed("input", "title または source の少なくとも1つを指定してください")
+        validationFailed("input", "title または source の少なくとも1つを指定してください"),
       );
     }
 
-    const identifierResult = createMaterialIdentifier(parsed.data.material);
+    const identifierResult = createMaterialIdentifier(parsed.material);
     if (!identifierResult) {
       return errAsync(validationFailed("material", "不正な素材IDです"));
     }
@@ -90,25 +90,23 @@ export const createReviseMaterial =
       dependencies.materialRepository.find(identifierResult).andThen((existing) => {
         // タイトルの決定（変更あり or 現行維持）
         const newTitleResult =
-          parsed.data.title !== undefined
-            ? createMaterialTitle(parsed.data.title)
-            : ({ isOk: () => true, isErr: () => false, value: existing.title } as ReturnType<typeof createMaterialTitle>);
+          parsed.title !== undefined ? createMaterialTitle(parsed.title) : ok(existing.title);
 
         if (newTitleResult.isErr()) return errAsync(newTitleResult.error);
         const newTitle = newTitleResult.value;
 
         // ソースの決定（変更あり or 現行維持）
         let newSource = existing.source;
-        if (parsed.data.source !== undefined) {
-          if (parsed.data.source === null) {
+        if (parsed.source !== undefined) {
+          if (parsed.source === null) {
             newSource = null;
           } else {
-            const sourceType = parsed.data.source.sourceType ?? "other";
+            const sourceType = parsed.source.sourceType ?? "other";
             const sourceResult = createMaterialSource({
               sourceType,
-              url: parsed.data.source.sourceUrl ?? null,
-              sourceTitle: parsed.data.source.sourceTitle ?? null,
-              speakerName: parsed.data.source.speakerName ?? null,
+              url: parsed.source.sourceUrl ?? null,
+              sourceTitle: parsed.source.sourceTitle ?? null,
+              speakerName: parsed.source.speakerName ?? null,
             });
             if (sourceResult.isErr()) return errAsync(sourceResult.error);
             newSource = sourceResult.value;
@@ -131,6 +129,6 @@ export const createReviseMaterial =
             events,
           };
         });
-      })
+      }),
     );
   };

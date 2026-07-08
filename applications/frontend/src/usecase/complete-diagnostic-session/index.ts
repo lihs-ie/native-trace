@@ -16,15 +16,8 @@
  */
 
 import { type ResultAsync, errAsync, okAsync } from "neverthrow";
+import { type DomainError, validationFailed, createNonEmptyList } from "../../domain/shared";
 import {
-  type DomainError,
-  type NonEmptyList,
-  validationFailed,
-  createNonEmptyList,
-} from "../../domain/shared";
-import {
-  type DiagnosticSessionIdentifier,
-  type WeaknessProfileIdentifier,
   type WeaknessProfile,
   type LearnerIdentifier,
   type FocusSound,
@@ -44,11 +37,46 @@ import {
 } from "../../domain/assessment-result";
 import { getAllCatalogEntries } from "../../domain/error-catalog";
 import { canonicalizePhoneme } from "../../domain/error-catalog/phoneme-canonicalization";
+import { generateIdentifier } from "../shared/identifier";
 import { type DiagnosticSessionRepository } from "../port/diagnostic-session-repository";
 import { type WeaknessProfileRepository } from "../port/weakness-profile-repository";
 import { type AssessmentResultRepository } from "../port/assessment-result-repository";
 import { type EntropyProvider } from "../port/entropy-provider";
 import { type Clock } from "../port/clock";
+
+// ---- Constants ----
+
+/**
+ * SEVERITY_MASTERY_ESTIMATE — GOP 未提供時に severity から mastery を推定するための対応表。
+ * UNKNOWN_SEVERITY_MASTERY — 未知の severity 文字列に対するフォールバック値。
+ */
+const SEVERITY_MASTERY_ESTIMATE: Record<string, number> = {
+  critical: 0.1,
+  major: 0.3,
+  minor: 0.6,
+  suggestion: 0.8,
+};
+const UNKNOWN_SEVERITY_MASTERY = 0.5;
+
+/**
+ * PHENOMENON_TO_CATALOG_ENTRY — phenomenon → catalogId 直接マップ
+ * （omission, epenthesis, lexicalStress, weakForm 等）。
+ *
+ * 注意（insertion）: "insertion" は意図的に japanese-l1-catalog.json に対応エントリを持たない
+ * プレースホルダー値。projectFindingsToCatalogFocusSounds 側で catalog.find が見つからず
+ * 静かに drop される（D3 ADR-017: insertion phenomenon は epenthesis カタログに混入しない、
+ * という既存テストが this behavior を担保している）。export するのはテストで
+ * 「map の値が catalog id として解決可能」を assert するため（カタログ改名の検知網）。
+ */
+export const PHENOMENON_TO_CATALOG_ENTRY: Record<string, string> = {
+  omission: "final-consonant-omission",
+  epenthesis: "epenthesis",
+  insertion: "insertion",
+  lexicalStress: "lexical-stress-error",
+  weakForm: "weak-form-realization",
+  reduction: "rhythm-npvi",
+  linking: "connected-speech-linking",
+};
 
 // ---- Input ----
 
@@ -172,13 +200,7 @@ const estimateMasteryFromGopAndSeverity = (
     return normalizeGopToMastery(gopAverage, gopNormalizationRange);
   }
   // GOP 未提供: severity から推定
-  const severityToMastery: Record<string, number> = {
-    critical: 0.1,
-    major: 0.3,
-    minor: 0.6,
-    suggestion: 0.8,
-  };
-  return severityToMastery[severity] ?? 0.5;
+  return SEVERITY_MASTERY_ESTIMATE[severity] ?? UNKNOWN_SEVERITY_MASTERY;
 };
 
 // canonicalizePhoneme は domain/error-catalog/phoneme-canonicalization から import（ADR-020 D0）。
@@ -231,16 +253,7 @@ const resolveCatalogIdFromIpaAndPhenomenon = (finding: FindingProjectionInput): 
 
   // 3. phenomenon 直接マップ（omission, epenthesis, lexicalStress, weakForm 等）
   if (finding.phenomenon) {
-    const phenomenonDirectMap: Record<string, string> = {
-      omission: "final-consonant-omission",
-      epenthesis: "epenthesis",
-      insertion: "insertion",
-      lexicalStress: "lexical-stress-error",
-      weakForm: "weak-form-realization",
-      reduction: "rhythm-npvi",
-      linking: "connected-speech-linking",
-    };
-    const directMapped = phenomenonDirectMap[finding.phenomenon];
+    const directMapped = PHENOMENON_TO_CATALOG_ENTRY[finding.phenomenon];
     if (directMapped) return directMapped;
   }
 
@@ -325,9 +338,7 @@ export const createCompleteDiagnosticSession =
   (
     input: CompleteDiagnosticSessionInput,
   ): ResultAsync<CompleteDiagnosticSessionOutput, DomainError> => {
-    const sessionIdentifier = createDiagnosticSessionIdentifier(
-      input.diagnosticSessionIdentifier,
-    ) as DiagnosticSessionIdentifier;
+    const sessionIdentifier = createDiagnosticSessionIdentifier(input.diagnosticSessionIdentifier);
     if (!sessionIdentifier) {
       return errAsync(
         validationFailed("diagnosticSessionIdentifier", "不正な診断セッション識別子です"),
@@ -347,9 +358,15 @@ export const createCompleteDiagnosticSession =
       (id) => id as AssessmentResultIdentifier,
     );
 
-    const nonEmptyAssessmentResults = createNonEmptyList(
-      assessmentResultIdentifiers,
-    ) as NonEmptyList<AssessmentResultIdentifier>;
+    const nonEmptyAssessmentResults = createNonEmptyList(assessmentResultIdentifiers);
+    if (!nonEmptyAssessmentResults) {
+      return errAsync(
+        validationFailed(
+          "assessmentResultIdentifiers",
+          "WeaknessProfile 生成には1件以上の AssessmentResult 識別子が必要です",
+        ),
+      );
+    }
 
     // 1. DiagnosticSession を取得
     return dependencies.diagnosticSessionRepository.find(sessionIdentifier).andThen((session) => {
@@ -411,15 +428,19 @@ export const createCompleteDiagnosticSession =
           }
 
           // 4. WeaknessProfile を初期生成
-          const profileIdentifierRaw = dependencies.entropyProvider.generateUlid();
-          const profileIdentifier = createWeaknessProfileIdentifier(
-            profileIdentifierRaw,
-          ) as WeaknessProfileIdentifier;
+          const profileIdentifierResult = generateIdentifier(
+            dependencies.entropyProvider,
+            createWeaknessProfileIdentifier,
+            "weaknessProfileIdentifier",
+          );
+          if (profileIdentifierResult.isErr()) {
+            return errAsync(profileIdentifierResult.error);
+          }
 
           const now = dependencies.clock.now();
 
           const initResult = initializeWeaknessProfile(
-            profileIdentifier,
+            profileIdentifierResult.value,
             session.learner as LearnerIdentifier,
             sessionIdentifier,
             focusSoundCandidates as FocusSound[],
@@ -461,5 +482,3 @@ export const createCompleteDiagnosticSession =
         });
     });
   };
-
-export type CompleteDiagnosticSessionExecutor = ReturnType<typeof createCompleteDiagnosticSession>;

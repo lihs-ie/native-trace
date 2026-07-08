@@ -23,13 +23,13 @@ import { type ResultAsync, errAsync, okAsync } from "neverthrow";
 import { type DomainError, validationFailed } from "../../domain/shared";
 import {
   type TrainingSession,
-  type TrainingSessionIdentifier,
   type LearnerIdentifier,
   type PhonemeContrast,
   createTrainingSessionIdentifier,
   createLearnerIdentifier,
   createPhonemeContrast,
 } from "../../domain/training";
+import { generateIdentifier } from "../shared/identifier";
 import { type WeaknessProfileRepository } from "../port/weakness-profile-repository";
 import { type TrainingSessionRepository } from "../port/training-session-repository";
 import { type DrillContentRepository, type DrillContent } from "../port/drill-content-repository";
@@ -136,15 +136,15 @@ export const createStartDrill =
         const capturedContrast = selectedContrast;
 
         // TrainingSession(in_progress, kind=production_drill) を生成する
-        const sessionIdentifierRaw = dependencies.entropyProvider.generateUlid();
-        const sessionIdentifier = createTrainingSessionIdentifier(
-          sessionIdentifierRaw,
-        ) as TrainingSessionIdentifier;
-        if (!sessionIdentifier) {
-          return errAsync(
-            validationFailed("sessionIdentifier", "訓練セッション識別子の生成に失敗しました"),
-          );
+        const sessionIdentifierResult = generateIdentifier(
+          dependencies.entropyProvider,
+          createTrainingSessionIdentifier,
+          "sessionIdentifier",
+        );
+        if (sessionIdentifierResult.isErr()) {
+          return errAsync(sessionIdentifierResult.error);
         }
+        const sessionIdentifier = sessionIdentifierResult.value;
 
         const now = dependencies.clock.now();
 
@@ -157,16 +157,12 @@ export const createStartDrill =
           startedAt: now,
         };
 
-        return dependencies.trainingSessionRepository
-          .persist(trainingSession)
-          .andThen(() =>
-            okAsync({
-              trainingSession,
-              drillContent: capturedDrillContent,
-              contrast: capturedDrillContent.contrast,
-            }),
-          );
+        return dependencies.trainingSessionRepository.persist(trainingSession).andThen(() =>
+          okAsync({
+            trainingSession,
+            drillContent: capturedDrillContent,
+            contrast: capturedDrillContent.contrast,
+          }),
+        );
       });
   };
-
-export type StartDrillExecutor = ReturnType<typeof createStartDrill>;

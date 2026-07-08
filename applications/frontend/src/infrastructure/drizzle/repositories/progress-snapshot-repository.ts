@@ -17,8 +17,9 @@ import {
 } from "../../../domain/training";
 import { type SectionIdentifier } from "../../../domain/section";
 import { type AssessmentResultIdentifier } from "../../../domain/assessment-result";
-import { type DomainError, createNonEmptyList } from "../../../domain/shared";
+import { createNonEmptyList, notFound } from "../../../domain/shared";
 import { okAsync, errAsync } from "neverthrow";
+import { tryPersistence, tryPersistenceResult } from "./try-persistence";
 
 type ProgressSnapshotRow = typeof progressSnapshots.$inferSelect;
 
@@ -108,65 +109,46 @@ export const createDrizzleProgressSnapshotRepository = (
   db: DrizzleDatabase,
 ): ProgressSnapshotRepository => ({
   save: (snapshot: ProgressSnapshot) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = progressSnapshotToRow(snapshot);
-        db.insert(progressSnapshots).values(row).run();
-        return okAsync(undefined);
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
-      }
+    return tryPersistence(() => {
+      const row = progressSnapshotToRow(snapshot);
+      db.insert(progressSnapshots).values(row).run();
+      return undefined;
     });
   },
 
   findByLearnerOrderedByCapturedAt: (learner: LearnerIdentifier) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const rows = db
-          .select()
-          .from(progressSnapshots)
-          .where(
-            and(
-              eq(progressSnapshots.learner, String(learner)),
-              isNull(progressSnapshots.deletedAt),
-            ),
-          )
-          .orderBy(asc(progressSnapshots.capturedAt))
-          .all();
+    return tryPersistence(() => {
+      const rows = db
+        .select()
+        .from(progressSnapshots)
+        .where(
+          and(eq(progressSnapshots.learner, String(learner)), isNull(progressSnapshots.deletedAt)),
+        )
+        .orderBy(asc(progressSnapshots.capturedAt))
+        .all();
 
-        return okAsync(rows.map(rowToProgressSnapshot));
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
-      }
+      return rows.map(rowToProgressSnapshot);
     });
   },
 
   find: (identifier: ProgressSnapshotIdentifier) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = db
-          .select()
-          .from(progressSnapshots)
-          .where(
-            and(
-              eq(progressSnapshots.identifier, String(identifier)),
-              isNull(progressSnapshots.deletedAt),
-            ),
-          )
-          .get();
+    return tryPersistenceResult(() => {
+      const row = db
+        .select()
+        .from(progressSnapshots)
+        .where(
+          and(
+            eq(progressSnapshots.identifier, String(identifier)),
+            isNull(progressSnapshots.deletedAt),
+          ),
+        )
+        .get();
 
-        if (!row) {
-          return errAsync({
-            type: "notFound",
-            resource: "ProgressSnapshot",
-            identifier: String(identifier),
-          } as DomainError);
-        }
-
-        return okAsync(rowToProgressSnapshot(row));
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
+      if (!row) {
+        return errAsync(notFound("ProgressSnapshot", String(identifier)));
       }
+
+      return okAsync(rowToProgressSnapshot(row));
     });
   },
 });

@@ -16,7 +16,7 @@ from python_analyzer.domain.measurement import (
 )
 from python_analyzer.domain.phoneme import AlignmentBoundary
 from python_analyzer.infrastructure import parselmouth_formant
-from python_analyzer.infrastructure.kokoro_tts import synthesize_speech
+from python_analyzer.infrastructure.kokoro_tts import KOKORO_SAMPLE_RATE, synthesize_speech
 from python_analyzer.infrastructure.parselmouth_prosody import (
     extract_f0_contour,
     extract_word_stress,
@@ -26,6 +26,11 @@ from python_analyzer.infrastructure.syllable import detect_syllables
 from python_analyzer.infrastructure.weak_form import detect_weak_form_realizations
 
 logger = logging.getLogger(__name__)
+
+# ADR-018 D2: parselmouth の formant ceiling（maximum_formant_hz）較正値。
+# 女性話者は F3 が高域に寄るため 6500Hz、男性/unknown は 5500Hz を使う。
+FEMALE_MAXIMUM_FORMANT_HZ = 6500.0
+DEFAULT_MAXIMUM_FORMANT_HZ = 5500.0
 
 
 class ProsodyAnalyzer:
@@ -96,10 +101,12 @@ class ProsodyAnalyzer:
     ) -> tuple[PhonemeAcousticMeasurement, ...]:
         """音素ごとのフォルマント・スペクトル重心・持続時間を計測する（ADR-018 D1–D3）。
 
-        speaker_sex が 'F' のとき maximum_formant_hz=6500、
-        'M' または 'unknown' のとき 5500 を parselmouth_formant に渡す。
+        speaker_sex が 'F' のとき maximum_formant_hz=FEMALE_MAXIMUM_FORMANT_HZ、
+        'M' または 'unknown' のとき DEFAULT_MAXIMUM_FORMANT_HZ を parselmouth_formant に渡す。
         """
-        maximum_formant_hz = 6500.0 if speaker_sex == "F" else 5500.0
+        maximum_formant_hz = (
+            FEMALE_MAXIMUM_FORMANT_HZ if speaker_sex == "F" else DEFAULT_MAXIMUM_FORMANT_HZ
+        )
         return parselmouth_formant.extract_phoneme_acoustics(
             audio_bytes=audio_bytes,
             boundaries=boundaries,
@@ -125,8 +132,8 @@ class ProsodyAnalyzer:
         try:
             # Kokoro は 24kHz WAV を返す。extract_f0_contour は WAV ヘッダーを soundfile で読む
             # ため sample_rate 引数は実質的には WAV ヘッダーより上書きされるが、
-            # 念のため Kokoro のデフォルト 24000 を渡す。
-            contour = extract_f0_contour(audio_bytes=wav_bytes, sample_rate=24000)
+            # 念のため Kokoro のデフォルト KOKORO_SAMPLE_RATE を渡す。
+            contour = extract_f0_contour(audio_bytes=wav_bytes, sample_rate=KOKORO_SAMPLE_RATE)
         except Exception as extraction_error:
             logger.warning(
                 "reference F0 抽出に失敗したため None にする: %s",

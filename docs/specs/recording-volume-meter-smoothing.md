@@ -48,7 +48,7 @@
   純粋・単体テスト可能な関数 `accumulateLowDurationMs` と定数 `SUSTAINED_LOW_MS` を追加すること。
   シグネチャ: `(previousBelowMs: number, smoothedValue: number, threshold: number, dtMs: number): number`。
   算式: `smoothedValue < threshold` なら `previousBelowMs + dtMs`、そうでなければ `0`（リセット）。
-  定数 `SUSTAINED_LOW_MS = 500`（ms、`scripts/simulate_label_debounce.py` でキャリブレーション確定）。
+  定数 `SUSTAINED_LOW_MS = 500`（ms、`scripts/calibration/simulate_label_debounce.py` でキャリブレーション確定）。
   両 `page.tsx` の rAF ループが `lowDurationRef` を保持して適用し、
   `lowDurationRef.current >= SUSTAINED_LOW_MS` のときのみ `isLowVolume = true` とすること。
   `isLowVolume` の状態と `lowDurationRef` は `cleanupAudioContext` でリセットすること。
@@ -160,7 +160,7 @@
 
 - **A1 (通常発話でのちらつき解消 — ラベル状態基準 D4)** →
   `accumulateLowDurationMs` + `SUSTAINED_LOW_MS` を使ったラベル debounce シミュレーション
-  （`scripts/simulate_label_debounce.py`）で下記を確認すること:
+  （`scripts/calibration/simulate_label_debounce.py`）で下記を確認すること:
   (a) gate-rejected 録音（01KTV6FJ、speech_active = -39.5 dBFS）で `label_on_at_end = True`
       かつ `label_time_pct = 100%`（持続低下 → ラベル常時 ON）。
   (b) 通常〜大きい声の録音（speech_active >= -25 dBFS）で、発話中の瞬間的な谷では

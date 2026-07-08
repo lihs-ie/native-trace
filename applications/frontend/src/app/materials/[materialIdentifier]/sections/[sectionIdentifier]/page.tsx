@@ -4,13 +4,15 @@ import Link from "next/link";
 import { use, useCallback, useEffect, useRef, useState } from "react";
 import { apiGet, apiPost, apiPostForm, isApiClientError } from "@/lib/api-client";
 import { nowMs } from "@/lib/now";
+import { detectBrowserEnvironment } from "@/lib/browser-environment";
+import { formatMinutesSeconds } from "@/lib/format-time";
 import {
   type AnalysisMode,
   type EngineFindingDto,
   type EngineResultDto,
   type WorkspaceDto,
 } from "@/lib/api-types";
-import { toSeverityClass, SEVERITY_DISPLAY_LABELS } from "@/lib/severity";
+import { engineColorVariable } from "@/lib/engine-display";
 import {
   EngineSegSelector,
   Ribbon,
@@ -21,40 +23,19 @@ import {
   LiveWave,
   HighlightedWorkspaceText,
   WorkspaceResultV2,
+  SeverityCountPills,
 } from "@/components/workspace";
-import {
-  accumulateLowDurationMs,
-  applyPeakHold,
-  computeRmsLevel,
-  PEAK_HOLD_RELEASE_RATE_PER_MS,
-  rmsLevelToDisplayPercentage,
-  SUSTAINED_LOW_MS,
-} from "@/components/workspace/volume-meter";
+import { useRecordingWithVolumeMeter } from "@/components/workspace/use-recording-with-volume-meter";
+import { AppTop } from "@/components/chrome";
+
+// ワークスペースのポーリング周期（ms）。値の統一はしない（diagnostic ページの POLL_INTERVAL_MS とは別値）。
+const WORKSPACE_POLL_INTERVAL_MILLISECONDS = 2000;
 
 type PageProps = {
   params: Promise<{ materialIdentifier: string; sectionIdentifier: string }>;
 };
 
 type WorkspaceState = "idle" | "recording" | "analyzing" | "result" | "failed" | "low_quality";
-
-// dBFS display scale threshold aligned to ADR-015 worker gate (-36 dBFS, S-PH-1 / ADR-016 D2).
-// Derivation: ((-36 - FLOOR_DB) / (CEILING_DB - FLOOR_DB)) * (100 - MIN_DISPLAY_PERCENTAGE) + MIN_DISPLAY_PERCENTAGE
-//           = ((-36 + 60) / 60) * 98 + 2 = (24/60)*98 + 2 ≈ 41.2 → 41
-// Confirmed by simulation (scripts/simulate_meter_peak_hold.py, 2026-06-18):
-//   gate-rejected recordings (speech_active < -36 dBFS) peak at 37.9% < 41% after smoothing.
-const LOW_VOLUME_DISPLAY_THRESHOLD = 41;
-
-const detectBrowserInfo = () => ({
-  browserName: navigator.userAgent.includes("Chrome")
-    ? "Chrome"
-    : navigator.userAgent.includes("Firefox")
-      ? "Firefox"
-      : navigator.userAgent.includes("Safari")
-        ? "Safari"
-        : "Unknown",
-  browserVersion: navigator.userAgent,
-  deviceType: /Mobi|Android|iPhone/i.test(navigator.userAgent) ? "mobile" : "desktop",
-});
 
 export const deriveWorkspaceState = (
   workspace: WorkspaceDto | null,
@@ -98,35 +79,18 @@ export default function WorkspacePage({ params }: PageProps) {
   const [recordError, setRecordError] = useState<string | null>(null);
 
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>("comparison");
-  const [isRecording, setIsRecording] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const [activeEngineResult, setActiveEngineResult] = useState<string | null>(null);
   const [selectedFinding, setSelectedFinding] = useState<EngineFindingDto | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [recSeconds, setRecSeconds] = useState(0);
   const [playerTime, setPlayerTime] = useState<{ currentTime: number; duration: number }>({
     currentTime: 0,
     duration: 0,
   });
 
-  const [volumeLevel, setVolumeLevel] = useState(0);
-  // D4: debounced label state — true only after SUSTAINED_LOW_MS of continuous sub-threshold level
-  const [isLowVolume, setIsLowVolume] = useState(false);
-
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const startedAtRef = useRef<number>(0);
-  const recTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
-  const previousVolumeLevelRef = useRef<number>(0);
-  const lastMeterTimestampRef = useRef<number>(0);
-  // D4: accumulated sub-threshold duration for label debounce
-  const lowDurationRef = useRef<number>(0);
-
-  const state = deriveWorkspaceState(workspace, isRecording, submitting);
+  const startedAtRef = useRef<number>(0);
 
   const refresh = useCallback(
     () =>
@@ -154,21 +118,9 @@ export default function WorkspacePage({ params }: PageProps) {
   // 初回取得 + 2 秒ポーリング
   useEffect(() => {
     void refresh();
-    const intervalId = setInterval(() => void refresh(), 2000);
+    const intervalId = setInterval(() => void refresh(), WORKSPACE_POLL_INTERVAL_MILLISECONDS);
     return () => clearInterval(intervalId);
   }, [refresh]);
-
-  // AudioContext のアンマウント時 cleanup
-  useEffect(() => {
-    return () => {
-      if (animationFrameRef.current !== null) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-      if (audioContextRef.current !== null) {
-        void audioContextRef.current.close();
-      }
-    };
-  }, []);
 
   const submitRecording = useCallback(
     async (blob: Blob) => {
@@ -185,7 +137,7 @@ export default function WorkspacePage({ params }: PageProps) {
       formData.append("recordedDurationMs", String(durationMs));
       formData.append("startedAt", new Date(startedAtRef.current).toISOString());
       formData.append("endedAt", new Date(endedAt).toISOString());
-      formData.append("browserInfo", JSON.stringify(detectBrowserInfo()));
+      formData.append("browserInfo", JSON.stringify(detectBrowserEnvironment()));
 
       try {
         await apiPostForm(`/api/v1/sections/${sectionIdentifier}/practice-attempts`, formData);
@@ -199,103 +151,32 @@ export default function WorkspacePage({ params }: PageProps) {
     [analysisMode, sectionIdentifier, refresh],
   );
 
-  const cleanupAudioContext = () => {
-    if (animationFrameRef.current !== null) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
-    if (audioContextRef.current !== null) {
-      void audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
-    // WARN-2: reset peak-hold state so a second recording does not inherit a stale held peak.
-    previousVolumeLevelRef.current = 0;
-    lastMeterTimestampRef.current = 0;
-    setVolumeLevel(0);
-    // D4: reset label debounce state so a second recording starts with label off.
-    lowDurationRef.current = 0;
-    setIsLowVolume(false);
-  };
+  // W35: getUserMedia 制約・AnalyserNode・peak-hold ループ・タイマー・cleanup は
+  // use-recording-with-volume-meter.ts に一本化（diagnostic ページと共有）。
+  // onstop 送信コールバック（submitRecording 呼び出し）はページ側に残す。
+  const {
+    isRecording,
+    recSeconds,
+    volumeLevel,
+    isLowVolume,
+    startRecording: startRecordingWithVolumeMeter,
+    stopRecording,
+  } = useRecordingWithVolumeMeter({
+    onStart: (startedAt) => {
+      startedAtRef.current = startedAt;
+    },
+    onStop: (blob) => {
+      void submitRecording(blob);
+    },
+    onError: (message) => setRecordError(message),
+  });
 
-  const startRecording = async () => {
+  const state = deriveWorkspaceState(workspace, isRecording, submitting);
+
+  const startRecording = () => {
     setRecordError(null);
     setSelectedFinding(null);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          autoGainControl: false,
-          noiseSuppression: false,
-          echoCancellation: false,
-        },
-      });
-
-      // Set up AudioContext for real-time volume metering
-      const audioContext = new AudioContext();
-      audioContextRef.current = audioContext;
-      const analyserNode = audioContext.createAnalyser();
-      analyserNode.fftSize = 512;
-      const mediaStreamSource = audioContext.createMediaStreamSource(stream);
-      mediaStreamSource.connect(analyserNode);
-
-      const timeDomainBuffer = new Uint8Array(analyserNode.fftSize);
-
-      const updateVolumeMeter = (timestamp: DOMHighResTimeStamp) => {
-        analyserNode.getByteTimeDomainData(timeDomainBuffer);
-        const rmsLevel = computeRmsLevel(timeDomainBuffer);
-        const rawPercent = rmsLevelToDisplayPercentage(rmsLevel);
-        const dtMs =
-          lastMeterTimestampRef.current > 0 ? timestamp - lastMeterTimestampRef.current : 0;
-        lastMeterTimestampRef.current = timestamp;
-        const releaseAmount = PEAK_HOLD_RELEASE_RATE_PER_MS * dtMs;
-        const smoothed = applyPeakHold(rawPercent, previousVolumeLevelRef.current, releaseAmount);
-        previousVolumeLevelRef.current = smoothed;
-        setVolumeLevel(smoothed);
-        // D4: label debounce — accumulate sub-threshold duration; fire label only when sustained.
-        lowDurationRef.current = accumulateLowDurationMs(
-          lowDurationRef.current,
-          smoothed,
-          LOW_VOLUME_DISPLAY_THRESHOLD,
-          dtMs,
-        );
-        setIsLowVolume(lowDurationRef.current >= SUSTAINED_LOW_MS);
-        animationFrameRef.current = requestAnimationFrame(updateVolumeMeter);
-      };
-      animationFrameRef.current = requestAnimationFrame(updateVolumeMeter);
-
-      const recorder = new MediaRecorder(stream);
-      chunksRef.current = [];
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) chunksRef.current.push(event.data);
-      };
-      recorder.onstop = () => {
-        stream.getTracks().forEach((track) => track.stop());
-        cleanupAudioContext();
-        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
-        void submitRecording(blob);
-      };
-      startedAtRef.current = nowMs();
-      setRecSeconds(0);
-      mediaRecorderRef.current = recorder;
-      recorder.start();
-      setIsRecording(true);
-
-      recTimerRef.current = setInterval(() => {
-        setRecSeconds((s) => s + 1);
-      }, 1000);
-    } catch {
-      cleanupAudioContext();
-      setRecordError("マイクへのアクセスに失敗しました。ブラウザの権限を確認してください。");
-    }
-  };
-
-  const stopRecording = () => {
-    if (recTimerRef.current) {
-      clearInterval(recTimerRef.current);
-      recTimerRef.current = null;
-    }
-    mediaRecorderRef.current?.stop();
-    setIsRecording(false);
-    // AudioContext cleanup happens in recorder.onstop after stream tracks are stopped
+    void startRecordingWithVolumeMeter();
   };
 
   const handleAddEngine = async () => {
@@ -318,7 +199,7 @@ export default function WorkspacePage({ params }: PageProps) {
   };
 
   // 録音秒数のフォーマット
-  const formattedRecTime = `${Math.floor(recSeconds / 60)}:${String(recSeconds % 60).padStart(2, "0")}`;
+  const formattedRecTime = formatMinutesSeconds(recSeconds);
 
   // 秒数を m:ss 形式にフォーマット
   const formatTime = (seconds: number): string => {
@@ -355,9 +236,7 @@ export default function WorkspacePage({ params }: PageProps) {
     <div className="ws" data-state={state} data-annostyle="underline" data-tone="standard">
       {/* app-top */}
       <div className="app-top">
-        <div className="app-brand">
-          NativeTrace <span className="ipa">/ˈneɪtɪv treɪs/</span>
-        </div>
+        <AppTop />
         <div className="crumb" style={{ marginLeft: "16px" }}>
           <span>{materialIdentifier}</span>
           <span className="sep">›</span>
@@ -448,19 +327,7 @@ export default function WorkspacePage({ params }: PageProps) {
 
               {/* sevcount */}
               {activeResult && (
-                <div className="sevcount">
-                  {(["critical", "major", "minor", "suggestion"] as const).map((sev) => {
-                    const cssClass = toSeverityClass(sev);
-                    const count = activeResult.counts[sev];
-                    const label = SEVERITY_DISPLAY_LABELS[cssClass];
-                    return (
-                      <span key={sev} className="sevpill">
-                        <span className="dot" style={{ background: `var(--sev-${cssClass})` }} />
-                        {count} {label}
-                      </span>
-                    );
-                  })}
-                </div>
+                <SeverityCountPills counts={activeResult.counts} className="sevcount" />
               )}
             </div>
 
@@ -529,10 +396,7 @@ export default function WorkspacePage({ params }: PageProps) {
                   <span
                     className="eng-dot"
                     style={{
-                      background:
-                        engine.engineKind === "cloud"
-                          ? "var(--engine-openai)"
-                          : "var(--engine-rust)",
+                      background: engineColorVariable(engine.engineKind),
                     }}
                   />
                   {engine.engineName}

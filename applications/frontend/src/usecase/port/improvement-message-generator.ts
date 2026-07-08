@@ -4,7 +4,7 @@
  * 実装は ACL 層に置く。クラス構文禁止。
  */
 
-import { type AcousticEvidenceDto } from "../../lib/api-types";
+import { type AcousticEvidenceDraft } from "../assessment-result-draft";
 
 export type ImprovementMessageGeneratorInput = Readonly<{
   phenomenon: string;
@@ -31,7 +31,7 @@ export type ImprovementMessageGeneratorInput = Readonly<{
   /** D2 (ADR-021): worker が付与した機能負荷ラベル（例: "high"/"medium"/"low"）。LLM grounding 用。 */
   functionalLoad?: string | null;
   /** M-APD-14 (ADR-018): 音響音声学的証拠。方向ラベル → howJa articulatory テキスト生成に使う。*/
-  acousticEvidence?: AcousticEvidenceDto | null;
+  acousticEvidence?: AcousticEvidenceDraft | null;
 }>;
 
 export type FeedbackLayersOutput = Readonly<{

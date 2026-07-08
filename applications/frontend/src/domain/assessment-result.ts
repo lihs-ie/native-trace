@@ -1,10 +1,13 @@
 import { err, ok } from "neverthrow";
 import { type Result } from "neverthrow";
-import { type DomainError, type NonEmptyList, validationFailed } from "./shared";
-import { type AnalysisJobIdentifier } from "./analysis-job";
-
-declare const __brand: unique symbol;
-type Brand<T, B> = T & { readonly [__brand]: B };
+import {
+  type Brand,
+  type DomainError,
+  type NonEmptyList,
+  createNonEmptyBrandedString,
+  validationFailed,
+} from "./shared";
+import { type AnalysisJobIdentifier, type EngineType } from "./analysis-job";
 
 export type AssessmentResultIdentifier = Brand<string, "AssessmentResultIdentifier">;
 export type AssessmentFindingIdentifier = Brand<string, "AssessmentFindingIdentifier">;
@@ -15,12 +18,12 @@ export type TokenizerVersion = Brand<string, "TokenizerVersion">;
 export const createAssessmentResultIdentifier = (
   value: string,
 ): AssessmentResultIdentifier | null =>
-  value.trim().length > 0 ? (value as AssessmentResultIdentifier) : null;
+  createNonEmptyBrandedString<AssessmentResultIdentifier>(value);
 
 export const createAssessmentFindingIdentifier = (
   value: string,
 ): AssessmentFindingIdentifier | null =>
-  value.trim().length > 0 ? (value as AssessmentFindingIdentifier) : null;
+  createNonEmptyBrandedString<AssessmentFindingIdentifier>(value);
 
 export const createScore0To100 = (value: number): Result<Score0To100, DomainError> => {
   if (!Number.isInteger(value) || value < 0 || value > 100) {
@@ -37,7 +40,7 @@ export const createConfidence0To1 = (value: number): Result<Confidence0To1, Doma
 };
 
 export const createTokenizerVersion = (value: string): TokenizerVersion | null =>
-  value.trim().length > 0 ? (value as TokenizerVersion) : null;
+  createNonEmptyBrandedString<TokenizerVersion>(value);
 
 export const FindingPhenomenon = {
   SUBSTITUTION: "substitution",
@@ -74,6 +77,14 @@ export const FindingSeverity = {
 } as const;
 export type FindingSeverity = (typeof FindingSeverity)[keyof typeof FindingSeverity];
 
+/** severity 重篤度順（数値が大きいほど重篤）。critical > major > minor > suggestion。 */
+export const SEVERITY_ORDER: Record<FindingSeverity, number> = {
+  critical: 4,
+  major: 3,
+  minor: 2,
+  suggestion: 1,
+};
+
 export type TextRange = Readonly<{
   startOffset: number;
   endOffset: number;
@@ -82,22 +93,6 @@ export type AudioRange = Readonly<{
   startMilliseconds: number;
   endMilliseconds: number;
 }>;
-
-export const createTextRange = (start: number, end: number): Result<TextRange, DomainError> => {
-  if (start >= end || start < 0)
-    return err(
-      validationFailed("textRange", "textRangeのstartはendより小さく0以上である必要があります"),
-    );
-  return ok({ startOffset: start, endOffset: end });
-};
-
-export const createAudioRange = (start: number, end: number): Result<AudioRange, DomainError> => {
-  if (start >= end || start < 0)
-    return err(
-      validationFailed("audioRange", "audioRangeのstartはendより小さく0以上である必要があります"),
-    );
-  return ok({ startMilliseconds: start, endMilliseconds: end });
-};
 
 export type PronunciationEvidence = Readonly<{
   text: string | null;
@@ -251,7 +246,7 @@ export type AssessmentEngineMetadata = Readonly<{
 }>;
 
 export type AnalysisEngineSnapshot = Readonly<{
-  type: "cloud" | "oss_worker";
+  type: EngineType;
   identifier: string;
   displayName: string;
   modelName: string | null;

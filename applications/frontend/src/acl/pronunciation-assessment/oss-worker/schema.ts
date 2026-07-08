@@ -4,33 +4,20 @@
  */
 
 import { z } from "zod";
+import {
+  textRangeSchema,
+  findingCategorySchema,
+  findingSeveritySchema,
+  pronunciationEvidenceSchema,
+} from "../shared/schema-fragments";
 
 // ---- 共通値オブジェクト ----
-
-const textRangeSchema = z.object({
-  startChar: z.number().int().nonnegative(),
-  endChar: z.number().int().positive(),
-});
+// textRange / category / severity / evidence は shared/schema-fragments.ts へ移設済み（W29）。
+// audioRange はミリ秒（openai は秒）で意図的に異なるため、ここに残す。
 
 const audioRangeSchema = z.object({
   startMs: z.number().int().nonnegative(),
   endMs: z.number().int().positive(),
-});
-
-// acl.md §8.2: category は 5 値のみ許可
-const findingCategorySchema = z.enum([
-  "accuracy",
-  "pronunciation",
-  "connectedSpeech",
-  "prosody",
-  "nativeLikeness",
-]);
-
-const findingSeveritySchema = z.enum(["critical", "major", "minor", "suggestion"]);
-
-const pronunciationEvidenceSchema = z.object({
-  text: z.string().nullable(),
-  ipa: z.string().nullable(),
 });
 
 // ---- NBest ----
@@ -361,5 +348,3 @@ export const ossWorkerErrorResponseSchema = z.object({
     retryable: z.boolean(),
   }),
 });
-
-export type OssWorkerErrorResponse = z.infer<typeof ossWorkerErrorResponseSchema>;

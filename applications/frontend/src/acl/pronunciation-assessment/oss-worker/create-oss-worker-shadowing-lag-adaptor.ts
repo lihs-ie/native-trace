@@ -16,6 +16,7 @@ import {
 } from "../../../usecase/port/shadowing-lag-client";
 import { type DomainError } from "../../../domain/shared";
 import { assessmentEngineFailed, classifyFetchError } from "../shared/errors";
+import { fetchJsonWithTimeout } from "../shared/fetch-json";
 import { mapShadowingLagResponse } from "./shadowing-response-mapper";
 
 export type OssWorkerShadowingLagAdaptorDependencies = Readonly<{
@@ -36,15 +37,16 @@ export const createOssWorkerShadowingLagAdaptor = (
 
     const formData = new FormData();
 
-    // reference_audio パート (Uint8Array は BlobPart に直接使えないため ArrayBuffer に変換)
-    const referenceAudioBlob = new Blob(
-      [input.referenceAudioBytes.buffer.slice(0) as ArrayBuffer],
-      { type: input.referenceAudioMimeType },
-    );
+    // reference_audio パート
+    // (view の byteOffset/byteLength を尊重するため new Uint8Array(...) でコピーする。
+    //  buffer.slice(0) は underlying ArrayBuffer 全体をコピーしてしまう — request-mapper.ts と同形)
+    const referenceAudioBlob = new Blob([new Uint8Array(input.referenceAudioBytes)], {
+      type: input.referenceAudioMimeType,
+    });
     formData.append("reference_audio", referenceAudioBlob);
 
     // learner_audio パート
-    const learnerAudioBlob = new Blob([input.learnerAudioBytes.buffer.slice(0) as ArrayBuffer], {
+    const learnerAudioBlob = new Blob([new Uint8Array(input.learnerAudioBytes)], {
       type: input.learnerAudioMimeType,
     });
     formData.append("learner_audio", learnerAudioBlob);
@@ -58,27 +60,12 @@ export const createOssWorkerShadowingLagAdaptor = (
     const metadataBlob = new Blob([metadataJson], { type: "application/json; charset=utf-8" });
     formData.append("metadata", metadataBlob);
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), dependencies.timeoutMilliseconds);
-
     return fromPromise(
-      globalThis
-        .fetch(url, { method: "POST", body: formData, signal: controller.signal })
-        .then(async (response) => {
-          clearTimeout(timeoutId);
-          const status = response.status;
-          let rawBody: unknown;
-          try {
-            rawBody = await (response.json() as Promise<unknown>);
-          } catch {
-            rawBody = null;
-          }
-          return { status, rawBody };
-        })
-        .catch((error: unknown) => {
-          clearTimeout(timeoutId);
-          throw error;
-        }),
+      fetchJsonWithTimeout(
+        url,
+        { method: "POST", body: formData },
+        dependencies.timeoutMilliseconds,
+      ),
       (fetchError): DomainError =>
         assessmentEngineFailed(
           "oss_worker_shadowing",

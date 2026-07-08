@@ -5,19 +5,11 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiGet, apiPost, isApiClientError } from "@/lib/api-client";
 import type { MaterialDto, MaterialStatsDto, DiagnosticSessionDto } from "@/lib/api-types";
+import { MATERIAL_COMPLETED_SCORE } from "@/lib/score-bands";
+import { diagnosticSessionKey } from "@/lib/session-storage-keys";
+import { SOURCE_TYPE_LABELS, isTed } from "@/lib/material-source";
 import { AppTop } from "@/components/chrome/AppTop";
 import { HomeNav } from "@/components/chrome/HomeNav";
-
-const SOURCE_TYPE_LABELS: Record<string, string> = {
-  ted: "TED",
-  youtube: "YouTube",
-  speech: "スピーチ",
-  article: "記事",
-  book: "書籍",
-  other: "その他",
-};
-
-const isTed = (sourceType: string): boolean => sourceType.toLowerCase() === "ted";
 
 const formatRelativeDate = (isoString: string): string => {
   const date = new Date(isoString);
@@ -151,15 +143,16 @@ const buildLibrarySubLine = (materials: MaterialDto[]): string => {
  * material の状態を判定する。
  * - noSections: section_series がない（未着手）
  * - noAttempts: section はあるが試行なし（未録音）
- * - practicing: 試行あり、最高スコア < 90（練習中）
- * - completed: 最高スコア >= 90（完了）
+ * - practicing: 試行あり、最高スコア < MATERIAL_COMPLETED_SCORE（練習中）
+ * - completed: 最高スコア >= MATERIAL_COMPLETED_SCORE（完了）
  */
 type MaterialStatus = "noSections" | "noAttempts" | "practicing" | "completed";
 
 const getMaterialStatus = (stats: MaterialStatsDto): MaterialStatus => {
   if (stats.sectionSeriesCount === 0) return "noSections";
   if (stats.recordingAttemptCount === 0) return "noAttempts";
-  if (stats.bestOverallScore !== null && stats.bestOverallScore >= 90) return "completed";
+  if (stats.bestOverallScore !== null && stats.bestOverallScore >= MATERIAL_COMPLETED_SCORE)
+    return "completed";
   return "practicing";
 };
 
@@ -178,7 +171,7 @@ export default function LibraryPage() {
     setDiagnosticError(null);
     try {
       const session = await apiPost<DiagnosticSessionDto>("/api/v1/diagnostic-sessions", {});
-      sessionStorage.setItem(`diagnostic-session-${session.identifier}`, JSON.stringify(session));
+      sessionStorage.setItem(diagnosticSessionKey(session.identifier), JSON.stringify(session));
       router.push(`/diagnostic/${session.identifier}`);
     } catch (error: unknown) {
       setDiagnosticStarting(false);

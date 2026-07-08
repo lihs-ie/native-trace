@@ -37,8 +37,6 @@ _WORD_MEDIAL_TARGETS: frozenset[str] = frozenset(
 
 def classify_phonological_context(
     word: str,
-    position_in_utterance: int,
-    utterance_word_count: int,
 ) -> PhonologicalContext:
     """Classify the phonological context of a target word occurrence.
 
@@ -55,9 +53,6 @@ def classify_phonological_context(
 
     Args:
         word: The target word (lowercased).
-        position_in_utterance: 0-based position of the word in the utterance
-            (counting non-silence words only).
-        utterance_word_count: Total number of non-silence words in utterance.
 
     Returns:
         PhonologicalContext classification.

@@ -37,6 +37,11 @@ import type {
   SpacingScheduleDto,
   ShadowingLagResultDto,
 } from "@/lib/api-types";
+import { TRAINING_PLATEAU_MINUTES } from "@/lib/score-bands";
+import { TRAINING_WEAKNESS_PROFILE_KEY } from "@/lib/session-storage-keys";
+import { formatMinutesSeconds } from "@/lib/format-time";
+import { fetchTtsResponse } from "@/components/workspace/use-tts-playback";
+import { AppTop } from "@/components/chrome";
 
 // ---- 録音状態 ----
 type RecordingState = "idle" | "recording" | "done";
@@ -51,7 +56,6 @@ type ShadowingPhase =
       referenceAudioBytes: Uint8Array;
       referenceText: string;
       referenceAudioNode: AudioBufferSourceNode;
-      audioContext: AudioContext;
       startedAt: number;
     }
   | { type: "submitting" }
@@ -132,22 +136,10 @@ const formatNextPresentationDate = (isoString: string): string => {
 
 // ---- Component ----
 
-/**
- * 初期 HvptPhase を決める。
- *
- * SSR と初回ハイドレーションでは sessionStorage を参照できないため、決定論的に `loading` を返す。
- * lazy initializer 内で sessionStorage を読むと SSR (window 無し → no_weakness_profile) と
- * client (window 有り → loading) で初期描画が割れ hydration mismatch になるため、ここでは読まない。
- * 実際の phase (no_weakness_profile / session_active) は mount 後の初期化 useEffect で解決する。
- */
-function buildInitialHvptPhase(): HvptPhase {
-  return { type: "loading" };
-}
-
 function readCachedWeaknessProfileId(): string | null {
   try {
     return typeof window !== "undefined"
-      ? sessionStorage.getItem("training-weakness-profile-id")
+      ? sessionStorage.getItem(TRAINING_WEAKNESS_PROFILE_KEY)
       : null;
   } catch {
     return null;
@@ -156,7 +148,12 @@ function readCachedWeaknessProfileId(): string | null {
 
 export default function TrainingPage() {
   // ---- セッション状態 ----
-  const [hvptPhase, setHvptPhase] = useState<HvptPhase>(buildInitialHvptPhase);
+  // 初期 HvptPhase は決定論的に `loading` を返す（SSR と初回ハイドレーションでは sessionStorage を
+  // 参照できないため）。lazy initializer 内で sessionStorage を読むと SSR (window 無し →
+  // no_weakness_profile) と client (window 有り → loading) で初期描画が割れ hydration mismatch に
+  // なるため、ここでは読まない。実際の phase (no_weakness_profile / session_active) は mount 後の
+  // 初期化 useEffect で解決する。
+  const [hvptPhase, setHvptPhase] = useState<HvptPhase>({ type: "loading" });
   const [weaknessProfileIdentifier] = useState<string | null>(readCachedWeaknessProfileId);
 
   // ---- Rail データ ----
@@ -187,6 +184,18 @@ export default function TrainingPage() {
   const [shadowingPhase, setShadowingPhase] = useState<ShadowingPhase>({ type: "idle" });
   const shadowingMediaRecorderRef = useRef<MediaRecorder | null>(null);
   const shadowingChunksRef = useRef<Blob[]>([]);
+  /** W34: シャドーイング用 AudioContext lazy-singleton（unmount で close） */
+  const shadowingAudioContextRef = useRef<AudioContext | null>(null);
+  const acquireShadowingAudioContext = (): AudioContext => {
+    shadowingAudioContextRef.current ??= new AudioContext();
+    return shadowingAudioContextRef.current;
+  };
+  useEffect(() => {
+    return () => {
+      void shadowingAudioContextRef.current?.close();
+      shadowingAudioContextRef.current = null;
+    };
+  }, []);
   // シャドーイングお手本テキスト (HVPT のcontrast から生成した文例)
   const SHADOWING_REFERENCE_TEXT = "The red ball is big and the blue ball is small.";
   const SHADOWING_CONTRAST = "general";
@@ -433,14 +442,14 @@ export default function TrainingPage() {
   }, []);
 
   // ---- 経過時間フォーマット ----
-  const formattedElapsedTime = `${Math.floor(elapsedSeconds / 60)}:${String(elapsedSeconds % 60).padStart(2, "0")}`;
+  const formattedElapsedTime = formatMinutesSeconds(elapsedSeconds);
 
   // ---- 正答率 ----
   const accuracyPercent = trialCount > 0 ? Math.round((correctCount / trialCount) * 100) : 0;
 
   // ---- cum-bar 幅 ----
   const cumulativeMinutes = trainingSchedule?.cumulativeTrainingMinutes ?? 0;
-  const cumBarWidth = Math.min(100, (cumulativeMinutes / 400) * 100);
+  const cumBarWidth = Math.min(100, (cumulativeMinutes / TRAINING_PLATEAU_MINUTES) * 100);
 
   // ---- 現在の刺激 ----
   const currentStimulus =
@@ -929,11 +938,7 @@ export default function TrainingPage() {
   const loadShadowingReference = async () => {
     setShadowingPhase({ type: "tts_loading" });
     try {
-      const response = await globalThis.fetch("/api/v1/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: SHADOWING_REFERENCE_TEXT, speed: 1.0 }),
-      });
+      const response = await fetchTtsResponse(SHADOWING_REFERENCE_TEXT, 1.0);
       if (!response.ok) {
         setShadowingPhase({ type: "error", message: "TTS 取得に失敗しました" });
         return;
@@ -963,7 +968,8 @@ export default function TrainingPage() {
       };
 
       // AudioContext でお手本を 1.0x 再生 (ADR-013: OQ-7 client-side playbackRate)
-      const audioContext = new AudioContext();
+      // W34: lazy-singleton を再利用（unmount effect で必ず close される）
+      const audioContext = acquireShadowingAudioContext();
       const decodedBuffer = await audioContext.decodeAudioData(
         referenceAudioBytes.buffer.slice(0) as ArrayBuffer,
       );
@@ -979,7 +985,6 @@ export default function TrainingPage() {
         referenceAudioBytes,
         referenceText,
         referenceAudioNode: sourceNode,
-        audioContext,
         startedAt,
       });
 
@@ -999,7 +1004,7 @@ export default function TrainingPage() {
 
   // ---- シャドーイング: 録音停止 + 送信 ----
   const stopAndSubmitShadowing = (phase: Extract<ShadowingPhase, { type: "recording" }>) => {
-    const { referenceAudioBytes, referenceText, audioContext, startedAt } = phase;
+    const { referenceAudioBytes, referenceText, startedAt } = phase;
 
     // お手本再生を停止
     try {
@@ -1048,7 +1053,8 @@ export default function TrainingPage() {
         const json = (await response.json()) as { data: ShadowingLagResultDto };
         const lagResult = json.data;
 
-        await audioContext.close();
+        // W34: AudioContext は lazy-singleton になったためここでは close しない
+        // （成功パスのみ close していた漏れは unmount effect の必ず close で解消）
 
         setShadowingPhase({
           type: "result",
@@ -1068,7 +1074,8 @@ export default function TrainingPage() {
   // ---- シャドーイング: スロー再生でお手本を再生 ----
   const playShadowingAtSpeed = async (audioBytes: Uint8Array, playbackRate: number) => {
     try {
-      const audioContext = new AudioContext();
+      // W34: lazy-singleton を再利用（close は unmount effect に一元化）
+      const audioContext = acquireShadowingAudioContext();
       const decodedBuffer = await audioContext.decodeAudioData(
         audioBytes.buffer.slice(0) as ArrayBuffer,
       );
@@ -1077,9 +1084,6 @@ export default function TrainingPage() {
       // M-SHL-6: スロー再生 0.7x は AudioContext.playbackRate で実現 (OQ-7)
       sourceNode.playbackRate.value = playbackRate;
       sourceNode.connect(audioContext.destination);
-      sourceNode.onended = () => {
-        void audioContext.close();
-      };
       sourceNode.start(0);
     } catch {
       // 再生失敗は無視
@@ -1096,9 +1100,7 @@ export default function TrainingPage() {
     <div>
       {/* app-top */}
       <div className="app-top">
-        <div className="app-brand">
-          NativeTrace <span className="ipa">/ˈneɪtɪv treɪs/</span>
-        </div>
+        <AppTop />
         <div className="crumb" style={{ marginLeft: "16px" }}>
           <Link href="/">
             <span>訓練</span>
@@ -1285,25 +1287,16 @@ export default function TrainingPage() {
                   className="speed btn btn--ghost btn--sm"
                   onClick={() => {
                     const result = shadowingPhase;
-                    const referenceBytes =
-                      shadowingChunksRef.current.length > 0
-                        ? null // 録音済みのお手本再生は現在非対応
-                        : null;
                     // お手本音声は result state に参照を保持しないためTTSから再取得する
                     // 簡易実装: speed ボタンで TTS を再取得してスロー再生
                     void (async () => {
                       const rate = result.playbackRate === 1.0 ? 0.7 : 1.0;
-                      const response = await globalThis.fetch("/api/v1/tts", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ text: SHADOWING_REFERENCE_TEXT, speed: rate }),
-                      });
+                      const response = await fetchTtsResponse(SHADOWING_REFERENCE_TEXT, rate);
                       if (!response.ok) return;
                       const buf = await response.arrayBuffer();
                       await playShadowingAtSpeed(new Uint8Array(buf), rate);
                       setShadowingPhase({ ...result, playbackRate: rate });
                     })();
-                    void referenceBytes; // suppress unused warning
                   }}
                 >
                   {shadowingPhase.playbackRate === 1.0 ? "0.7x スロー再生" : "1.0x 通常再生"}

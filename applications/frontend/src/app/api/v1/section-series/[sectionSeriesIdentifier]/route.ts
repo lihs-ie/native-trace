@@ -8,6 +8,7 @@ import { z } from "zod";
 import { getContainer } from "../../../../../registry";
 import { successResponse } from "../../_shared/response";
 import { domainErrorToResponse } from "../../_shared/errors";
+import { zodErrorToValidationFailed } from "../../_shared/validation";
 
 type RouteContext = { params: Promise<{ sectionSeriesIdentifier: string }> };
 
@@ -35,11 +36,7 @@ export async function PATCH(request: NextRequest, context: RouteContext): Promis
 
   const parseResult = patchBodySchema.safeParse(body);
   if (!parseResult.success) {
-    return domainErrorToResponse({
-      type: "validationFailed",
-      field: "body",
-      reason: parseResult.error.errors.map((e) => e.message).join(", "),
-    });
+    return domainErrorToResponse(zodErrorToValidationFailed(parseResult.error, "body"));
   }
 
   const container = getContainer();

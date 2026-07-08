@@ -5,7 +5,7 @@
 """
 
 from python_analyzer.domain.measurement import WeakFormRealization
-from python_analyzer.domain.phoneme import AlignmentBoundary
+from python_analyzer.domain.phoneme import SCHWA_PHONEME, AlignmentBoundary
 
 # 弱形になりやすい主要英語機能語（小文字）
 _FUNCTION_WORDS = frozenset(
@@ -43,9 +43,6 @@ _FUNCTION_WORDS = frozenset(
         "were",
     }
 )
-
-# schwa 音の IPA 記号
-_SCHWA_PHONEME = "ə"
 
 # 弱形実現と判定する最大音素持続時間（ミリ秒）: 短縮形を検出する閾値
 _WEAK_FORM_MAX_DURATION_MS = 120
@@ -111,7 +108,7 @@ def _is_realized_as_weak(
     1. 音素列に ə が含まれる → schwa 化あり
     2. 単語区間の持続時間が _WEAK_FORM_MAX_DURATION_MS 以下 → 短縮あり
     """
-    has_schwa = any(_SCHWA_PHONEME in boundary.phoneme.value for boundary in phonemes_in_word)
+    has_schwa = any(SCHWA_PHONEME in boundary.phoneme.value for boundary in phonemes_in_word)
     word_duration = word_end_ms - word_start_ms
     is_short = word_duration <= _WEAK_FORM_MAX_DURATION_MS
 

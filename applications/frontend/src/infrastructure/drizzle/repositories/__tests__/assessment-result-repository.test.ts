@@ -10,7 +10,7 @@ import {
   createScore0To100,
   createTokenizerVersion,
   createAssessmentFindingIdentifier,
-  createTextRange,
+  type TextRange,
   createConfidence0To1,
 } from "../../../../domain/assessment-result";
 import { createAnalysisJobIdentifier } from "../../../../domain/analysis-job";
@@ -131,7 +131,7 @@ describe("DrizzleAssessmentResultRepository", () => {
     const analysisJob = createAnalysisJobIdentifier("JOB001")!;
     const tokenizerVersion = createTokenizerVersion("1.0.0")!;
     const findingId = createAssessmentFindingIdentifier("FIND001")!;
-    const textRange = createTextRange(0, 5)._unsafeUnwrap();
+    const textRange = { startOffset: 0, endOffset: 5 } as TextRange;
     const confidence = createConfidence0To1(0.9)._unsafeUnwrap();
 
     const { assessmentResult } = createAssessmentResult({

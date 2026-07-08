@@ -10,10 +10,7 @@
 
 import { type ResultAsync, errAsync } from "neverthrow";
 import { type DomainError, validationFailed } from "../../domain/shared";
-import {
-  type DiagnosticSessionIdentifier,
-  createDiagnosticSessionIdentifier,
-} from "../../domain/training";
+import { createDiagnosticSessionIdentifier } from "../../domain/training";
 import { type DiagnosticSessionRepository } from "../port/diagnostic-session-repository";
 import { type WeaknessProfileRepository } from "../port/weakness-profile-repository";
 import { type AssessmentResultRepository } from "../port/assessment-result-repository";
@@ -29,8 +26,11 @@ import { deriveCefrSubscalesFromScores } from "../shared/cefr-subscale-derivatio
  */
 export type DiagnosticStage = "stageI" | "stageII";
 
+/** Stage II（ネイティブ性重視）へ切り替わる overall スコアの閾値。 */
+const STAGE_II_OVERALL_THRESHOLD = 75;
+
 const deriveStage = (overallScore: number): DiagnosticStage =>
-  overallScore >= 75 ? "stageII" : "stageI";
+  overallScore >= STAGE_II_OVERALL_THRESHOLD ? "stageII" : "stageI";
 
 // ---- Output ----
 
@@ -74,9 +74,7 @@ export type ViewDiagnosticResultInput = Readonly<{
 export const createViewDiagnosticResult =
   (dependencies: ViewDiagnosticResultDependencies) =>
   (input: ViewDiagnosticResultInput): ResultAsync<DiagnosticResultOutput, DomainError> => {
-    const sessionIdentifier = createDiagnosticSessionIdentifier(
-      input.diagnosticSessionIdentifier,
-    ) as DiagnosticSessionIdentifier;
+    const sessionIdentifier = createDiagnosticSessionIdentifier(input.diagnosticSessionIdentifier);
     if (!sessionIdentifier) {
       return errAsync(
         validationFailed("diagnosticSessionIdentifier", "不正な診断セッション識別子です"),
@@ -131,5 +129,3 @@ export const createViewDiagnosticResult =
         });
     });
   };
-
-export type ViewDiagnosticResultExecutor = ReturnType<typeof createViewDiagnosticResult>;

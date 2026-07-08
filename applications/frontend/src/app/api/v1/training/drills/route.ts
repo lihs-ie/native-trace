@@ -17,6 +17,7 @@ import { z } from "zod";
 import { getContainer } from "../../../../../registry";
 import { successResponse } from "../../_shared/response";
 import { domainErrorToResponse } from "../../_shared/errors";
+import { zodErrorToValidationFailed } from "../../_shared/validation";
 import type { DrillDto } from "../../../../../lib/api-types";
 
 const startDrillBodySchema = z.object({
@@ -38,11 +39,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   const parsedBody = startDrillBodySchema.safeParse(body);
   if (!parsedBody.success) {
-    return domainErrorToResponse({
-      type: "validationFailed",
-      field: "body",
-      reason: parsedBody.error.errors.map((e) => e.message).join(", "),
-    });
+    return domainErrorToResponse(zodErrorToValidationFailed(parsedBody.error, "body"));
   }
 
   const container = getContainer();

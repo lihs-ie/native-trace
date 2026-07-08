@@ -20,16 +20,19 @@ import {
   type WeaknessProfile,
   createProgressSnapshotIdentifier,
   createCefrSubscaleScores,
-  createFocusScore,
   createCumulativeTrainingMinutes,
   captureProgressSnapshot,
 } from "../../domain/training";
-import { type AssessmentResult, type AssessmentResultIdentifier } from "../../domain/assessment-result";
+import {
+  type AssessmentResult,
+  type AssessmentResultIdentifier,
+} from "../../domain/assessment-result";
 import { type SectionIdentifier } from "../../domain/section";
 import { type ProgressSnapshotRepository } from "../port/progress-snapshot-repository";
 import { type EntropyProvider } from "../port/entropy-provider";
 import { type Clock } from "../port/clock";
 import { deriveCefrSubscalesFromScores } from "../shared/cefr-subscale-derivation";
+import { deriveFocusScoresFromWeaknessProfile } from "../shared/focus-score";
 
 // ---- Input ----
 
@@ -65,12 +68,17 @@ export type CaptureProgressSnapshotDependencies = Readonly<{
 
 export const createCaptureProgressSnapshot =
   (dependencies: CaptureProgressSnapshotDependencies) =>
-  (input: CaptureProgressSnapshotInput): ResultAsync<CaptureProgressSnapshotOutput, DomainError> => {
+  (
+    input: CaptureProgressSnapshotInput,
+  ): ResultAsync<CaptureProgressSnapshotOutput, DomainError> => {
     const snapshotIdentifierRaw = dependencies.entropyProvider.generateUlid();
     const snapshotIdentifier = createProgressSnapshotIdentifier(snapshotIdentifierRaw);
     if (!snapshotIdentifier) {
       return errAsync(
-        validationFailed("progressSnapshotIdentifier", "ProgressSnapshot 識別子の生成に失敗しました"),
+        validationFailed(
+          "progressSnapshotIdentifier",
+          "ProgressSnapshot 識別子の生成に失敗しました",
+        ),
       );
     }
 
@@ -90,20 +98,12 @@ export const createCaptureProgressSnapshot =
     }
 
     // focusScores — WeaknessProfile.focusSounds の mastery を 0-100 スコアに変換 (OQ-5)
-    // mastery は [0,1] なので 100 倍して整数化する
-    const focusScoreResults = input.weaknessProfile.focusSounds.map((sound) => {
-      const score0To100 = Math.round(Number(sound.mastery) * 100);
-      return createFocusScore(String(sound.contrast), score0To100);
-    });
-
-    // いずれかの FocusScore 生成が失敗した場合は最初のエラーを返す
-    for (const result of focusScoreResults) {
-      if (result.isErr()) {
-        return errAsync(result.error);
-      }
+    const focusScoresResult = deriveFocusScoresFromWeaknessProfile(input.weaknessProfile);
+    if (focusScoresResult.isErr()) {
+      return errAsync(focusScoresResult.error);
     }
 
-    const focusScores = focusScoreResults.map((r) => r._unsafeUnwrap());
+    const focusScores = focusScoresResult.value;
 
     // cumulativeTrainingMinutes = 0 (training 未実装、honest empty DD-253)
     const cumulativeResult = createCumulativeTrainingMinutes(0);
@@ -111,7 +111,8 @@ export const createCaptureProgressSnapshot =
       return errAsync(cumulativeResult.error);
     }
 
-    const sourceAssessmentIdentifier = input.assessmentResult.identifier as AssessmentResultIdentifier;
+    const sourceAssessmentIdentifier = input.assessmentResult
+      .identifier as AssessmentResultIdentifier;
 
     const captureResult = captureProgressSnapshot({
       identifier: snapshotIdentifier,
@@ -131,11 +132,7 @@ export const createCaptureProgressSnapshot =
 
     const { progressSnapshot } = captureResult.value;
 
-    return dependencies.progressSnapshotRepository
-      .save(progressSnapshot)
-      .map(() => ({
-        progressSnapshotIdentifier: String(progressSnapshot.identifier),
-      }));
+    return dependencies.progressSnapshotRepository.save(progressSnapshot).map(() => ({
+      progressSnapshotIdentifier: String(progressSnapshot.identifier),
+    }));
   };
-
-export type CaptureProgressSnapshotExecutor = ReturnType<typeof createCaptureProgressSnapshot>;

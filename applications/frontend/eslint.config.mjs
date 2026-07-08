@@ -25,6 +25,12 @@ const onionLayerZones = [
   { target: "./src/infrastructure", from: "./src/acl" },
   { target: "./src/infrastructure", from: "./src/app" },
 
+  // W54: UseCase は UI DTO モジュール (lib) を import しない
+  // （lib/api-types は AcousticEvidenceDraft の type-only re-export で usecase を参照する — 逆方向は可）。
+  // components は ACL を import しない（ワイヤ型は lib/api-types 経由で参照する）。
+  { target: "./src/usecase", from: "./src/lib" },
+  { target: "./src/components", from: "./src/acl" },
+
   // Training Context (TC) 境界 — ADR-007: TC domain が PPC 内部型を import しない。
   // PPC (Pronunciation Practice Context) = domain/{assessment-result,section,section-series,
   // material,recording-attempt,analysis-run,analysis-job,audio-file}

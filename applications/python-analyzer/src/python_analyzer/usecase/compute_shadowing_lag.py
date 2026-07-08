@@ -1,19 +1,13 @@
 """シャドーイングラグ計測ユースケース（ADR-013）。
 
-domain / usecase 層のみに依存。fastapi / torch を import しない。
-infrastructure 実装は ports 経由で注入する。
+domain / usecase 層のみに依存。fastapi / torch / numpy を import しない。
+infrastructure 実装は ports 経由で注入する（W41: LagComputationPort 依存逆転）。
 """
-
-import io
-import wave
-
-import numpy as np
 
 from python_analyzer.domain.audio import AudioInput
 from python_analyzer.domain.phoneme import IpaSequence
 from python_analyzer.domain.shadowing_lag import ShadowingLagMeasurement
-from python_analyzer.infrastructure.dtw_lag import compute_lag
-from python_analyzer.usecase.ports import AlignerPort, G2PPort
+from python_analyzer.usecase.ports import AlignerPort, G2PPort, LagComputationPort
 
 
 class ComputeShadowingLagUseCase:
@@ -25,15 +19,18 @@ class ComputeShadowingLagUseCase:
     Args:
         g2p_port: referenceText -> IpaSequence 変換ポート。
         aligner_port: 音声 + IpaSequence -> 音素境界 ポート。
+        lag_computation_port: 音素境界 + 音声 -> ShadowingLagMeasurement ポート（W41）。
     """
 
     def __init__(
         self,
         g2p_port: G2PPort,
         aligner_port: AlignerPort,
+        lag_computation_port: LagComputationPort,
     ) -> None:
         self._g2p = g2p_port
         self._aligner = aligner_port
+        self._lag_computation = lag_computation_port
 
     def execute(
         self,
@@ -62,49 +59,10 @@ class ComputeShadowingLagUseCase:
         # learner_audio を整列する
         learner_boundaries, _ = self._aligner.align(learner_audio, expected_ipa)
 
-        # waveform を VAD 計測用に取得する（audio_energy 純関数に渡す）
-        reference_waveform = _load_waveform_numpy(reference_audio)
-        learner_waveform = _load_waveform_numpy(learner_audio)
-
-        return compute_lag(
+        # ラグ計測は port 経由で infrastructure に委譲する（waveform 抽出は port 実装側の責務）
+        return self._lag_computation.compute(
             reference_boundaries=reference_boundaries,
             learner_boundaries=learner_boundaries,
-            reference_waveform=reference_waveform,
-            learner_waveform=learner_waveform,
+            reference_audio=reference_audio,
+            learner_audio=learner_audio,
         )
-
-
-def _load_waveform_numpy(audio: AudioInput) -> np.ndarray | None:
-    """AudioInput の WAV バイト列から 16kHz モノラル float32 numpy 配列を取得する。
-
-    WAV 形式以外または読み込み失敗時は None を返す（VAD はスキップ）。
-    soundfile / torch は使わず wave モジュールのみで読む（VAD は純 numpy）。
-    """
-    mime_normalized = audio.mime_type.split(";")[0].strip().lower()
-    if mime_normalized not in {"audio/wav", "audio/x-wav", "audio/wave"}:
-        return None
-
-    try:
-        with wave.open(io.BytesIO(audio.content)) as wav_file:
-            n_channels = wav_file.getnchannels()
-            sample_width = wav_file.getsampwidth()
-            n_frames = wav_file.getnframes()
-            raw_bytes = wav_file.readframes(n_frames)
-
-        # PCM サンプルを float32 に変換する
-        if sample_width == 2:
-            samples = np.frombuffer(raw_bytes, dtype=np.int16).astype(np.float32) / 32768.0
-        elif sample_width == 1:
-            samples = (
-                np.frombuffer(raw_bytes, dtype=np.uint8).astype(np.float32) - 128.0
-            ) / 128.0
-        else:
-            return None
-
-        # ステレオをモノラルに変換する
-        if n_channels > 1:
-            samples = samples.reshape(-1, n_channels).mean(axis=1)
-
-        return samples
-    except Exception:
-        return None

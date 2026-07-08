@@ -15,24 +15,25 @@ import Link from "next/link";
 import { use, useEffect, useState } from "react";
 import { apiGet, isApiClientError } from "@/lib/api-client";
 import type { DiagnosticResultDto, DiagnosticFocusSoundDto } from "@/lib/api-types";
+import { getPhenomenonIconForContrast } from "@/lib/phenomenon";
+import { AppTop } from "@/components/chrome";
 
 type PageProps = {
   params: Promise<{ diagnosticSessionIdentifier: string }>;
 };
 
 // ---- Stage 表示 ----
-const STAGE_LABELS: Record<DiagnosticResultDto["stage"], { label: string; description: string }> =
-  {
-    stageI: {
-      label: "Stage I 明瞭性",
-      description:
-        "現在は Stage I。優先構成: 韻律 + 母音挿入 + 高FL分節（初中級向け切替 · REQ-113）。",
-    },
-    stageII: {
-      label: "Stage II ネイティブ性",
-      description: "現在は Stage II。優先構成: 韻律・connected speech（上級向け）。",
-    },
-  };
+const STAGE_LABELS: Record<DiagnosticResultDto["stage"], { label: string; description: string }> = {
+  stageI: {
+    label: "Stage I 明瞭性",
+    description:
+      "現在は Stage I。優先構成: 韻律 + 母音挿入 + 高FL分節（初中級向け切替 · REQ-113）。",
+  },
+  stageII: {
+    label: "Stage II ネイティブ性",
+    description: "現在は Stage II。優先構成: 韻律・connected speech（上級向け）。",
+  },
+};
 
 // ---- priority → CSS クラス・ラベル ----
 const priorityToCssClass = (priority: number): string => {
@@ -59,19 +60,6 @@ const functionalLoadRankToDataRank = (rank: string): string => {
 // ---- CEFR スコア → バー幅 % ----
 const cefrScoreToBarWidth = (score: number): number => Math.min(100, Math.max(0, score));
 
-// ---- phenomenon アイコン（contrast 文字列から推定） ----
-const getPhenomenonIcon = (contrast: string): string => {
-  if (contrast.includes("/") || contrast.includes("·")) return "⇄";
-  if (contrast.toLowerCase().includes("epenthesis") || contrast.toLowerCase().includes("母音")) return "‸";
-  if (
-    contrast.toLowerCase().includes("stress") ||
-    contrast.toLowerCase().includes("rhythm") ||
-    contrast.toLowerCase().includes("prosod")
-  )
-    return "ˈ";
-  return "⇄";
-};
-
 // ---- 推奨訓練テキスト（functionalLoadRank + contrast から簡易生成） ----
 const getRecommendedTraining = (sound: DiagnosticFocusSoundDto): string => {
   const rank = sound.functionalLoadRank.toLowerCase();
@@ -95,9 +83,7 @@ const getRecommendedTraining = (sound: DiagnosticFocusSoundDto): string => {
 const isFocusTileNow = (priority: number): boolean => priority >= 0.6;
 
 // ---- Stage トラック用スコア（overall スコアが直接取れないので CEFR overall から推定） ----
-const estimateStageIScore = (
-  result: DiagnosticResultDto,
-): { stageI: number; stageII: number } => {
+const estimateStageIScore = (result: DiagnosticResultDto): { stageI: number; stageII: number } => {
   const overallScore = result.cefrSubscales.overall?.score ?? 50;
   const prosodicScore = result.cefrSubscales.prosodic?.score ?? 50;
   const stageI = Math.min(100, overallScore);
@@ -115,26 +101,20 @@ export default function DiagnosticResultPage({ params }: PageProps) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    apiGet<DiagnosticResultDto>(
-      `/api/v1/diagnostic-sessions/${diagnosticSessionIdentifier}/result`,
-    )
+    apiGet<DiagnosticResultDto>(`/api/v1/diagnostic-sessions/${diagnosticSessionIdentifier}/result`)
       .then((data) => {
         setResult(data);
         setLoading(false);
       })
       .catch((error: unknown) => {
-        setLoadError(
-          isApiClientError(error) ? error.message : "診断結果の取得に失敗しました",
-        );
+        setLoadError(isApiClientError(error) ? error.message : "診断結果の取得に失敗しました");
         setLoading(false);
       });
   }, [diagnosticSessionIdentifier]);
 
   if (loading) {
     return (
-      <div
-        style={{ padding: "48px 24px", textAlign: "center", color: "var(--text-tertiary)" }}
-      >
+      <div style={{ padding: "48px 24px", textAlign: "center", color: "var(--text-tertiary)" }}>
         結果を読み込み中...
       </div>
     );
@@ -164,16 +144,11 @@ export default function DiagnosticResultPage({ params }: PageProps) {
     <div>
       {/* app-top */}
       <div className="app-top">
-        <div className="app-brand">
-          NativeTrace <span className="ipa">/ˈneɪtɪv treɪs/</span>
-        </div>
+        <AppTop />
         <div className="crumb" style={{ marginLeft: "16px" }}>
           <b>診断結果</b>
           <span className="sep">·</span>
-          <span
-            className="mono"
-            style={{ fontSize: "var(--text-xs)", color: "var(--text-faint)" }}
-          >
+          <span className="mono" style={{ fontSize: "var(--text-xs)", color: "var(--text-faint)" }}>
             弱点プロファイル初期化
           </span>
         </div>
@@ -211,12 +186,8 @@ export default function DiagnosticResultPage({ params }: PageProps) {
                 </div>
               </div>
             </div>
-            <p
-              className="note"
-              style={{ margin: "16px 0 0", fontSize: "var(--text-xs)" }}
-            >
-              現在は{" "}
-              <b style={{ color: "var(--axis-intel-text)" }}>{stageInfo.label}</b>。
+            <p className="note" style={{ margin: "16px 0 0", fontSize: "var(--text-xs)" }}>
+              現在は <b style={{ color: "var(--axis-intel-text)" }}>{stageInfo.label}</b>。
               {stageInfo.description}
             </p>
           </div>
@@ -232,7 +203,9 @@ export default function DiagnosticResultPage({ params }: PageProps) {
                   <b>全体的音韻統制</b>
                 </span>
                 <span className="sbar">
-                  <i style={{ width: `${cefrScoreToBarWidth(result.cefrSubscales.overall.score)}%` }} />
+                  <i
+                    style={{ width: `${cefrScoreToBarWidth(result.cefrSubscales.overall.score)}%` }}
+                  />
                 </span>
                 <span className="srn mono">{result.cefrSubscales.overall.score}</span>
                 <span className="ss-cefr">{result.cefrSubscales.overall.band}</span>
@@ -298,7 +271,7 @@ export default function DiagnosticResultPage({ params }: PageProps) {
             const priorityLabel = priorityToLabel(sound.priority);
             const dataRank = functionalLoadRankToDataRank(sound.functionalLoadRank);
             const isNow = isFocusTileNow(sound.priority);
-            const phenomenonIcon = getPhenomenonIcon(sound.contrast);
+            const phenomenonIcon = getPhenomenonIconForContrast(sound.contrast);
             const recommendedTraining = getRecommendedTraining(sound);
 
             // contrast 文字列から / / 区切りペアを分割
@@ -314,7 +287,7 @@ export default function DiagnosticResultPage({ params }: PageProps) {
             return (
               <div
                 key={sound.catalogId}
-                className={`focus-tile${isNow ? " is-now" : ""}${priorityClass === "prio--low" ? "" : ""}`}
+                className={`focus-tile${isNow ? " is-now" : ""}`}
                 style={priorityClass === "prio--low" ? { opacity: 0.75 } : undefined}
               >
                 <div className="focus-meta">
@@ -377,7 +350,8 @@ export default function DiagnosticResultPage({ params }: PageProps) {
                 margin: 0,
               }}
             >
-              focus sounds が生成されませんでした。診断録音の解析データが不足している可能性があります。
+              focus sounds
+              が生成されませんでした。診断録音の解析データが不足している可能性があります。
             </p>
           )}
         </div>

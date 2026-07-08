@@ -1,7 +1,12 @@
 /**
  * UI 層が fetch で受け取る API レスポンス DTO の型定義。
  * domain / usecase / infrastructure は import しない。
+ * （例外 — W54: AcousticEvidenceDto は usecase/assessment-result-draft.ts の
+ *   AcousticEvidenceDraft の type-only re-export。usecase → lib の逆依存を解消するための逆転で、
+ *   値 import は引き続き禁止。）
  */
+
+import type { AcousticEvidenceDraft } from "../usecase/assessment-result-draft";
 
 export type MaterialSourceDto = {
   sourceType: string;
@@ -89,21 +94,6 @@ export type RecordingAttemptDto = {
   createdAt: string;
 };
 
-export type AnalysisRunDto = {
-  identifier: string;
-  recordingAttempt: string;
-  status: string;
-  createdAt: string;
-};
-
-export type AnalysisJobDto = {
-  identifier: string;
-  analysisRun: string;
-  engine: string;
-  status: string;
-  attemptCount: number;
-};
-
 export type TextRangeDto = {
   startChar: number;
   endChar: number;
@@ -143,38 +133,6 @@ export type ScoresDto = {
   pronunciation: number;
   connectedSpeech: number;
   prosody: number;
-};
-
-export type FindingDto = {
-  identifier: string;
-  phenomenon: FindingPhenomenon | null;
-  gop: number | null;
-  category: string;
-  severity: string;
-  textRange: TextRangeDto;
-  audioRange: AudioRangeDto | null;
-  expected: { text: string; ipa: string | null } | null;
-  detected: { text: string; ipa: string | null } | null;
-  messageJa: string | null;
-  messageEn: string | null;
-  scoreImpact: number | null;
-  confidence: number | null;
-};
-
-export type AssessmentResultDto = {
-  identifier: string;
-  analysisJob: string;
-  engine: string;
-  scores: ScoresDto;
-  summary: { messageJa: string | null; messageEn: string | null } | null;
-  findings: FindingDto[];
-  engineSnapshot: { kind: string; displayName: string } | null;
-  createdAt: string;
-};
-
-export type ResultsByEngineDto = {
-  engine: string;
-  result: AssessmentResultDto | null;
 };
 
 export type SectionTokenDto = {
@@ -234,28 +192,10 @@ export type CefrSubscaleDto = {
 /**
  * M-APD-13 (ADR-018): worker acousticEvidence の方向ラベル + 実測/目標フォルマント。
  * 全ラベルは string literal union | null（optional なし — DTO スタイルに統一）。
+ * W54: 形の正本は usecase/assessment-result-draft.ts の AcousticEvidenceDraft（完全同形）。
+ * ここは type-only の別名 re-export（usecase → lib の逆依存解消）。
  */
-export type AcousticEvidenceDto = {
-  tongueHeight: "tooHigh" | "tooLow" | "ok" | null;
-  tongueBackness: "tooFront" | "tooBack" | "ok" | null;
-  rhoticity: "insufficient" | "overRetroflex" | "ok" | null;
-  sibilantPlace: "tooPalatal" | "tooAlveolar" | "ok" | null;
-  vowelLength: "tooShort" | "ok" | null;
-  measuredF1Hz: number | null;
-  measuredF2Hz: number | null;
-  measuredF3Hz: number | null;
-  targetF1Hz: number | null;
-  targetF2Hz: number | null;
-  targetF3Hz: number | null;
-  /** M-ADVL-13 (ADR-024): 数値スカラー 7 本 — frontend での規範定数ハードコード禁止。worker が emit。 */
-  spectralCentroidHz: number | null;
-  tenseLengthRatio: number | null;
-  signedF1SdDeviation: number | null;
-  signedF2SdDeviation: number | null;
-  signedF3SdDeviation: number | null;
-  targetSpectralCentroidHz: number | null;
-  targetTenseLengthRatio: number | null;
-};
+export type AcousticEvidenceDto = AcousticEvidenceDraft;
 
 /**
  * M-AAI-12 (ADR-019): EMA 調音推定座標 + 表示適格性スコア。
@@ -378,21 +318,8 @@ export type WorkspaceDto = {
   highlightRangesByEngine: HighlightsByEngineDto[];
 };
 
-export type PaginationDto = {
-  type: string;
-  offset: number;
-  limit: number;
-  total: number;
-};
-
 export type ApiResponse<T> = {
   data: T;
-  meta: { requestIdentifier: string };
-};
-
-export type ApiListResponse<T> = {
-  data: T[];
-  page: PaginationDto;
   meta: { requestIdentifier: string };
 };
 
@@ -408,14 +335,7 @@ export type ApiError = {
 // 解析モード
 export type AnalysisMode = "cloudOnly" | "ossWorkerOnly" | "comparison";
 
-export const ANALYSIS_MODE_LABELS: Record<AnalysisMode, string> = {
-  cloudOnly: "Cloud only",
-  ossWorkerOnly: "OSS Worker only",
-  comparison: "Comparison (both)",
-};
-
 // カテゴリ・重大度のラベルと色
-export type Severity = "critical" | "major" | "minor" | "info";
 export type FindingCategory =
   | "accuracy"
   | "pronunciation"
@@ -440,21 +360,6 @@ export type FindingPhenomenon =
   | "reduction"
   | "epenthesis"
   | "lexicalStress";
-
-export const SEVERITY_LABELS: Record<string, string> = {
-  critical: "Critical",
-  major: "Major",
-  minor: "Minor",
-  info: "Info",
-};
-
-export const CATEGORY_LABELS: Record<string, string> = {
-  accuracy: "Accuracy",
-  pronunciation: "Pronunciation",
-  connectedSpeech: "Connected Speech",
-  prosody: "Prosody",
-  nativeLikeness: "Native-likeness",
-};
 
 // ---- Progress DTOs (Training Context — M-PG-3) ----
 
@@ -482,11 +387,6 @@ export type ProgressDto = {
   snapshots: ProgressSnapshotDto[];
   now: ProgressSnapshotDto | null;
   prev: ProgressSnapshotDto | null;
-};
-
-export const ENGINE_LABELS: Record<string, string> = {
-  cloud: "OpenAI",
-  oss_worker: "OSS Worker",
 };
 
 // ---- History DTOs ----
@@ -711,4 +611,19 @@ export type DiagnosticResultDto = {
   cefrSubscales: DiagnosticCefrSubscalesDto;
   focusSounds: DiagnosticFocusSoundDto[];
   completedAt: string;
+};
+
+// ---- Golden Speaker DTOs ----
+
+/**
+ * Golden Speaker 変換レスポンス (POST /api/v1/golden-speaker/convert)。
+ * W54: 型は lib（UI が参照する契約層）に置き、zod schema 実体は acl/golden-speaker/schema.ts に残す。
+ * ORPHAN-4: qualityGatePassed が false の場合、audioBase64 を無視すること。
+ * M-GRV-7: targetVoice は API レスポンス由来 (静的 HTML に焼かない)。
+ */
+export type GoldenConversionResponse = {
+  audioBase64: string | null;
+  qualityGatePassed: boolean;
+  withholdReason: string | null;
+  targetVoice: string;
 };

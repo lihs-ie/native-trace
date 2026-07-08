@@ -11,10 +11,13 @@ DTW で対応づけ、per-segment lag 列と中央値 lag を算出する。
   5. DTW の局所制約（step pattern）で挿入/脱落による整列崩れを緩和する。
 """
 
+import io
 import logging
+import wave
 
 import numpy as np
 
+from python_analyzer.domain.audio import AudioInput
 from python_analyzer.domain.phoneme import AlignmentBoundary
 from python_analyzer.domain.shadowing_lag import PhonemeSegmentLag, ShadowingLagMeasurement
 from python_analyzer.infrastructure.audio_energy import (
@@ -29,6 +32,10 @@ logger = logging.getLogger(__name__)
 # DTW 局所制約（step_pattern）のウィンドウ幅（音素数）。
 # 挿入/脱落が多い場合でも整列が崩れにくくするために適度に広くとる。
 _DTW_SAKOE_CHIBA_BAND = 10
+
+# wave モジュールで WAV ヘッダー解析可能とみなす MIME タイプ集合（infra 層内部専用）。
+# usecase.ports.WAV_MIME_TYPES と同一値（W41: 層をまたぐ import を避けるため複製）。
+_WAV_MIME_TYPES: frozenset[str] = frozenset({"audio/wav", "audio/x-wav", "audio/wave"})
 
 
 def compute_lag(
@@ -93,6 +100,70 @@ def compute_lag(
         pause_count_learner=_count_pauses(learner_waveform),
         pause_count_reference=_count_pauses(reference_waveform),
     )
+
+
+class DtwLagComputer:
+    """usecase.ports.LagComputationPort の実装（ADR-013 / W41 依存逆転）。
+
+    AudioInput から waveform を抽出し（numpy 変換は本クラス内部の責務）、
+    音素境界列と合わせて compute_lag に委譲する。
+    """
+
+    def compute(
+        self,
+        reference_boundaries: tuple[AlignmentBoundary, ...],
+        learner_boundaries: tuple[AlignmentBoundary, ...],
+        reference_audio: AudioInput,
+        learner_audio: AudioInput,
+    ) -> ShadowingLagMeasurement:
+        """音素境界列と音声から DTW でシャドーイングラグを計測する。"""
+        reference_waveform = _load_waveform_numpy(reference_audio)
+        learner_waveform = _load_waveform_numpy(learner_audio)
+
+        return compute_lag(
+            reference_boundaries=reference_boundaries,
+            learner_boundaries=learner_boundaries,
+            reference_waveform=reference_waveform,
+            learner_waveform=learner_waveform,
+        )
+
+
+def _load_waveform_numpy(audio: AudioInput) -> np.ndarray | None:
+    """AudioInput の WAV バイト列から 16kHz モノラル float32 numpy 配列を取得する。
+
+    WAV 形式以外または読み込み失敗時は None を返す（VAD はスキップ）。
+    soundfile / torch は使わず wave モジュールのみで読む（VAD は純 numpy）。
+
+    W41: usecase/compute_shadowing_lag.py から移設（numpy import ごと）。
+    """
+    mime_normalized = audio.mime_type.split(";")[0].strip().lower()
+    if mime_normalized not in _WAV_MIME_TYPES:
+        return None
+
+    try:
+        with wave.open(io.BytesIO(audio.content)) as wav_file:
+            n_channels = wav_file.getnchannels()
+            sample_width = wav_file.getsampwidth()
+            n_frames = wav_file.getnframes()
+            raw_bytes = wav_file.readframes(n_frames)
+
+        # PCM サンプルを float32 に変換する
+        if sample_width == 2:
+            samples = np.frombuffer(raw_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+        elif sample_width == 1:
+            samples = (
+                np.frombuffer(raw_bytes, dtype=np.uint8).astype(np.float32) - 128.0
+            ) / 128.0
+        else:
+            return None
+
+        # ステレオをモノラルに変換する
+        if n_channels > 1:
+            samples = samples.reshape(-1, n_channels).mean(axis=1)
+
+        return samples
+    except Exception:
+        return None
 
 
 def _dtw_align(

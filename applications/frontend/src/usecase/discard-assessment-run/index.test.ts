@@ -55,11 +55,6 @@ const makeDependencies = (
     persist: () => okAsync(undefined),
     acquireLease: () => okAsync(null),
   },
-  assessmentResultRepository: {
-    find: () => errAsync(notFound("assessmentResult", "x")),
-    search: () => okAsync({ items: [] }),
-    persist: () => okAsync(undefined),
-  },
   transactionManager: makeTransactionManager(),
   clock: makeClock(),
   logger: makeLogger(),

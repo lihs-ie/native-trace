@@ -11,7 +11,8 @@
  * 各 finding × referenceText に対応する Section を 1:1 で作成・取得する。
  * Section が存在しない場合のみ INSERT する（idempotent）。
  *
- * drill-section-fixture.ts と同型の実装パターンを踏襲する。
+ * ensure-upsert の共通実装は sentinel-section-fixture.ts の ensureSentinelSectionExists に
+ * パラメータ化抽出済み（W27）。本ファイルは固定識別子・タイトル定数と薄い委譲のみを持つ。
  *
  * 隔離保証: FINDING_RETRY_MATERIAL_SINGLETON を fixture 外から参照しないことで
  * workspace の実 Section 履歴クエリから混入しない。
@@ -22,9 +23,8 @@
  * Drizzle スキーマの変更（新テーブル・新カラム）はこのスライスでは行わない。
  */
 
-import { eq } from "drizzle-orm";
 import type { DrizzleDatabase } from "../drizzle/client";
-import { materials, sectionSeries, sections } from "../drizzle/schema";
+import { ensureSentinelSectionExists } from "./sentinel-section-fixture";
 
 // ---- finding retry 専用 Material / SectionSeries の固定識別子 ----
 
@@ -49,70 +49,16 @@ export const ensureFindingRetrySectionExists = async (
   referenceText: string,
 ): Promise<string> => {
   const sectionIdentifier = toFindingRetrySectionIdentifier(findingIdentifier);
-  const now = new Date().toISOString();
+  const bodyTextHash = Buffer.from(referenceText).toString("base64").slice(0, 32);
 
-  // Material が存在しない場合は INSERT
-  const existingMaterial = await database
-    .select({ identifier: materials.identifier })
-    .from(materials)
-    .where(eq(materials.identifier, FINDING_RETRY_MATERIAL_SINGLETON))
-    .limit(1);
-
-  if (existingMaterial.length === 0) {
-    await database
-      .insert(materials)
-      .values({
-        identifier: FINDING_RETRY_MATERIAL_SINGLETON,
-        title: "所見 retry 録音（システム生成）",
-        sourceJson: null,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoNothing();
-  }
-
-  // SectionSeries が存在しない場合は INSERT
-  const existingSeriesRows = await database
-    .select({ identifier: sectionSeries.identifier })
-    .from(sectionSeries)
-    .where(eq(sectionSeries.identifier, FINDING_RETRY_SECTION_SERIES_SINGLETON))
-    .limit(1);
-
-  if (existingSeriesRows.length === 0) {
-    await database
-      .insert(sectionSeries)
-      .values({
-        identifier: FINDING_RETRY_SECTION_SERIES_SINGLETON,
-        material: FINDING_RETRY_MATERIAL_SINGLETON,
-        title: "所見 retry 録音セット",
-        displayOrder: 0,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoNothing();
-  }
-
-  // Section が存在しない場合は INSERT
-  const existingSectionRows = await database
-    .select({ identifier: sections.identifier })
-    .from(sections)
-    .where(eq(sections.identifier, sectionIdentifier))
-    .limit(1);
-
-  if (existingSectionRows.length === 0) {
-    const bodyTextHash = Buffer.from(referenceText).toString("base64").slice(0, 32);
-    await database
-      .insert(sections)
-      .values({
-        identifier: sectionIdentifier,
-        sectionSeries: FINDING_RETRY_SECTION_SERIES_SINGLETON,
-        versionNumber: 1,
-        bodyText: referenceText,
-        bodyTextHash,
-        createdAt: now,
-      })
-      .onConflictDoNothing();
-  }
-
-  return sectionIdentifier;
+  return ensureSentinelSectionExists({
+    database,
+    materialIdentifier: FINDING_RETRY_MATERIAL_SINGLETON,
+    seriesIdentifier: FINDING_RETRY_SECTION_SERIES_SINGLETON,
+    materialTitle: "所見 retry 録音（システム生成）",
+    seriesTitle: "所見 retry 録音セット",
+    sectionIdentifier,
+    bodyText: referenceText,
+    bodyTextHash,
+  });
 };

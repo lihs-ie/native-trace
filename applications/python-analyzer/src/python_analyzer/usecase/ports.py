@@ -18,6 +18,11 @@ from python_analyzer.domain.measurement import (
     WordStressMeasurement,
 )
 from python_analyzer.domain.phoneme import AlignmentBoundary, IpaSequence
+from python_analyzer.domain.shadowing_lag import ShadowingLagMeasurement
+
+# wave モジュールで WAV ヘッダー解析可能とみなす MIME タイプ集合（usecase 層の共有語彙）。
+# wav2vec2_aligner.py の ffmpeg デコード対象 superset（flac/aiff 入り）とは別物。
+WAV_MIME_TYPES: frozenset[str] = frozenset({"audio/wav", "audio/x-wav", "audio/wave"})
 
 
 class G2PPort(Protocol):
@@ -163,3 +168,22 @@ class ProsodyPort(Protocol):
         # NOTE: M-APD-2 の spec では speaker_sex を Protocol シグネチャに含めていないが、
         # M-APD-4 で speakerSex → maximum_formant_hz の分岐が必要なため、
         # speaker_sex パラメータを追加する（spec-grader 向け intentional deviation 注記）。
+
+
+class LagComputationPort(Protocol):
+    """シャドーイングラグ計測ポート（ADR-013 / W41 依存逆転）。
+
+    DTW による音素境界対応づけと waveform 抽出（numpy 変換）は
+    infrastructure 実装（dtw_lag.DtwLagComputer）の内部責務とする。
+    usecase 層は音素境界列と AudioInput のみを渡す。
+    """
+
+    def compute(
+        self,
+        reference_boundaries: tuple[AlignmentBoundary, ...],
+        learner_boundaries: tuple[AlignmentBoundary, ...],
+        reference_audio: AudioInput,
+        learner_audio: AudioInput,
+    ) -> ShadowingLagMeasurement:
+        """音素境界列と音声から DTW でシャドーイングラグを計測する。"""
+        ...

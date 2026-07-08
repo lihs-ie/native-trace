@@ -40,6 +40,7 @@ export type BodyValidationResult = {
  */
 export const computeBodyMetrics = (bodyText: string): BodyMetrics => {
   const chars = bodyText.length;
+  // usecase/shared/tokenizer.ts の countWords と同義（公開 API のためここでは現状維持）。
   const words =
     chars === 0
       ? 0
@@ -74,15 +75,12 @@ export const validateBody = (bodyText: string): BodyValidationResult => {
 
   const isNotEmpty: ValidationStatus = metrics.chars > 0 ? "ok" : "warn";
 
-  const isWithinMaxLength: ValidationStatus =
-    metrics.chars <= MAX_BODY_TEXT_LENGTH ? "ok" : "warn";
+  const isWithinMaxLength: ValidationStatus = metrics.chars <= MAX_BODY_TEXT_LENGTH ? "ok" : "warn";
 
   const meetsEnglishRatio: ValidationStatus =
     metrics.chars > 0 && metrics.englishRatio >= MIN_ENGLISH_CHAR_RATIO ? "ok" : "warn";
 
-  const hasNoControlCharacters: ValidationStatus = hasControlCharacters(bodyText)
-    ? "warn"
-    : "ok";
+  const hasNoControlCharacters: ValidationStatus = hasControlCharacters(bodyText) ? "warn" : "ok";
 
   const isNotLong: ValidationStatus = metrics.chars <= LONG_BODY_WARN_LENGTH ? "ok" : "warn";
 

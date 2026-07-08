@@ -12,35 +12,29 @@
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 import { createAnalyzerConfig } from "../../../../infrastructure/config";
+import { errorResponse } from "../_shared/errors";
+import { zodErrorToValidationFailed } from "../_shared/validation";
 
 const requestBodySchema = z.object({
   text: z.string().min(1, "text は 1 文字以上必要です"),
   speed: z.number().min(0.5).max(1.0).default(1.0),
 });
 
-const buildErrorResponse = (status: number, code: string, message: string): Response => {
-  const requestIdentifier = `req_${globalThis.crypto.randomUUID().replace(/-/g, "")}`;
-  return Response.json(
-    {
-      error: { code, message },
-      meta: { requestIdentifier },
-    },
-    { status },
-  );
-};
-
 export async function POST(request: NextRequest): Promise<Response> {
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return buildErrorResponse(400, "validationFailed", "JSON のパースに失敗しました");
+    return errorResponse(400, "validationFailed", "JSON のパースに失敗しました");
   }
 
   const parseResult = requestBodySchema.safeParse(body);
   if (!parseResult.success) {
-    const reason = parseResult.error.errors.map((error) => error.message).join(", ");
-    return buildErrorResponse(400, "validationFailed", reason);
+    return errorResponse(
+      400,
+      "validationFailed",
+      zodErrorToValidationFailed(parseResult.error).reason,
+    );
   }
 
   const { text, speed } = parseResult.data;
@@ -55,18 +49,18 @@ export async function POST(request: NextRequest): Promise<Response> {
       body: JSON.stringify({ text, speed }),
     });
   } catch {
-    return buildErrorResponse(502, "analyzerUnavailable", "TTS エンジンとの通信に失敗しました");
+    return errorResponse(502, "analyzerUnavailable", "TTS エンジンとの通信に失敗しました");
   }
 
   if (!analyzerResponse.ok) {
     if (analyzerResponse.status >= 400 && analyzerResponse.status < 500) {
-      return buildErrorResponse(
+      return errorResponse(
         analyzerResponse.status,
         "analyzerClientError",
         "TTS リクエストが不正です",
       );
     }
-    return buildErrorResponse(502, "analyzerError", "TTS エンジンがエラーを返しました");
+    return errorResponse(502, "analyzerError", "TTS エンジンがエラーを返しました");
   }
 
   const audioBytes = await analyzerResponse.arrayBuffer();

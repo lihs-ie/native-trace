@@ -10,22 +10,29 @@ import {
   createAudioMimeType,
   createStorageKey,
 } from "../domain/audio-file";
-import { type DomainError } from "../domain/shared";
+import { type AudioStorageFailedError } from "../domain/shared";
 import { okAsync, errAsync } from "neverthrow";
 import * as fs from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
 
+/** Build a typed audioStorageFailed literal without casting (W26: removed `as DomainError`). */
+const audioStorageFailed = (reason: string): AudioStorageFailedError => ({
+  type: "audioStorageFailed",
+  reason,
+});
+
 export const createLocalAudioStorage = (storageRoot: string): AudioStorage => ({
-  save: (audioFileIdentifier: AudioFileIdentifier, data: Buffer | NodeJS.ReadableStream, mimeTypeString: string) => {
+  save: (
+    audioFileIdentifier: AudioFileIdentifier,
+    data: Buffer | NodeJS.ReadableStream,
+    mimeTypeString: string,
+  ) => {
     return okAsync(null).andThen(() => {
       try {
         const audioMimeType = createAudioMimeType(mimeTypeString);
         if (!audioMimeType) {
-          return errAsync({
-            type: "audioStorageFailed",
-            reason: `サポートされていない MIME type: ${mimeTypeString}`,
-          } as DomainError);
+          return errAsync(audioStorageFailed(`サポートされていない MIME type: ${mimeTypeString}`));
         }
 
         const ext = mimeTypeString.split("/")[1]?.split(";")[0] ?? "bin";
@@ -35,10 +42,7 @@ export const createLocalAudioStorage = (storageRoot: string): AudioStorage => ({
         fs.mkdirSync(storageRoot, { recursive: true });
 
         if (!Buffer.isBuffer(data)) {
-          return errAsync({
-            type: "audioStorageFailed",
-            reason: "Stream save は現バージョンでは非対応です",
-          } as DomainError);
+          return errAsync(audioStorageFailed("Stream save は現バージョンでは非対応です"));
         }
 
         fs.writeFileSync(filePath, data);
@@ -46,10 +50,7 @@ export const createLocalAudioStorage = (storageRoot: string): AudioStorage => ({
         const hash = crypto.createHash("sha256").update(data).digest("hex");
         const storageKey = createStorageKey(fileName);
         if (!storageKey) {
-          return errAsync({
-            type: "audioStorageFailed",
-            reason: "StorageKey の生成に失敗しました",
-          } as DomainError);
+          return errAsync(audioStorageFailed("StorageKey の生成に失敗しました"));
         }
 
         const metadata: AudioMetadata = {
@@ -61,10 +62,7 @@ export const createLocalAudioStorage = (storageRoot: string): AudioStorage => ({
 
         return okAsync({ storageKey, ...metadata });
       } catch (e) {
-        return errAsync({
-          type: "audioStorageFailed",
-          reason: `音声ファイルの保存に失敗しました: ${String(e)}`,
-        } as DomainError);
+        return errAsync(audioStorageFailed(`音声ファイルの保存に失敗しました: ${String(e)}`));
       }
     });
   },
@@ -75,10 +73,7 @@ export const createLocalAudioStorage = (storageRoot: string): AudioStorage => ({
         const filePath = path.join(storageRoot, String(storageKey));
 
         if (!fs.existsSync(filePath)) {
-          return errAsync({
-            type: "audioStorageFailed",
-            reason: "音声ファイルが見つかりません",
-          } as DomainError);
+          return errAsync(audioStorageFailed("音声ファイルが見つかりません"));
         }
 
         const stat = fs.statSync(filePath);
@@ -104,10 +99,9 @@ export const createLocalAudioStorage = (storageRoot: string): AudioStorage => ({
 
         return okAsync(result);
       } catch (e) {
-        return errAsync({
-          type: "audioStorageFailed",
-          reason: `音声ファイルのストリーミングに失敗しました: ${String(e)}`,
-        } as DomainError);
+        return errAsync(
+          audioStorageFailed(`音声ファイルのストリーミングに失敗しました: ${String(e)}`),
+        );
       }
     });
   },
@@ -121,10 +115,7 @@ export const createLocalAudioStorage = (storageRoot: string): AudioStorage => ({
         }
         return okAsync(undefined);
       } catch (e) {
-        return errAsync({
-          type: "audioStorageFailed",
-          reason: `音声ファイルの削除に失敗しました: ${String(e)}`,
-        } as DomainError);
+        return errAsync(audioStorageFailed(`音声ファイルの削除に失敗しました: ${String(e)}`));
       }
     });
   },

@@ -21,6 +21,13 @@ const FLOOR_DB = -60;
 const CEILING_DB = 0;
 const MIN_DISPLAY_PERCENTAGE = 2;
 
+// dBFS display scale threshold aligned to ADR-015 worker gate (-36 dBFS, S-PH-1 / ADR-016 D2).
+// Derivation: ((-36 - FLOOR_DB) / (CEILING_DB - FLOOR_DB)) * (100 - MIN_DISPLAY_PERCENTAGE) + MIN_DISPLAY_PERCENTAGE
+//           = ((-36 + 60) / 60) * 98 + 2 = (24/60)*98 + 2 ≈ 41.2 → 41
+// Confirmed by simulation (scripts/calibration/simulate_meter_peak_hold.py, 2026-06-18):
+//   gate-rejected recordings (speech_active < -36 dBFS) peak at 37.9% < 41% after smoothing.
+export const LOW_VOLUME_DISPLAY_THRESHOLD = 41;
+
 /**
  * Maps an RMS level [0, 1] to a display percentage using a dBFS logarithmic
  * scale so that typical speech (-30 to -10 dBFS) occupies the middle range
@@ -51,7 +58,7 @@ export const rmsLevelToDisplayPercentage = (rmsLevel: number): number => {
  *   98% / 300ms ≈ 0.327 %/ms
  *
  * At 60fps (16.67ms per frame) this is 0.327 * 16.67 ≈ 5.45 %/frame.
- * Confirmed by simulation on the sample corpus (scripts/simulate_meter_peak_hold.py,
+ * Confirmed by simulation on the sample corpus (scripts/calibration/simulate_meter_peak_hold.py,
  * 2026-06-18): A2 satisfied (gate-rejected file peak stays at 37.9% < 41% threshold);
  * ~300ms decay bridges inter-syllable gaps for normal speech without lifting
  * genuinely quiet recordings above LOW_VOLUME_DISPLAY_THRESHOLD.
@@ -86,7 +93,7 @@ export const applyPeakHold = (
  * How many milliseconds of continuous sub-threshold display is required
  * before the "音量小" label fires.
  *
- * Target: ~500ms (calibrated 2026-06-18 via scripts/simulate_label_debounce.py on the
+ * Target: ~500ms (calibrated 2026-06-18 via scripts/calibration/simulate_label_debounce.py on the
  * 30-file corpus; see .agent-evidence/meter-label-debounce-calibration.txt).
  *
  * At 500ms:

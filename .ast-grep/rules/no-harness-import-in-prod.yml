@@ -2,6 +2,11 @@
 # test/fullcycle/ または test/selfeval/ を import することを禁止する。
 # harness/fixture 層を本番コードから分離し、誤った依存の混入を機械強制する。
 # (ADR-031 D7 / M-FCH-8)
+#
+# W59: domain-purity.yml と同じ kind + regex 形式。import source を相対深度
+# （../../../ 等）やエイリアス（@/ 等）に依存せず検知する。
+# require() 形式や文字列一般は grep 版 scripts/verify-no-harness-import-in-prod.sh が
+# 二重防御として捕捉する。
 id: no-harness-import-in-prod
 language: typescript
 severity: error
@@ -12,16 +17,5 @@ files:
   - applications/frontend/src/**/*.ts
   - applications/frontend/src/**/*.tsx
 rule:
-  any:
-    - pattern: import $$$  from "../../test/fullcycle/$$$"
-    - pattern: import $$$  from "../test/fullcycle/$$$"
-    - pattern: import $$$  from "./test/fullcycle/$$$"
-    - pattern: import $$$  from "../../test/selfeval/$$$"
-    - pattern: import $$$  from "../test/selfeval/$$$"
-    - pattern: import $$$  from "./test/selfeval/$$$"
-    - pattern: require("../../test/fullcycle/$$$")
-    - pattern: require("../test/fullcycle/$$$")
-    - pattern: require("./test/fullcycle/$$$")
-    - pattern: require("../../test/selfeval/$$$")
-    - pattern: require("../test/selfeval/$$$")
-    - pattern: require("./test/selfeval/$$$")
+  kind: import_statement
+  regex: "['\"][^'\"]*test/(fullcycle|selfeval)"

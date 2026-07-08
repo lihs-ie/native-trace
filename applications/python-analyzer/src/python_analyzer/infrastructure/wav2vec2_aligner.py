@@ -6,7 +6,6 @@
 
 import io
 import logging
-import math
 import subprocess
 from typing import Any  # noqa: UP035
 
@@ -27,6 +26,7 @@ from python_analyzer.infrastructure.audio_energy import (
     compute_speech_active_rms,
     compute_speech_duration_seconds_from_energy,
     compute_wada_snr,
+    rms_to_dbfs,
 )
 
 logger = logging.getLogger(__name__)
@@ -296,7 +296,8 @@ class Wav2Vec2Aligner:
         エネルギーベース VAD で実音声長（秒）と WADA-SNR 推定値（dB）を計測する。
 
         mean_dbfs = 20 * log10(speech_active_rms)。
-        発話区間フレームが 0 件（no-speech）の場合は -100.0 dBFS を返す（番兵値）。
+        発話区間フレームが 0 件（no-speech）の場合は NO_SPEECH_DBFS_SENTINEL（-100.0）
+        dBFS を返す（番兵値、audio_energy.rms_to_dbfs 経由）。
         発話区間フレームは audio_energy.compute_speech_active_rms で算出する
         （energy-VAD フレーミング: 320 サンプル / 20ms、ENERGY_SILENCE_RMS_THRESHOLD）。
         全区間 RMS の代わりに発話区間 RMS を使うことで、語間ポーズや末尾無音による
@@ -311,10 +312,7 @@ class Wav2Vec2Aligner:
         waveform_numpy = waveform.numpy()
 
         speech_active_rms = compute_speech_active_rms(waveform_numpy)
-        if speech_active_rms < 1e-9:
-            mean_dbfs = -100.0
-        else:
-            mean_dbfs = 20.0 * math.log10(speech_active_rms)
+        mean_dbfs = rms_to_dbfs(speech_active_rms)
 
         speech_duration_seconds = compute_speech_duration_seconds_from_energy(waveform_numpy)
         estimated_snr_db = compute_wada_snr(waveform_numpy, _TARGET_SAMPLE_RATE)

@@ -5,10 +5,7 @@ espeak IPA 母音核カウントで expected/actual 音節数を比較し、
 """
 
 from python_analyzer.domain.measurement import InsertedVowel, SyllableMeasurement
-from python_analyzer.domain.phoneme import AlignmentBoundary
-
-# IPA 母音核として認識する文字セット（wav2vec2 espeak モデル使用）
-_VOWEL_NUCLEI = frozenset("aeiouæɑɒɔəɛɪɨɵʊʌœøɯɤɐɞɘ")
+from python_analyzer.domain.phoneme import VOWEL_NUCLEI, AlignmentBoundary
 
 # 日本語話者が挿入しやすい母音（epenthesis の典型）
 # ɪ/ʊ は英語正規母音として除外; ɯ/o/i が日本語母語話者の典型的挿入母音
@@ -31,7 +28,7 @@ def count_vowel_nuclei(ipa_string: str) -> int:
     count = 0
     previous_was_vowel = False
     for char in ipa_string:
-        is_vowel = char in _VOWEL_NUCLEI
+        is_vowel = char in VOWEL_NUCLEI
         if is_vowel and not previous_was_vowel:
             count += 1
         previous_was_vowel = is_vowel
@@ -47,7 +44,7 @@ def count_vowel_nuclei_from_phoneme_list(phonemes: list[str]) -> int:
     Returns:
         母音核の数（0 以上）。
     """
-    return sum(1 for phoneme in phonemes if any(char in _VOWEL_NUCLEI for char in phoneme))
+    return sum(1 for phoneme in phonemes if any(char in VOWEL_NUCLEI for char in phoneme))
 
 
 def detect_syllables(

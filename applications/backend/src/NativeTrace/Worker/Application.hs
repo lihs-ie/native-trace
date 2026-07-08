@@ -11,7 +11,7 @@ import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding (encodeUtf8)
-import NativeTrace.Worker.AaiClient (RawArticulatoryEstimate (..), callAai)
+import NativeTrace.Worker.AaiClient (callAai)
 import NativeTrace.Worker.AnalyzerClient (AnalyzerShadowingLagResult (..), analyzeAudio, analyzeShadowingLag, analyzedPerPhonemeGop)
 import NativeTrace.Worker.Api (WorkerApi, workerApi)
 import NativeTrace.Worker.Assessment (
@@ -21,19 +21,15 @@ import NativeTrace.Worker.Assessment (
  )
 import NativeTrace.Worker.Assessment qualified as Assessment
 import NativeTrace.Worker.GoldenSpeakerClient (convertGoldenSpeaker)
-import NativeTrace.Worker.Scoring (articulatoryDisplayGuardrail, classifyGopDelta)
+import NativeTrace.Worker.Scoring (attachArticulatoryEstimates, classifyGopDelta)
 import NativeTrace.Worker.Types (
-  ArticulatoryEstimate,
-  AssessmentFinding (..),
   AssessmentRequest (..),
   AssessmentResponse (..),
   AudioMetadata (..),
-  AudioRange (..),
   GoldenSpeakerConversionDto,
   GopDeltaRequest (..),
   GopDeltaResponse,
   HealthResponse (..),
-  PronunciationEvidence (..),
   ShadowingLagDto (..),
   VersionResponse (..),
   WorkerError (..),
@@ -46,7 +42,6 @@ import Servant (
   Server,
   ServerError (..),
   err400,
-  err502,
   serve,
   throwError,
   (:<|>) (..),
@@ -76,7 +71,7 @@ version =
 assessPronunciation :: MultipartData Mem -> Handler AssessmentResponse
 assessPronunciation multipart = do
   metadataBytes <- lookupMetadataBytes multipart
-  request <- parseMetadata metadataBytes
+  request <- decodeMetadataJson metadataBytes
   (audioBytes, audioContentType) <- lookupAudioBytes multipart
   case validatePronunciationRequest request audioBytes (Just audioContentType) of
     Left err -> throwError (toServantError err)
@@ -102,53 +97,18 @@ assessPronunciation multipart = do
           case maybeRawEstimates of
             Nothing -> pure baseResponse
             Just rawEstimates ->
-              let passed :: [(Text, Int, Int, ArticulatoryEstimate)]
-                  passed =
-                    [ (raePhoneme r, raeStartMs r, raeEndMs r, est)
-                    | r <- rawEstimates,
-                      Just est <-
-                        [ articulatoryDisplayGuardrail
-                            (raePhoneme r)
-                            (raeStartMs r)
-                            (raeEndMs r)
-                            (raeDisplayEligibility r)
-                            ( raeTongueTipX r,
-                              raeTongueTipY r,
-                              raeTongueDorsumX r,
-                              raeTongueDorsumY r,
-                              raeLipApertureX r,
-                              raeLipApertureY r
-                            )
-                        ]
-                    ]
-                  attachEstimate finding =
-                    let expectedPhoneme = evidenceIpa (findingExpected finding)
-                        inAudioRange segmentStartMs segmentEndMs =
-                          case findingAudioRange finding of
-                            Just range ->
-                              let midpointMs = (segmentStartMs + segmentEndMs) `div` 2
-                               in midpointMs >= startMs range && midpointMs <= endMs range
-                            Nothing -> False
-                        matched =
-                          [ est
-                          | (phoneme, segmentStartMs, segmentEndMs, est) <- passed,
-                            Just phoneme == expectedPhoneme
-                              || inAudioRange segmentStartMs segmentEndMs
-                          ]
-                     in case matched of
-                          (est : _) -> finding {findingArticulatoryEstimate = Just est}
-                          [] -> finding
-               in pure
-                    baseResponse
-                      { responseFindings = map attachEstimate (responseFindings baseResponse)
-                      }
+              pure
+                baseResponse
+                  { responseFindings =
+                      attachArticulatoryEstimates rawEstimates (responseFindings baseResponse)
+                  }
 
 -- | シャドーイング ラグ計測（M-SHL-3 / ADR-013）。reference_audio + learner_audio を
 -- analyzer の /v1/shadowing-lag に渡し、閾値判定（recommendSlowPlayback）を付与して返す。
 shadowingLag :: MultipartData Mem -> Handler ShadowingLagDto
 shadowingLag multipart = do
   metadataBytes <- lookupMetadataBytes multipart
-  meta <- parseShadowingMeta metadataBytes
+  meta <- decodeMetadataJson metadataBytes
   referenceAudio <- lookupNamedFile "reference_audio" multipart
   learnerAudio <- lookupNamedFile "learner_audio" multipart
   result <-
@@ -198,10 +158,11 @@ instance FromJSON ShadowingMeta where
       <*> object .: "mimeType"
       <*> object .: "durationMilliseconds"
 
-parseShadowingMeta :: ByteString -> Handler ShadowingMeta
-parseShadowingMeta bytes =
+-- | metadata JSON を decode する。失敗時は 400（invalid_metadata_json）を返す。
+decodeMetadataJson :: (FromJSON a) => ByteString -> Handler a
+decodeMetadataJson bytes =
   case eitherDecodeStrict bytes of
-    Right meta -> pure meta
+    Right value -> pure value
     Left decodeError ->
       throwError
         ( badRequest
@@ -254,39 +215,8 @@ lookupAudioBytes multipart =
     Left _ ->
       throwError (badRequest "missing_audio_part" "The 'audio' part is required.")
 
-parseMetadata :: ByteString -> Handler AssessmentRequest
-parseMetadata bytes =
-  case eitherDecodeStrict bytes of
-    Right request -> pure request
-    Left decodeError ->
-      throwError
-        ( badRequest
-            "invalid_metadata_json"
-            ("Failed to parse metadata JSON: " <> Text.pack decodeError)
-        )
-
 toServantError :: AssessmentError -> ServerError
-toServantError err =
-  let code = Assessment.errorCode err
-      message = Assessment.errorMessage err
-      body =
-        WorkerError
-          { workerError =
-              WorkerErrorBody
-                { errorCode = code,
-                  errorMessage = message,
-                  errorRetryable = False
-                }
-          }
-   in err400
-        { errBody = encode body,
-          errHeaders = [(hContentType, "application/json; charset=utf-8")]
-        }
-
--- | analyzer エラー（ServerError）を 502 として上位に伝播する。
--- analyzeAudio は既に ServerError を返すので、ここでは型合わせのみ行う。
-analyzerErrorToServant :: ServerError -> ServerError
-analyzerErrorToServant _ = err502
+toServantError err = badRequest (Assessment.errorCode err) (Assessment.errorMessage err)
 
 badRequest :: Text -> Text -> ServerError
 badRequest code message =

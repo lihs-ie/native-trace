@@ -4,6 +4,7 @@ import { type DomainError, validationFailed } from "../../domain/shared";
 import { createRecordingAttemptIdentifier } from "../../domain/recording-attempt";
 import { type RecordingAttemptRepository } from "../port/recording-attempt-repository";
 import { type AudioFileRepository } from "../port/audio-file-repository";
+import { parseInput } from "../shared/validation";
 
 // ---- Input ----
 
@@ -36,16 +37,13 @@ export type OpenRecordingAudioDependencies = Readonly<{
 export const createOpenRecordingAudio =
   (dependencies: OpenRecordingAudioDependencies) =>
   (input: OpenRecordingAudioInput): ResultAsync<OpenRecordingAudioOutput, DomainError> => {
-    const parsed = openRecordingAudioSchema.safeParse(input);
-    if (!parsed.success) {
-      return errAsync(
-        validationFailed("input", parsed.error.errors.map((e) => e.message).join(", ")),
-      );
+    const parsedInput = parseInput(openRecordingAudioSchema, input);
+    if (parsedInput.isErr()) {
+      return errAsync(parsedInput.error);
     }
+    const parsed = parsedInput.value;
 
-    const recordingAttemptIdentifier = createRecordingAttemptIdentifier(
-      parsed.data.recordingAttempt,
-    );
+    const recordingAttemptIdentifier = createRecordingAttemptIdentifier(parsed.recordingAttempt);
     if (!recordingAttemptIdentifier) {
       return errAsync(validationFailed("recordingAttempt", "不正な録音試行IDです"));
     }

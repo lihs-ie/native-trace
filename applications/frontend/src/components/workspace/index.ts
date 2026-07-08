@@ -2,6 +2,7 @@ export { EngineSegSelector } from "./EngineSegSelector";
 export { Ribbon } from "./Ribbon";
 export { Gauge, calcGaugeDashOffset } from "./Gauge";
 export { ScoreRows } from "./ScoreRows";
+export { SeverityCountPills } from "./SeverityCountPills";
 export { EngineTabs } from "./EngineTabs";
 export { DetailPanel } from "./DetailPanel";
 export { DetailPanelV2 } from "./DetailPanelV2";

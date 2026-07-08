@@ -95,5 +95,3 @@ export const createViewProgress =
         } satisfies ViewProgressOutput;
       });
   };
-
-export type ViewProgressExecutor = ReturnType<typeof createViewProgress>;

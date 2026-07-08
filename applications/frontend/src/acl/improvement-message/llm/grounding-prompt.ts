@@ -13,11 +13,7 @@ import {
   type ImprovementMessageGeneratorInput,
   type FeedbackLayersOutput,
 } from "../../../usecase/port/improvement-message-generator";
-import {
-  findCatalogEntryById,
-  findCatalogEntry,
-  type ErrorCatalogEntry,
-} from "../../../domain/error-catalog";
+import { resolveDisplayText, resolveCatalogEntry } from "../shared";
 
 // ---- System prompt (ADR-021 D4 / M-LLM-8) ----
 // Copy verbatim — any edit here MUST be accompanied by promptVersion bump.
@@ -33,16 +29,7 @@ export const LLM_NARRATIVE_SYSTEM_PROMPT =
   "Do not add markdown, preamble, or commentary.";
 
 // ---- Catalog lookup ----
-
-const resolveDisplayText = (
-  evidence: Readonly<{ text: string | null; ipa: string | null }>,
-): string | null => evidence.text ?? evidence.ipa ?? null;
-
-const lookupCatalogEntry = (input: ImprovementMessageGeneratorInput): ErrorCatalogEntry | null => {
-  const catalogEntry = input.catalogId ? findCatalogEntryById(input.catalogId) : null;
-  const detectedDisplay = resolveDisplayText(input.detected);
-  return catalogEntry ?? findCatalogEntry(input.phenomenon, detectedDisplay);
-};
+// resolveDisplayText / resolveCatalogEntry は rule-based と共通の shared.ts へ集約済み（W29）。
 
 // ---- User prompt builder (M-LLM-8) ----
 
@@ -75,7 +62,11 @@ export const buildGroundingPrompt = (
   fallbackLayers: FeedbackLayersOutput,
   acoustic?: Record<string, unknown>,
 ): GroundingPromptParts => {
-  const catalogEntry = lookupCatalogEntry(input);
+  const catalogEntry = resolveCatalogEntry(
+    input.catalogId,
+    input.phenomenon,
+    resolveDisplayText(input.detected),
+  );
 
   const findingObject = {
     phenomenon: input.phenomenon,
