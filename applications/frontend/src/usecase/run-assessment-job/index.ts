@@ -15,7 +15,7 @@ import {
   type AnalysisJobCanceled,
   type AnalysisJobQueued,
 } from "../../domain/analysis-job";
-import { deriveAnalysisRunStatus } from "../../domain/analysis-run";
+import { recomputeAnalysisRunStatus } from "../shared/analysis-run-status";
 import {
   createAssessmentResultIdentifier,
   createAssessmentFindingIdentifier,
@@ -235,16 +235,12 @@ const handleJobFailure = (
     return dependencies.analysisJobRepository
       .persist(retriedJob)
       .andThen(() =>
-        dependencies.analysisJobRepository
-          .search({ type: "jobsByAnalysisRun", analysisRun: job.analysisRun })
-          .andThen((jobPage) => {
-            const allJobs = jobPage.items.map((j) =>
-              j.identifier === retriedJob.identifier ? retriedJob : j,
-            );
-            const nonEmpty = createNonEmptyList(allJobs);
-            const newStatus = nonEmpty ? deriveAnalysisRunStatus(nonEmpty) : "queued";
-            return dependencies.analysisRunRepository.updateStatus(job.analysisRun, newStatus);
-          }),
+        recomputeAnalysisRunStatus(
+          dependencies.analysisJobRepository,
+          dependencies.analysisRunRepository,
+          retriedJob,
+          "queued",
+        ),
       )
       .map(() => ({
         job: {
@@ -269,16 +265,12 @@ const handleJobFailure = (
   return dependencies.analysisJobRepository
     .persist(failedJob)
     .andThen(() =>
-      dependencies.analysisJobRepository
-        .search({ type: "jobsByAnalysisRun", analysisRun: job.analysisRun })
-        .andThen((jobPage) => {
-          const allJobs = jobPage.items.map((j) =>
-            j.identifier === failedJob.identifier ? failedJob : j,
-          );
-          const nonEmpty = createNonEmptyList(allJobs);
-          const newStatus = nonEmpty ? deriveAnalysisRunStatus(nonEmpty) : "failed";
-          return dependencies.analysisRunRepository.updateStatus(job.analysisRun, newStatus);
-        }),
+      recomputeAnalysisRunStatus(
+        dependencies.analysisJobRepository,
+        dependencies.analysisRunRepository,
+        failedJob,
+        "failed",
+      ),
     )
     .map(() => ({
       job: {
@@ -1033,26 +1025,12 @@ export const createRunAssessmentJob =
                                                 ),
                                               )
                                               .andThen(() =>
-                                                dependencies.analysisJobRepository
-                                                  .search({
-                                                    type: "jobsByAnalysisRun",
-                                                    analysisRun: runningJob.analysisRun,
-                                                  })
-                                                  .andThen((jobPage) => {
-                                                    const allJobs = jobPage.items.map((j) =>
-                                                      j.identifier === succeededJob.identifier
-                                                        ? succeededJob
-                                                        : j,
-                                                    );
-                                                    const nonEmpty = createNonEmptyList(allJobs);
-                                                    const newStatus = nonEmpty
-                                                      ? deriveAnalysisRunStatus(nonEmpty)
-                                                      : "succeeded";
-                                                    return dependencies.analysisRunRepository.updateStatus(
-                                                      runningJob.analysisRun,
-                                                      newStatus,
-                                                    );
-                                                  }),
+                                                recomputeAnalysisRunStatus(
+                                                  dependencies.analysisJobRepository,
+                                                  dependencies.analysisRunRepository,
+                                                  succeededJob,
+                                                  "succeeded",
+                                                ),
                                               ),
                                           )
                                           .map(() => {

@@ -6,7 +6,7 @@ import {
   validationFailed,
   createNonEmptyList,
 } from "../../domain/shared";
-import { createAnalysisRunIdentifier, deriveAnalysisRunStatus } from "../../domain/analysis-run";
+import { createAnalysisRunIdentifier } from "../../domain/analysis-run";
 import {
   cancelAnalysisJob,
   type CanceledAnalysisJob,
@@ -19,6 +19,7 @@ import { type Clock } from "../port/clock";
 import { type Logger } from "../port/logger";
 import { parseInput } from "../shared/validation";
 import { traverseSequentially } from "../shared/traverse";
+import { finalizeAnalysisRunStatus } from "../shared/analysis-run-status";
 
 // ---- Input ----
 
@@ -115,36 +116,34 @@ export const createCancelAssessmentRun =
                   return canceledEntry ? canceledEntry.job : job;
                 });
 
-                const nonEmptyUpdatedJobs = createNonEmptyList(updatedJobs);
-                const newStatus = nonEmptyUpdatedJobs
-                  ? deriveAnalysisRunStatus(nonEmptyUpdatedJobs)
-                  : "canceled";
-
-                return dependencies.analysisRunRepository
-                  .updateStatus(analysisRunIdentifier, newStatus)
-                  .map(() => {
-                    dependencies.logger.info("cancelAssessmentRun: canceled", {
-                      analysisRunIdentifier: analysisRunIdentifier as string,
-                      canceledCount: canceledEntries.length,
-                      newStatus,
-                    });
-
-                    const events = canceledEntries.map((r) => r.event);
-                    const nonEmptyEvents = createNonEmptyList(events)!;
-
-                    return {
-                      analysisRun: {
-                        identifier: analysisRunIdentifier as string,
-                        status: newStatus,
-                      },
-                      canceledJobs: canceledEntries.map((r) => ({
-                        identifier: r.job.identifier as string,
-                        engine: r.job.engine,
-                        canceledAt: r.job.canceledAt.toISOString(),
-                      })),
-                      events: nonEmptyEvents,
-                    } satisfies CancelAssessmentRunOutput;
+                return finalizeAnalysisRunStatus(
+                  dependencies.analysisRunRepository,
+                  analysisRunIdentifier,
+                  updatedJobs,
+                  "canceled",
+                ).map((newStatus) => {
+                  dependencies.logger.info("cancelAssessmentRun: canceled", {
+                    analysisRunIdentifier: analysisRunIdentifier as string,
+                    canceledCount: canceledEntries.length,
+                    newStatus,
                   });
+
+                  const events = canceledEntries.map((r) => r.event);
+                  const nonEmptyEvents = createNonEmptyList(events)!;
+
+                  return {
+                    analysisRun: {
+                      identifier: analysisRunIdentifier as string,
+                      status: newStatus,
+                    },
+                    canceledJobs: canceledEntries.map((r) => ({
+                      identifier: r.job.identifier as string,
+                      engine: r.job.engine,
+                      canceledAt: r.job.canceledAt.toISOString(),
+                    })),
+                    events: nonEmptyEvents,
+                  } satisfies CancelAssessmentRunOutput;
+                });
               },
             );
           }),
