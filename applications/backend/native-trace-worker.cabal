@@ -41,7 +41,6 @@ library
         , containers           >=0.6
         , http-client          >=0.7
         , http-client-tls      >=0.3
-        , http-conduit         >=2.3
         , http-types           >=0.12
         , servant              >=0.20
         , servant-multipart    >=0.12

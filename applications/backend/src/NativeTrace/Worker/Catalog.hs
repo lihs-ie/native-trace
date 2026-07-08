@@ -7,7 +7,6 @@ module NativeTrace.Worker.Catalog (
   catalog,
   lookupByPhoneme,
   lookupByConfusion,
-  flWeight,
   flRank,
 )
 where
@@ -38,14 +37,6 @@ data CatalogEntry = CatalogEntry
     catalogReasonJa :: Text
   }
   deriving (Show, Eq)
-
--- | FL ランクを数値重みに変換する（intelligibility 計算用）。
--- max=4.0, high=3.0, mid=2.0, low=1.0
-flWeight :: FunctionalLoad -> Double
-flWeight FLMax = 4.0
-flWeight FLHigh = 3.0
-flWeight FLMid = 2.0
-flWeight FLLow = 1.0
 
 -- | FL ランクを文字列に変換する（C3 JSON 出力用）。
 flRank :: FunctionalLoad -> Text

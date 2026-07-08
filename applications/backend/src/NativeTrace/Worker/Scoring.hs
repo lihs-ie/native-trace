@@ -11,7 +11,6 @@ module NativeTrace.Worker.Scoring (
   tokenize,
   -- 後方互換: 既存 Assessment.hs が参照する名前を re-export する
   scoreAssessment,
-  generateFindings,
   -- 音質ガード
   checkAudioQuality,
   audioQualityMinMeanDbfs,
@@ -1534,7 +1533,7 @@ buildFocusEntry (phenomenon, fs) =
         (cid : _) -> Just cid
         [] -> Nothing
       reasonJa = case catalogId of
-        Just cid -> case filter (\e -> catalogIdentifier e == cid) catalogData of
+        Just cid -> case filter (\e -> catalogIdentifier e == cid) catalog of
           (entry : _) -> catalogReasonJa entry
           [] -> phenomenon <> "の誤りが検出されました。"
         Nothing -> phenomenon <> "の誤りが検出されました。"
@@ -1564,10 +1563,6 @@ computePriority flText occurrences =
           if score >= 3
             then "next"
             else "later"
-
--- | Catalog データへの参照（M-112: focusSounds の reasonJa をカタログ由来にする）。
-catalogData :: [CatalogEntry]
-catalogData = catalog
 
 -- ---- Prosody 出力（M-114） ----
 
@@ -1667,13 +1662,6 @@ scoreAssessment input =
           summaryMessageEn = ""
         }
 
-generateFindings ::
-  Text ->
-  Int ->
-  AssessmentScores ->
-  [AssessmentFinding]
-generateFindings _ _ _ = []
-
 -- ---- GOP Delta 分類 (M-CRL-7 / ADR-022) ----
 
 -- | deltaSignal の改善閾値（calibratable）。この値より大きければ improved。
@@ -1684,16 +1672,11 @@ gopDeltaImprovementThreshold = 5.0
 gopDeltaRegressionThreshold :: Double
 gopDeltaRegressionThreshold = -2.0
 
--- | GOP 値から severity を判定する。strict < を使う（== は境界を跨がない）。
--- gop == -8 は minor ではなく none、gop == -12 は major ではなく minor。
-gopSeverity :: Double -> Maybe FindingSeverity
-gopSeverity = gopToSeverity
-
 -- | (originalGop, retryGop) から boundarySignal を計算する。
 -- major→(minor|none) = crossedMajor、(major|minor)→none = crossedMinor、それ以外 = none。
 classifyBoundarySignal :: Double -> Double -> BoundarySignal
 classifyBoundarySignal originalGop retryGop =
-  case (gopSeverity originalGop, gopSeverity retryGop) of
+  case (gopToSeverity originalGop, gopToSeverity retryGop) of
     (Just FindingSeverityMajor, Just FindingSeverityMinor) -> BoundarySignalCrossedMajor
     (Just FindingSeverityMajor, Nothing) -> BoundarySignalCrossedMajor
     (Just FindingSeverityMinor, Nothing) -> BoundarySignalCrossedMinor

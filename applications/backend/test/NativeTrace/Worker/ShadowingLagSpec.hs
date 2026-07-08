@@ -1,5 +1,3 @@
-{-# LANGUAGE ImportQualifiedPost #-}
-
 module NativeTrace.Worker.ShadowingLagSpec (spec) where
 
 import Data.Aeson (decode, encode)

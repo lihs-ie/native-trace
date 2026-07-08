@@ -1,5 +1,3 @@
-{-# LANGUAGE ImportQualifiedPost #-}
-
 -- | golden speaker サービスへの HTTP クライアント（M-GRV-6 / ADR-012）。
 -- POST /v1/convert を呼び出し GoldenSpeakerConversionDto を返す。
 -- GOLDEN_SPEAKER_URL 環境変数で接続先を変える。

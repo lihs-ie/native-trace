@@ -1,5 +1,3 @@
-{-# LANGUAGE ImportQualifiedPost #-}
-
 -- | Articulatory Acoustic Inversion (AAI) サービスへの HTTP クライアント（M-AAI-8 / ADR-019）。
 -- POST /v1/articulatory-inversion を呼び出し per-phoneme EMA 座標を返す。
 -- AAI_URL 環境変数で接続先を変える。

@@ -1,5 +1,3 @@
-{-# LANGUAGE ImportQualifiedPost #-}
-
 module NativeTrace.Worker.GoldenSpeakerSpec (spec) where
 
 import Data.Aeson (decode, encode)

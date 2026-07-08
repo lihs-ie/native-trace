@@ -46,7 +46,6 @@ import Servant (
   Server,
   ServerError (..),
   err400,
-  err502,
   serve,
   throwError,
   (:<|>) (..),
@@ -282,11 +281,6 @@ toServantError err =
         { errBody = encode body,
           errHeaders = [(hContentType, "application/json; charset=utf-8")]
         }
-
--- | analyzer エラー（ServerError）を 502 として上位に伝播する。
--- analyzeAudio は既に ServerError を返すので、ここでは型合わせのみ行う。
-analyzerErrorToServant :: ServerError -> ServerError
-analyzerErrorToServant _ = err502
 
 badRequest :: Text -> Text -> ServerError
 badRequest code message =

@@ -49,8 +49,7 @@ import NativeTrace.Worker.Types (
 -- ---- Validation errors ----
 
 data AssessmentError
-  = MissingRequiredField Text
-  | EmptySectionBodyText
+  = EmptySectionBodyText
   | UnsupportedLanguage Text
   | UnsupportedAccent Text
   | EmptyRequestedMetrics
@@ -61,7 +60,6 @@ data AssessmentError
 
 -- | エラーコードを返す（§8.2 error.code 用）。
 errorCode :: AssessmentError -> Text
-errorCode (MissingRequiredField field) = "missing_required_field:" <> field
 errorCode EmptySectionBodyText = "empty_section_body_text"
 errorCode (UnsupportedLanguage lang) = "unsupported_language:" <> lang
 errorCode (UnsupportedAccent accent) = "unsupported_accent:" <> accent
@@ -72,7 +70,6 @@ errorCode (AudioMimeTypeMismatch _ _) = "audio_mime_type_mismatch"
 
 -- | エラーメッセージを返す（§8.2 error.message 用）。
 errorMessage :: AssessmentError -> Text
-errorMessage (MissingRequiredField field) = "Required field is missing: " <> field
 errorMessage EmptySectionBodyText = "sectionBodyText must not be empty."
 errorMessage (UnsupportedLanguage lang) = "Unsupported expectedLanguage: " <> lang <> ". Only \"en-US\" is supported."
 errorMessage (UnsupportedAccent accent) = "Unsupported targetAccent: " <> accent <> ". Only \"generalAmerican\" is supported."
