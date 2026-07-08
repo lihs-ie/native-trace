@@ -45,6 +45,29 @@ import NativeTrace.Worker.Types (
   WorkerResponseMetadata (..),
  )
 
+-- ---- 定数（W12: リテラル→名前付き定数。値は不変） ----
+
+-- | audio duration の許容下限（ミリ秒）。
+audioDurationMinMs :: Int
+audioDurationMinMs = 1
+
+-- | audio duration の許容上限（ミリ秒）。
+audioDurationMaxMs :: Int
+audioDurationMaxMs = 600000
+
+-- | computeConfidence の基準値。
+confidenceBaseValue :: Double
+confidenceBaseValue = 0.7
+
+-- | computeConfidence の振幅。
+confidenceAmplitude :: Double
+confidenceAmplitude = 0.25
+
+-- | computeConfidence の位相スケール定数。円周率の近似値だが
+-- `pi` に置換してはならない（W12: 値が変わるため。定数名を付けるのみ）。
+confidenceSeedApproxPi :: Double
+confidenceSeedApproxPi = 3.14159
+
 -- ---- Validation errors ----
 
 data AssessmentError
@@ -73,7 +96,14 @@ errorMessage EmptySectionBodyText = "sectionBodyText must not be empty."
 errorMessage (UnsupportedLanguage lang) = "Unsupported expectedLanguage: " <> lang <> ". Only \"en-US\" is supported."
 errorMessage (UnsupportedAccent accent) = "Unsupported targetAccent: " <> accent <> ". Only \"generalAmerican\" is supported."
 errorMessage EmptyRequestedMetrics = "requestedMetrics must contain at least one metric."
-errorMessage (AudioDurationOutOfRange duration) = "Audio duration " <> Text.pack (show duration) <> "ms is out of range [1, 600000]."
+errorMessage (AudioDurationOutOfRange duration) =
+  "Audio duration "
+    <> Text.pack (show duration)
+    <> "ms is out of range ["
+    <> Text.pack (show audioDurationMinMs)
+    <> ", "
+    <> Text.pack (show audioDurationMaxMs)
+    <> "]."
 errorMessage (AudioByteLengthMismatch declared actual) =
   "Declared byteLength " <> Text.pack (show declared) <> " does not match actual audio size " <> Text.pack (show actual) <> "."
 errorMessage (AudioMimeTypeMismatch declared _actual) =
@@ -102,7 +132,7 @@ validatePronunciationRequest request audioBytes audioPart = do
     else Right ()
   -- audio duration 範囲
   let duration = audioDurationMilliseconds (requestAudio request)
-  if duration < 1 || duration > 600000
+  if duration < audioDurationMinMs || duration > audioDurationMaxMs
     then Left (AudioDurationOutOfRange duration)
     else Right ()
   -- byteLength 一致
@@ -262,5 +292,5 @@ computeConfidence request tokenIndex tokenCount =
   let durationMs = audioDurationMilliseconds (requestAudio request)
       seed = fromIntegral durationMs :: Double
       position = fromIntegral tokenIndex / fromIntegral (max 1 tokenCount) :: Double
-      raw = 0.7 + 0.25 * sin (seed / 1000.0 + position * 3.14159)
+      raw = confidenceBaseValue + confidenceAmplitude * sin (seed / 1000.0 + position * confidenceSeedApproxPi)
    in max 0.0 (min 1.0 raw)
