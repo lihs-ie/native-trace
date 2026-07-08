@@ -17,8 +17,9 @@ import {
   createTrainingKind,
   createAccuracy0To1,
 } from "../../../domain/training";
-import { type DomainError } from "../../../domain/shared";
+import { notFound } from "../../../domain/shared";
 import { okAsync, errAsync } from "neverthrow";
+import { tryPersistence, tryPersistenceResult } from "./try-persistence";
 
 type TrainingSessionRow = typeof trainingSessions.$inferSelect;
 
@@ -142,103 +143,83 @@ export const createDrizzleTrainingSessionRepository = (
   db: DrizzleDatabase,
 ): TrainingSessionRepository => ({
   find: (identifier: TrainingSessionIdentifier) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = db
-          .select()
-          .from(trainingSessions)
-          .where(
-            and(
-              eq(trainingSessions.identifier, String(identifier)),
-              isNull(trainingSessions.deletedAt),
-            ),
-          )
-          .get();
+    return tryPersistenceResult(() => {
+      const row = db
+        .select()
+        .from(trainingSessions)
+        .where(
+          and(
+            eq(trainingSessions.identifier, String(identifier)),
+            isNull(trainingSessions.deletedAt),
+          ),
+        )
+        .get();
 
-        if (!row) {
-          return errAsync({
-            type: "notFound",
-            resource: "TrainingSession",
-            identifier: String(identifier),
-          } as DomainError);
-        }
-
-        return okAsync(rowToTrainingSession(row));
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
+      if (!row) {
+        return errAsync(notFound("TrainingSession", String(identifier)));
       }
+
+      return okAsync(rowToTrainingSession(row));
     });
   },
 
   findByLearnerAndContrastOrderedByStartedAt: (learner: LearnerIdentifier, contrast: string) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const rows = db
-          .select()
-          .from(trainingSessions)
-          .where(
-            and(
-              eq(trainingSessions.learner, String(learner)),
-              eq(trainingSessions.contrast, contrast),
-              isNull(trainingSessions.deletedAt),
-            ),
-          )
-          .orderBy(asc(trainingSessions.startedAt))
-          .all();
+    return tryPersistence(() => {
+      const rows = db
+        .select()
+        .from(trainingSessions)
+        .where(
+          and(
+            eq(trainingSessions.learner, String(learner)),
+            eq(trainingSessions.contrast, contrast),
+            isNull(trainingSessions.deletedAt),
+          ),
+        )
+        .orderBy(asc(trainingSessions.startedAt))
+        .all();
 
-        return okAsync(rows.map(rowToTrainingSession));
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
-      }
+      return rows.map(rowToTrainingSession);
     });
   },
 
   persist: (session: TrainingSession) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = trainingSessionToRow(session);
-        db.insert(trainingSessions)
-          .values(row)
-          .onConflictDoUpdate({
-            target: trainingSessions.identifier,
-            set: {
-              status: row.status,
-              endedAt: row.endedAt,
-              abortedAt: row.abortedAt,
-              durationMinutes: row.durationMinutes,
-              sessionAccuracy: row.sessionAccuracy,
-              updatedAt: row.updatedAt,
-            },
-          })
-          .run();
-        return okAsync(undefined);
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
-      }
+    return tryPersistence(() => {
+      const row = trainingSessionToRow(session);
+      db.insert(trainingSessions)
+        .values(row)
+        .onConflictDoUpdate({
+          target: trainingSessions.identifier,
+          set: {
+            status: row.status,
+            endedAt: row.endedAt,
+            abortedAt: row.abortedAt,
+            durationMinutes: row.durationMinutes,
+            sessionAccuracy: row.sessionAccuracy,
+            updatedAt: row.updatedAt,
+          },
+        })
+        .run();
+      return undefined;
     });
   },
 
   countByLearnerAndKindSince: (learner: LearnerIdentifier, kind: TrainingKind, since: Date) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const result = db
-          .select({ total: count() })
-          .from(trainingSessions)
-          .where(
-            and(
-              eq(trainingSessions.learner, String(learner)),
-              eq(trainingSessions.kind, kind),
-              eq(trainingSessions.status, "completed"),
-              gte(trainingSessions.startedAt, since.toISOString()),
-              isNull(trainingSessions.deletedAt),
-            ),
-          )
-          .get();
+    return tryPersistence(() => {
+      const result = db
+        .select({ total: count() })
+        .from(trainingSessions)
+        .where(
+          and(
+            eq(trainingSessions.learner, String(learner)),
+            eq(trainingSessions.kind, kind),
+            eq(trainingSessions.status, "completed"),
+            gte(trainingSessions.startedAt, since.toISOString()),
+            isNull(trainingSessions.deletedAt),
+          ),
+        )
+        .get();
 
-        return okAsync(result?.total ?? 0);
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
-      }
+      return result?.total ?? 0;
     });
   },
 });

@@ -16,8 +16,9 @@ import {
 } from "../../../domain/analysis-job";
 import { type AnalysisRunIdentifier } from "../../../domain/analysis-run";
 import { type AnalysisJobSearchCriteria } from "../../../domain/criteria";
-import { type DomainError } from "../../../domain/shared";
+import { notFound } from "../../../domain/shared";
 import { okAsync, errAsync } from "neverthrow";
+import { tryPersistence, tryPersistenceResult } from "./try-persistence";
 
 type AnalysisJobRow = typeof analysisJobs.$inferSelect;
 
@@ -209,163 +210,143 @@ const analysisJobToRow = (job: AnalysisJob): AnalysisJobRow => {
 
 export const createDrizzleAnalysisJobRepository = (db: DrizzleDatabase): AnalysisJobRepository => ({
   find: (identifier: AnalysisJobIdentifier) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = db
-          .select()
-          .from(analysisJobs)
-          .where(eq(analysisJobs.identifier, String(identifier)))
-          .get();
+    return tryPersistenceResult(() => {
+      const row = db
+        .select()
+        .from(analysisJobs)
+        .where(eq(analysisJobs.identifier, String(identifier)))
+        .get();
 
-        if (!row || row.deletedAt) {
-          return errAsync({
-            type: "notFound",
-            resource: "AnalysisJob",
-            identifier: String(identifier),
-          } as DomainError);
-        }
-
-        return okAsync(rowToAnalysisJob(row));
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
+      if (!row || row.deletedAt) {
+        return errAsync(notFound("AnalysisJob", String(identifier)));
       }
+
+      return okAsync(rowToAnalysisJob(row));
     });
   },
 
   search: (criteria: AnalysisJobSearchCriteria) => {
-    return okAsync(null).andThen(() => {
-      try {
-        if (criteria.type === "jobsByAnalysisRun") {
-          const rows = db
-            .select()
-            .from(analysisJobs)
-            .where(
-              and(
-                eq(analysisJobs.analysisRun, String(criteria.analysisRun)),
-                isNull(analysisJobs.deletedAt),
-              ),
-            )
-            .all();
-
-          return okAsync({ items: rows.map(rowToAnalysisJob) } as AnalysisJobPage);
-        }
-
-        // runnableJobsForInspection
+    return tryPersistence(() => {
+      if (criteria.type === "jobsByAnalysisRun") {
         const rows = db
           .select()
           .from(analysisJobs)
           .where(
             and(
+              eq(analysisJobs.analysisRun, String(criteria.analysisRun)),
               isNull(analysisJobs.deletedAt),
-              inArray(analysisJobs.status, ["queued", "leased", "running"]),
             ),
           )
-          .limit(criteria.limit)
           .all();
 
-        return okAsync({ items: rows.map(rowToAnalysisJob) } as AnalysisJobPage);
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
+        return { items: rows.map(rowToAnalysisJob) } as AnalysisJobPage;
       }
+
+      // runnableJobsForInspection
+      const rows = db
+        .select()
+        .from(analysisJobs)
+        .where(
+          and(
+            isNull(analysisJobs.deletedAt),
+            inArray(analysisJobs.status, ["queued", "leased", "running"]),
+          ),
+        )
+        .limit(criteria.limit)
+        .all();
+
+      return { items: rows.map(rowToAnalysisJob) } as AnalysisJobPage;
     });
   },
 
   persist: (job: AnalysisJob) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = analysisJobToRow(job);
-        db.insert(analysisJobs)
-          .values(row)
-          .onConflictDoUpdate({
-            target: analysisJobs.identifier,
-            set: {
-              status: row.status,
-              attemptCount: row.attemptCount,
-              leaseOwner: row.leaseOwner,
-              leaseToken: row.leaseToken,
-              leasedUntil: row.leasedUntil,
-              startedAt: row.startedAt,
-              completedAt: row.completedAt,
-              canceledAt: row.canceledAt,
-              lastErrorCode: row.lastErrorCode,
-              lastErrorMessage: row.lastErrorMessage,
-              updatedAt: row.updatedAt,
-              deletedAt: row.deletedAt,
-            },
-          })
-          .run();
-        return okAsync(undefined);
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
-      }
+    return tryPersistence(() => {
+      const row = analysisJobToRow(job);
+      db.insert(analysisJobs)
+        .values(row)
+        .onConflictDoUpdate({
+          target: analysisJobs.identifier,
+          set: {
+            status: row.status,
+            attemptCount: row.attemptCount,
+            leaseOwner: row.leaseOwner,
+            leaseToken: row.leaseToken,
+            leasedUntil: row.leasedUntil,
+            startedAt: row.startedAt,
+            completedAt: row.completedAt,
+            canceledAt: row.canceledAt,
+            lastErrorCode: row.lastErrorCode,
+            lastErrorMessage: row.lastErrorMessage,
+            updatedAt: row.updatedAt,
+            deletedAt: row.deletedAt,
+          },
+        })
+        .run();
+      return undefined;
     });
   },
 
   acquireLease: (leaseOwner: string, leaseDurationMs: number, now: Date) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const nowIso = now.toISOString();
-        const leasedUntilIso = new Date(now.getTime() + leaseDurationMs).toISOString();
-        const leaseToken = randomUUID();
+    return tryPersistence(() => {
+      const nowIso = now.toISOString();
+      const leasedUntilIso = new Date(now.getTime() + leaseDurationMs).toISOString();
+      const leaseToken = randomUUID();
 
-        const runnableJob = db
-          .select()
-          .from(analysisJobs)
-          .where(
-            and(
-              isNull(analysisJobs.deletedAt),
-              or(
-                and(eq(analysisJobs.status, "queued"), lte(analysisJobs.nextRunAt, nowIso)),
-                and(
-                  inArray(analysisJobs.status, ["leased", "running"]),
-                  lt(analysisJobs.leasedUntil, nowIso),
-                ),
+      const runnableJob = db
+        .select()
+        .from(analysisJobs)
+        .where(
+          and(
+            isNull(analysisJobs.deletedAt),
+            or(
+              and(eq(analysisJobs.status, "queued"), lte(analysisJobs.nextRunAt, nowIso)),
+              and(
+                inArray(analysisJobs.status, ["leased", "running"]),
+                lt(analysisJobs.leasedUntil, nowIso),
               ),
-              lt(analysisJobs.attemptCount, analysisJobs.maxAttempts),
             ),
-          )
-          .orderBy(
-            desc(analysisJobs.priority),
-            asc(analysisJobs.nextRunAt),
-            asc(analysisJobs.createdAt),
-          )
-          .limit(1)
-          .get();
+            lt(analysisJobs.attemptCount, analysisJobs.maxAttempts),
+          ),
+        )
+        .orderBy(
+          desc(analysisJobs.priority),
+          asc(analysisJobs.nextRunAt),
+          asc(analysisJobs.createdAt),
+        )
+        .limit(1)
+        .get();
 
-        if (!runnableJob) return okAsync(null);
+      if (!runnableJob) return null;
 
-        const updated = db
-          .update(analysisJobs)
-          .set({
-            status: "leased",
-            leaseToken,
-            leasedUntil: leasedUntilIso,
-            leaseOwner,
-            attemptCount: runnableJob.attemptCount + 1,
-            updatedAt: nowIso,
-          })
-          .where(
-            and(
-              eq(analysisJobs.identifier, runnableJob.identifier),
-              eq(analysisJobs.status, runnableJob.status),
-            ),
-          )
-          .run();
+      const updated = db
+        .update(analysisJobs)
+        .set({
+          status: "leased",
+          leaseToken,
+          leasedUntil: leasedUntilIso,
+          leaseOwner,
+          attemptCount: runnableJob.attemptCount + 1,
+          updatedAt: nowIso,
+        })
+        .where(
+          and(
+            eq(analysisJobs.identifier, runnableJob.identifier),
+            eq(analysisJobs.status, runnableJob.status),
+          ),
+        )
+        .run();
 
-        if (updated.changes === 0) return okAsync(null);
+      if (updated.changes === 0) return null;
 
-        const leasedRow = db
-          .select()
-          .from(analysisJobs)
-          .where(eq(analysisJobs.identifier, runnableJob.identifier))
-          .get();
+      const leasedRow = db
+        .select()
+        .from(analysisJobs)
+        .where(eq(analysisJobs.identifier, runnableJob.identifier))
+        .get();
 
-        if (!leasedRow) return okAsync(null);
+      if (!leasedRow) return null;
 
-        return okAsync(rowToLeasedJob(leasedRow));
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
-      }
+      return rowToLeasedJob(leasedRow);
     });
   },
 });

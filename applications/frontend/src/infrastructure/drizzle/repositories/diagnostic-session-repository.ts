@@ -15,8 +15,9 @@ import {
   createWeaknessProfileIdentifier,
 } from "../../../domain/training";
 import { type AssessmentResultIdentifier } from "../../../domain/assessment-result";
-import { type DomainError, createNonEmptyList } from "../../../domain/shared";
+import { createNonEmptyList, notFound } from "../../../domain/shared";
 import { okAsync, errAsync } from "neverthrow";
+import { tryPersistence, tryPersistenceResult } from "./try-persistence";
 
 type DiagnosticSessionRow = typeof diagnosticSessions.$inferSelect;
 
@@ -109,82 +110,66 @@ export const createDrizzleDiagnosticSessionRepository = (
   db: DrizzleDatabase,
 ): DiagnosticSessionRepository => ({
   find: (identifier: DiagnosticSessionIdentifier) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = db
-          .select()
-          .from(diagnosticSessions)
-          .where(
-            and(
-              eq(diagnosticSessions.identifier, String(identifier)),
-              isNull(diagnosticSessions.deletedAt),
-            ),
-          )
-          .get();
+    return tryPersistenceResult(() => {
+      const row = db
+        .select()
+        .from(diagnosticSessions)
+        .where(
+          and(
+            eq(diagnosticSessions.identifier, String(identifier)),
+            isNull(diagnosticSessions.deletedAt),
+          ),
+        )
+        .get();
 
-        if (!row) {
-          return errAsync({
-            type: "notFound",
-            resource: "DiagnosticSession",
-            identifier: String(identifier),
-          } as DomainError);
-        }
-
-        return okAsync(rowToDiagnosticSession(row));
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
+      if (!row) {
+        return errAsync(notFound("DiagnosticSession", String(identifier)));
       }
+
+      return okAsync(rowToDiagnosticSession(row));
     });
   },
 
   findLatestByLearner: (learner: LearnerIdentifier) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = db
-          .select()
-          .from(diagnosticSessions)
-          .where(
-            and(
-              eq(diagnosticSessions.learner, String(learner)),
-              isNull(diagnosticSessions.deletedAt),
-            ),
-          )
-          .orderBy(desc(diagnosticSessions.createdAt))
-          .limit(1)
-          .get();
+    return tryPersistence(() => {
+      const row = db
+        .select()
+        .from(diagnosticSessions)
+        .where(
+          and(
+            eq(diagnosticSessions.learner, String(learner)),
+            isNull(diagnosticSessions.deletedAt),
+          ),
+        )
+        .orderBy(desc(diagnosticSessions.createdAt))
+        .limit(1)
+        .get();
 
-        if (!row) {
-          return okAsync(null);
-        }
-
-        return okAsync(rowToDiagnosticSession(row));
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
+      if (!row) {
+        return null;
       }
+
+      return rowToDiagnosticSession(row);
     });
   },
 
   persist: (session: DiagnosticSession) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = diagnosticSessionToRow(session);
-        db.insert(diagnosticSessions)
-          .values(row)
-          .onConflictDoUpdate({
-            target: diagnosticSessions.identifier,
-            set: {
-              status: row.status,
-              weaknessProfile: row.weaknessProfile,
-              assessmentResultJson: row.assessmentResultJson,
-              completedAt: row.completedAt,
-              updatedAt: row.updatedAt,
-            },
-          })
-          .run();
-        return okAsync(undefined);
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
-      }
+    return tryPersistence(() => {
+      const row = diagnosticSessionToRow(session);
+      db.insert(diagnosticSessions)
+        .values(row)
+        .onConflictDoUpdate({
+          target: diagnosticSessions.identifier,
+          set: {
+            status: row.status,
+            weaknessProfile: row.weaknessProfile,
+            assessmentResultJson: row.assessmentResultJson,
+            completedAt: row.completedAt,
+            updatedAt: row.updatedAt,
+          },
+        })
+        .run();
+      return undefined;
     });
   },
 });

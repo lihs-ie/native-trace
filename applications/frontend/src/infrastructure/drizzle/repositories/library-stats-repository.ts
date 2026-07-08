@@ -4,14 +4,13 @@ import {
   type LibraryStatsRepository,
   type MaterialStats,
 } from "../../../usecase/port/library-stats-repository";
-import { type DomainError } from "../../../domain/shared";
-import { okAsync, errAsync } from "neverthrow";
 import { sectionSeries, sections } from "../schema";
 import {
   collectScoresBySection,
   type SectionScoreEntry,
   type SectionScoreStats,
 } from "./section-score-traversal";
+import { tryPersistence } from "./try-persistence";
 
 type ActiveSeriesResult = Readonly<{
   seriesCountByMaterial: ReadonlyMap<string, number>;
@@ -186,37 +185,31 @@ export const createDrizzleLibraryStatsRepository = (
   database: DrizzleDatabase,
 ): LibraryStatsRepository => ({
   findStatsByMaterials: (materialIdentifiers: ReadonlyArray<string>) => {
-    return okAsync(null).andThen(() => {
-      try {
-        if (materialIdentifiers.length === 0) {
-          return okAsync(new Map<string, MaterialStats>());
-        }
-
-        const identifiers = [...materialIdentifiers];
-
-        const { seriesCountByMaterial, activeSeriesIdentifiers, seriesToMaterialMap } =
-          loadActiveSeries(database, identifiers);
-
-        const { activeSectionIdentifiers, sectionToMaterialMap } = mapSectionsToMaterials(
-          database,
-          activeSeriesIdentifiers,
-          seriesToMaterialMap,
-        );
-
-        const sectionScores = collectScoresBySection(database, activeSectionIdentifiers);
-
-        const resultMap = assembleStats(
-          identifiers,
-          seriesCountByMaterial,
-          activeSectionIdentifiers,
-          sectionToMaterialMap,
-          sectionScores,
-        );
-
-        return okAsync(resultMap as ReadonlyMap<string, MaterialStats>);
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
+    return tryPersistence(() => {
+      if (materialIdentifiers.length === 0) {
+        return new Map<string, MaterialStats>() as ReadonlyMap<string, MaterialStats>;
       }
+
+      const identifiers = [...materialIdentifiers];
+
+      const { seriesCountByMaterial, activeSeriesIdentifiers, seriesToMaterialMap } =
+        loadActiveSeries(database, identifiers);
+
+      const { activeSectionIdentifiers, sectionToMaterialMap } = mapSectionsToMaterials(
+        database,
+        activeSeriesIdentifiers,
+        seriesToMaterialMap,
+      );
+
+      const sectionScores = collectScoresBySection(database, activeSectionIdentifiers);
+
+      return assembleStats(
+        identifiers,
+        seriesCountByMaterial,
+        activeSectionIdentifiers,
+        sectionToMaterialMap,
+        sectionScores,
+      );
     });
   },
 });

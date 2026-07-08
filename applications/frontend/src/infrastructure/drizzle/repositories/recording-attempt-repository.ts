@@ -20,8 +20,9 @@ import {
 import { type SectionIdentifier } from "../../../domain/section";
 import { type AudioFileIdentifier } from "../../../domain/audio-file";
 import { type RecordingAttemptSearchCriteria } from "../../../domain/criteria";
-import { type DomainError } from "../../../domain/shared";
+import { notFound } from "../../../domain/shared";
 import { okAsync, errAsync } from "neverthrow";
+import { tryPersistence, tryPersistenceResult } from "./try-persistence";
 
 type RecordingAttemptRow = typeof recordingAttempts.$inferSelect;
 
@@ -163,125 +164,101 @@ export const createDrizzleRecordingAttemptRepository = (
   db: DrizzleDatabase,
 ): RecordingAttemptRepository => ({
   find: (identifier: RecordingAttemptIdentifier) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = db
-          .select()
-          .from(recordingAttempts)
-          .where(eq(recordingAttempts.identifier, String(identifier)))
-          .get();
+    return tryPersistenceResult(() => {
+      const row = db
+        .select()
+        .from(recordingAttempts)
+        .where(eq(recordingAttempts.identifier, String(identifier)))
+        .get();
 
-        if (!row || row.deletedAt || row.status !== "ready") {
-          return errAsync({
-            type: "notFound",
-            resource: "ReadyRecordingAttempt",
-            identifier: String(identifier),
-          } as DomainError);
-        }
-
-        return okAsync(rowToRecordingAttempt(row) as ReadyRecordingAttempt);
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
+      if (!row || row.deletedAt || row.status !== "ready") {
+        return errAsync(notFound("ReadyRecordingAttempt", String(identifier)));
       }
+
+      return okAsync(rowToRecordingAttempt(row) as ReadyRecordingAttempt);
     });
   },
 
   findSaving: (identifier: RecordingAttemptIdentifier) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = db
-          .select()
-          .from(recordingAttempts)
-          .where(eq(recordingAttempts.identifier, String(identifier)))
-          .get();
+    return tryPersistenceResult(() => {
+      const row = db
+        .select()
+        .from(recordingAttempts)
+        .where(eq(recordingAttempts.identifier, String(identifier)))
+        .get();
 
-        if (!row || row.deletedAt || row.status !== "saving") {
-          return errAsync({
-            type: "notFound",
-            resource: "SavingRecordingAttempt",
-            identifier: String(identifier),
-          } as DomainError);
-        }
-
-        return okAsync(rowToRecordingAttempt(row) as SavingRecordingAttempt);
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
+      if (!row || row.deletedAt || row.status !== "saving") {
+        return errAsync(notFound("SavingRecordingAttempt", String(identifier)));
       }
+
+      return okAsync(rowToRecordingAttempt(row) as SavingRecordingAttempt);
     });
   },
 
   search: (criteria: RecordingAttemptSearchCriteria) => {
-    return okAsync(null).andThen(() => {
-      try {
-        if (criteria.type === "attemptsInSection") {
-          const rows = db
-            .select()
-            .from(recordingAttempts)
-            .where(eq(recordingAttempts.section, String(criteria.section)))
-            .orderBy(desc(recordingAttempts.createdAt))
-            .offset(criteria.pagination.offset)
-            .limit(criteria.pagination.limit)
-            .all()
-            .filter((r) => !r.deletedAt);
-
-          const countRows = db
-            .select()
-            .from(recordingAttempts)
-            .where(eq(recordingAttempts.section, String(criteria.section)))
-            .all()
-            .filter((r) => !r.deletedAt);
-
-          return okAsync({
-            items: rows.map(rowToRecordingAttempt),
-            total: countRows.length,
-          } as RecordingAttemptPage);
-        }
-
-        // attemptsForHistory — section_series 経由の結合が必要だが MVP では section 直引きで代替
+    return tryPersistence(() => {
+      if (criteria.type === "attemptsInSection") {
         const rows = db
           .select()
           .from(recordingAttempts)
+          .where(eq(recordingAttempts.section, String(criteria.section)))
           .orderBy(desc(recordingAttempts.createdAt))
           .offset(criteria.pagination.offset)
           .limit(criteria.pagination.limit)
           .all()
           .filter((r) => !r.deletedAt);
 
-        return okAsync({
+        const countRows = db
+          .select()
+          .from(recordingAttempts)
+          .where(eq(recordingAttempts.section, String(criteria.section)))
+          .all()
+          .filter((r) => !r.deletedAt);
+
+        return {
           items: rows.map(rowToRecordingAttempt),
-          total: rows.length,
-        } as RecordingAttemptPage);
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
+          total: countRows.length,
+        } as RecordingAttemptPage;
       }
+
+      // attemptsForHistory — section_series 経由の結合が必要だが MVP では section 直引きで代替
+      const rows = db
+        .select()
+        .from(recordingAttempts)
+        .orderBy(desc(recordingAttempts.createdAt))
+        .offset(criteria.pagination.offset)
+        .limit(criteria.pagination.limit)
+        .all()
+        .filter((r) => !r.deletedAt);
+
+      return {
+        items: rows.map(rowToRecordingAttempt),
+        total: rows.length,
+      } as RecordingAttemptPage;
     });
   },
 
   persist: (attempt: RecordingAttempt) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = recordingAttemptToRow(attempt);
-        db.insert(recordingAttempts)
-          .values(row)
-          .onConflictDoUpdate({
-            target: recordingAttempts.identifier,
-            set: {
-              status: row.status,
-              startedAt: row.startedAt,
-              endedAt: row.endedAt,
-              durationMilliseconds: row.durationMilliseconds,
-              browserInfoJson: row.browserInfoJson,
-              originalFileName: row.originalFileName,
-              failureReason: row.failureReason,
-              updatedAt: row.updatedAt,
-              deletedAt: row.deletedAt,
-            },
-          })
-          .run();
-        return okAsync(undefined);
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
-      }
+    return tryPersistence(() => {
+      const row = recordingAttemptToRow(attempt);
+      db.insert(recordingAttempts)
+        .values(row)
+        .onConflictDoUpdate({
+          target: recordingAttempts.identifier,
+          set: {
+            status: row.status,
+            startedAt: row.startedAt,
+            endedAt: row.endedAt,
+            durationMilliseconds: row.durationMilliseconds,
+            browserInfoJson: row.browserInfoJson,
+            originalFileName: row.originalFileName,
+            failureReason: row.failureReason,
+            updatedAt: row.updatedAt,
+            deletedAt: row.deletedAt,
+          },
+        })
+        .run();
+      return undefined;
     });
   },
 });

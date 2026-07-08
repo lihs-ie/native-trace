@@ -15,8 +15,9 @@ import {
 } from "../../../domain/section-series";
 import { type MaterialIdentifier } from "../../../domain/material";
 import { type SectionSeriesSearchCriteria } from "../../../domain/criteria";
-import { type DomainError } from "../../../domain/shared";
+import { notFound } from "../../../domain/shared";
 import { okAsync, errAsync } from "neverthrow";
+import { tryPersistence, tryPersistenceResult } from "./try-persistence";
 
 type SectionSeriesRow = typeof sectionSeries.$inferSelect;
 
@@ -76,102 +77,86 @@ export const createDrizzleSectionSeriesRepository = (
   db: DrizzleDatabase,
 ): SectionSeriesRepository => ({
   find: (identifier: SectionSeriesIdentifier) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = db
-          .select()
-          .from(sectionSeries)
-          .where(eq(sectionSeries.identifier, String(identifier)))
-          .get();
+    return tryPersistenceResult(() => {
+      const row = db
+        .select()
+        .from(sectionSeries)
+        .where(eq(sectionSeries.identifier, String(identifier)))
+        .get();
 
-        if (!row || row.deletedAt) {
-          return errAsync({
-            type: "notFound",
-            resource: "SectionSeries",
-            identifier: String(identifier),
-          } as DomainError);
-        }
-
-        return okAsync(rowToSectionSeries(row) as ActiveSectionSeries);
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
+      if (!row || row.deletedAt) {
+        return errAsync(notFound("SectionSeries", String(identifier)));
       }
+
+      return okAsync(rowToSectionSeries(row) as ActiveSectionSeries);
     });
   },
 
   search: (criteria: SectionSeriesSearchCriteria) => {
-    return okAsync(null).andThen(() => {
-      try {
-        if (criteria.type === "activeSeriesInMaterial") {
-          const rows = db
-            .select()
-            .from(sectionSeries)
-            .where(eq(sectionSeries.material, String(criteria.material)))
-            .orderBy(asc(sectionSeries.displayOrder))
-            .offset(criteria.pagination.offset)
-            .limit(criteria.pagination.limit)
-            .all()
-            .filter((r) => !r.deletedAt);
-
-          const countRows = db
-            .select()
-            .from(sectionSeries)
-            .where(eq(sectionSeries.material, String(criteria.material)))
-            .all()
-            .filter((r) => !r.deletedAt);
-
-          return okAsync({
-            items: rows.map(rowToSectionSeries),
-            total: countRows.length,
-          } as SectionSeriesPage);
-        }
-
-        // seriesForHistory
+    return tryPersistence(() => {
+      if (criteria.type === "activeSeriesInMaterial") {
         const rows = db
           .select()
           .from(sectionSeries)
           .where(eq(sectionSeries.material, String(criteria.material)))
-          .orderBy(desc(sectionSeries.updatedAt))
+          .orderBy(asc(sectionSeries.displayOrder))
           .offset(criteria.pagination.offset)
           .limit(criteria.pagination.limit)
-          .all();
+          .all()
+          .filter((r) => !r.deletedAt);
 
         const countRows = db
           .select()
           .from(sectionSeries)
           .where(eq(sectionSeries.material, String(criteria.material)))
-          .all();
+          .all()
+          .filter((r) => !r.deletedAt);
 
-        return okAsync({
+        return {
           items: rows.map(rowToSectionSeries),
           total: countRows.length,
-        } as SectionSeriesPage);
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
+        } as SectionSeriesPage;
       }
+
+      // seriesForHistory
+      const rows = db
+        .select()
+        .from(sectionSeries)
+        .where(eq(sectionSeries.material, String(criteria.material)))
+        .orderBy(desc(sectionSeries.updatedAt))
+        .offset(criteria.pagination.offset)
+        .limit(criteria.pagination.limit)
+        .all();
+
+      const countRows = db
+        .select()
+        .from(sectionSeries)
+        .where(eq(sectionSeries.material, String(criteria.material)))
+        .all();
+
+      return {
+        items: rows.map(rowToSectionSeries),
+        total: countRows.length,
+      } as SectionSeriesPage;
     });
   },
 
   persist: (series: SectionSeries) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = sectionSeriesToRow(series);
-        db.insert(sectionSeries)
-          .values(row)
-          .onConflictDoUpdate({
-            target: sectionSeries.identifier,
-            set: {
-              title: row.title,
-              displayOrder: row.displayOrder,
-              updatedAt: row.updatedAt,
-              deletedAt: row.deletedAt,
-            },
-          })
-          .run();
-        return okAsync(undefined);
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
-      }
+    return tryPersistence(() => {
+      const row = sectionSeriesToRow(series);
+      db.insert(sectionSeries)
+        .values(row)
+        .onConflictDoUpdate({
+          target: sectionSeries.identifier,
+          set: {
+            title: row.title,
+            displayOrder: row.displayOrder,
+            updatedAt: row.updatedAt,
+            deletedAt: row.deletedAt,
+          },
+        })
+        .run();
+      return undefined;
     });
   },
 });

@@ -26,8 +26,9 @@ import {
 import { type AnalysisJobIdentifier } from "../../../domain/analysis-job";
 import { type NonEmptyList } from "../../../domain/shared";
 import { type AssessmentResultSearchCriteria } from "../../../domain/criteria";
-import { type DomainError } from "../../../domain/shared";
+import { notFound } from "../../../domain/shared";
 import { okAsync, errAsync } from "neverthrow";
+import { tryPersistence, tryPersistenceResult } from "./try-persistence";
 
 type AssessmentResultRow = typeof assessmentResults.$inferSelect;
 
@@ -101,120 +102,101 @@ export const createDrizzleAssessmentResultRepository = (
   db: DrizzleDatabase,
 ): AssessmentResultRepository => ({
   find: (identifier: AssessmentResultIdentifier) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = db
-          .select()
-          .from(assessmentResults)
-          .where(eq(assessmentResults.identifier, String(identifier)))
-          .get();
+    return tryPersistenceResult(() => {
+      const row = db
+        .select()
+        .from(assessmentResults)
+        .where(eq(assessmentResults.identifier, String(identifier)))
+        .get();
 
-        if (!row || row.deletedAt) {
-          return errAsync({
-            type: "notFound",
-            resource: "AssessmentResult",
-            identifier: String(identifier),
-          } as DomainError);
-        }
-
-        return okAsync(rowToAssessmentResult(row));
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
+      if (!row || row.deletedAt) {
+        return errAsync(notFound("AssessmentResult", String(identifier)));
       }
+
+      return okAsync(rowToAssessmentResult(row));
     });
   },
 
   search: (criteria: AssessmentResultSearchCriteria) => {
-    return okAsync(null).andThen(() => {
-      try {
-        if (criteria.type === "resultsByAnalysisRun") {
-          // analysis_jobs テーブルとの JOIN が必要だが、MVP では全件取得で代替
-          const rows = db
-            .select()
-            .from(assessmentResults)
-            .where(isNull(assessmentResults.deletedAt))
-            .all();
-
-          return okAsync({
-            items: rows.map(rowToAssessmentResult),
-          } as AssessmentResultPage);
-        }
-
-        // resultsByJobs
-        const jobIds = criteria.jobs.map(String);
-        if (jobIds.length === 0) {
-          return okAsync({ items: [] } as AssessmentResultPage);
-        }
-
+    return tryPersistence(() => {
+      if (criteria.type === "resultsByAnalysisRun") {
+        // analysis_jobs テーブルとの JOIN が必要だが、MVP では全件取得で代替
         const rows = db
           .select()
           .from(assessmentResults)
-          .where(
-            and(
-              inArray(assessmentResults.analysisJob, jobIds),
-              isNull(assessmentResults.deletedAt),
-            ),
-          )
+          .where(isNull(assessmentResults.deletedAt))
           .all();
 
-        return okAsync({
+        return {
           items: rows.map(rowToAssessmentResult),
-        } as AssessmentResultPage);
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
+        } as AssessmentResultPage;
       }
+
+      // resultsByJobs
+      const jobIds = criteria.jobs.map(String);
+      if (jobIds.length === 0) {
+        return { items: [] } as AssessmentResultPage;
+      }
+
+      const rows = db
+        .select()
+        .from(assessmentResults)
+        .where(
+          and(inArray(assessmentResults.analysisJob, jobIds), isNull(assessmentResults.deletedAt)),
+        )
+        .all();
+
+      return {
+        items: rows.map(rowToAssessmentResult),
+      } as AssessmentResultPage;
     });
   },
 
   persist: (result: AssessmentResult) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const assessmentResultJson = JSON.stringify({
-          scores: result.scores,
-          summary: result.summary,
-          findings: result.findings,
-          segments: result.segments,
-          metadata: result.metadata,
-          tokenizerVersion: result.tokenizerVersion,
-          perPhonemeGop: result.perPhonemeGop,
-          focusSounds: result.focusSounds,
-          prosody: result.prosody,
-          engineSummaryMessageJa: result.engineSummaryMessageJa,
-        });
+    return tryPersistence(() => {
+      const assessmentResultJson = JSON.stringify({
+        scores: result.scores,
+        summary: result.summary,
+        findings: result.findings,
+        segments: result.segments,
+        metadata: result.metadata,
+        tokenizerVersion: result.tokenizerVersion,
+        perPhonemeGop: result.perPhonemeGop,
+        focusSounds: result.focusSounds,
+        prosody: result.prosody,
+        engineSummaryMessageJa: result.engineSummaryMessageJa,
+      });
 
-        const row = {
-          identifier: String(result.identifier),
-          analysisJob: String(result.analysisJob),
-          overallScore: result.scores.overall,
-          accuracyScore: result.scores.accuracy,
-          nativeLikenessScore: result.scores.nativeLikeness,
-          pronunciationScore: result.scores.pronunciation,
-          connectedSpeechScore: result.scores.connectedSpeech,
-          prosodyScore: result.scores.prosody,
-          assessmentResultJson,
-          rawResponseJson: JSON.stringify(result.raw),
-          engineSnapshotJson: JSON.stringify(result.engineSnapshot),
-          tokenizerVersion: String(result.tokenizerVersion),
-          createdAt: result.createdAt.toISOString(),
-          deletedAt: null as string | null,
-        };
+      const row = {
+        identifier: String(result.identifier),
+        analysisJob: String(result.analysisJob),
+        overallScore: result.scores.overall,
+        accuracyScore: result.scores.accuracy,
+        nativeLikenessScore: result.scores.nativeLikeness,
+        pronunciationScore: result.scores.pronunciation,
+        connectedSpeechScore: result.scores.connectedSpeech,
+        prosodyScore: result.scores.prosody,
+        assessmentResultJson,
+        rawResponseJson: JSON.stringify(result.raw),
+        engineSnapshotJson: JSON.stringify(result.engineSnapshot),
+        tokenizerVersion: String(result.tokenizerVersion),
+        createdAt: result.createdAt.toISOString(),
+        deletedAt: null as string | null,
+      };
 
-        db.insert(assessmentResults)
-          .values(row)
-          .onConflictDoUpdate({
-            target: assessmentResults.identifier,
-            set: {
-              assessmentResultJson: row.assessmentResultJson,
-              rawResponseJson: row.rawResponseJson,
-              engineSnapshotJson: row.engineSnapshotJson,
-            },
-          })
-          .run();
+      db.insert(assessmentResults)
+        .values(row)
+        .onConflictDoUpdate({
+          target: assessmentResults.identifier,
+          set: {
+            assessmentResultJson: row.assessmentResultJson,
+            rawResponseJson: row.rawResponseJson,
+            engineSnapshotJson: row.engineSnapshotJson,
+          },
+        })
+        .run();
 
-        return okAsync(undefined);
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
-      }
+      return undefined;
     });
   },
 });

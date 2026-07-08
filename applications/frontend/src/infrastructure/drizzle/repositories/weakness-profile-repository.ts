@@ -17,12 +17,9 @@ import {
   createDiagnosticSessionIdentifier,
 } from "../../../domain/training";
 import { type FunctionalLoadRank } from "../../../domain/error-catalog";
-import {
-  type DomainError,
-  type NonEmptyList,
-  createNonEmptyList,
-} from "../../../domain/shared";
+import { type NonEmptyList, createNonEmptyList, notFound } from "../../../domain/shared";
 import { okAsync, errAsync } from "neverthrow";
+import { tryPersistence, tryPersistenceResult } from "./try-persistence";
 
 type WeaknessProfileRow = typeof weaknessProfiles.$inferSelect;
 
@@ -101,78 +98,59 @@ export const createDrizzleWeaknessProfileRepository = (
   db: DrizzleDatabase,
 ): WeaknessProfileRepository => ({
   find: (identifier: WeaknessProfileIdentifier) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = db
-          .select()
-          .from(weaknessProfiles)
-          .where(
-            and(
-              eq(weaknessProfiles.identifier, String(identifier)),
-              isNull(weaknessProfiles.deletedAt),
-            ),
-          )
-          .get();
+    return tryPersistenceResult(() => {
+      const row = db
+        .select()
+        .from(weaknessProfiles)
+        .where(
+          and(
+            eq(weaknessProfiles.identifier, String(identifier)),
+            isNull(weaknessProfiles.deletedAt),
+          ),
+        )
+        .get();
 
-        if (!row) {
-          return errAsync({
-            type: "notFound",
-            resource: "WeaknessProfile",
-            identifier: String(identifier),
-          } as DomainError);
-        }
-
-        return okAsync(rowToWeaknessProfile(row));
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
+      if (!row) {
+        return errAsync(notFound("WeaknessProfile", String(identifier)));
       }
+
+      return okAsync(rowToWeaknessProfile(row));
     });
   },
 
   findByLearner: (learner: LearnerIdentifier) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = db
-          .select()
-          .from(weaknessProfiles)
-          .where(
-            and(
-              eq(weaknessProfiles.learner, String(learner)),
-              isNull(weaknessProfiles.deletedAt),
-            ),
-          )
-          .get();
+    return tryPersistence(() => {
+      const row = db
+        .select()
+        .from(weaknessProfiles)
+        .where(
+          and(eq(weaknessProfiles.learner, String(learner)), isNull(weaknessProfiles.deletedAt)),
+        )
+        .get();
 
-        if (!row) {
-          return okAsync(null);
-        }
-
-        return okAsync(rowToWeaknessProfile(row));
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
+      if (!row) {
+        return null;
       }
+
+      return rowToWeaknessProfile(row);
     });
   },
 
   persist: (profile: WeaknessProfile) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = weaknessProfileToRow(profile);
-        db.insert(weaknessProfiles)
-          .values(row)
-          .onConflictDoUpdate({
-            target: weaknessProfiles.identifier,
-            set: {
-              focusSoundsJson: row.focusSoundsJson,
-              lastUpdatedAt: row.lastUpdatedAt,
-              updatedAt: row.updatedAt,
-            },
-          })
-          .run();
-        return okAsync(undefined);
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
-      }
+    return tryPersistence(() => {
+      const row = weaknessProfileToRow(profile);
+      db.insert(weaknessProfiles)
+        .values(row)
+        .onConflictDoUpdate({
+          target: weaknessProfiles.identifier,
+          set: {
+            focusSoundsJson: row.focusSoundsJson,
+            lastUpdatedAt: row.lastUpdatedAt,
+            updatedAt: row.updatedAt,
+          },
+        })
+        .run();
+      return undefined;
     });
   },
 });

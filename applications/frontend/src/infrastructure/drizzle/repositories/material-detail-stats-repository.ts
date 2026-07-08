@@ -4,14 +4,13 @@ import {
   type MaterialDetailStatsRepository,
   type SectionSeriesStats,
 } from "../../../usecase/port/material-detail-stats-repository";
-import { type DomainError } from "../../../domain/shared";
-import { okAsync, errAsync } from "neverthrow";
 import { sections } from "../schema";
 import {
   collectScoresBySection,
   type SectionScoreEntry,
   type SectionScoreStats,
 } from "./section-score-traversal";
+import { tryPersistence } from "./try-persistence";
 
 /**
  * テキストのワード数をスペース区切りで数える。
@@ -140,33 +139,27 @@ export const createDrizzleMaterialDetailStatsRepository = (
     sectionSeriesIdentifiers: ReadonlyArray<string>,
     latestBodyTextBySeries: ReadonlyMap<string, string>,
   ) => {
-    return okAsync(null).andThen(() => {
-      try {
-        if (sectionSeriesIdentifiers.length === 0) {
-          return okAsync(new Map<string, SectionSeriesStats>());
-        }
-
-        const identifiers = [...sectionSeriesIdentifiers];
-
-        const { activeSectionIdentifiers, sectionToSeriesMap } = mapSectionsToSeries(
-          database,
-          identifiers,
-        );
-
-        const sectionScores = collectScoresBySection(database, activeSectionIdentifiers);
-
-        const resultMap = assembleStats(
-          identifiers,
-          activeSectionIdentifiers,
-          sectionToSeriesMap,
-          sectionScores,
-          latestBodyTextBySeries,
-        );
-
-        return okAsync(resultMap as ReadonlyMap<string, SectionSeriesStats>);
-      } catch (error) {
-        return errAsync({ type: "persistenceFailed", reason: String(error) } as DomainError);
+    return tryPersistence(() => {
+      if (sectionSeriesIdentifiers.length === 0) {
+        return new Map<string, SectionSeriesStats>() as ReadonlyMap<string, SectionSeriesStats>;
       }
+
+      const identifiers = [...sectionSeriesIdentifiers];
+
+      const { activeSectionIdentifiers, sectionToSeriesMap } = mapSectionsToSeries(
+        database,
+        identifiers,
+      );
+
+      const sectionScores = collectScoresBySection(database, activeSectionIdentifiers);
+
+      return assembleStats(
+        identifiers,
+        activeSectionIdentifiers,
+        sectionToSeriesMap,
+        sectionScores,
+        latestBodyTextBySeries,
+      );
     });
   },
 });

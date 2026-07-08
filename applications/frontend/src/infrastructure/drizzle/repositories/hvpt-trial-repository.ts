@@ -14,8 +14,9 @@ import {
   createResponseLabel,
   createReactionTime,
 } from "../../../domain/training";
-import { type DomainError } from "../../../domain/shared";
+import { notFound } from "../../../domain/shared";
 import { okAsync, errAsync } from "neverthrow";
+import { tryPersistence, tryPersistenceResult } from "./try-persistence";
 
 type HvptTrialRow = typeof hvptTrials.$inferSelect;
 
@@ -94,60 +95,44 @@ const hvptTrialToRow = (trial: HvptTrial): HvptTrialRow => {
 
 export const createDrizzleHvptTrialRepository = (db: DrizzleDatabase): HvptTrialRepository => ({
   find: (identifier: HvptTrialIdentifier) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = db
-          .select()
-          .from(hvptTrials)
-          .where(and(eq(hvptTrials.identifier, String(identifier)), isNull(hvptTrials.deletedAt)))
-          .get();
+    return tryPersistenceResult(() => {
+      const row = db
+        .select()
+        .from(hvptTrials)
+        .where(and(eq(hvptTrials.identifier, String(identifier)), isNull(hvptTrials.deletedAt)))
+        .get();
 
-        if (!row) {
-          return errAsync({
-            type: "notFound",
-            resource: "HvptTrial",
-            identifier: String(identifier),
-          } as DomainError);
-        }
-
-        return okAsync(rowToHvptTrial(row));
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
+      if (!row) {
+        return errAsync(notFound("HvptTrial", String(identifier)));
       }
+
+      return okAsync(rowToHvptTrial(row));
     });
   },
 
   findByTrainingSessionOrderedByPresentedAt: (trainingSession: TrainingSessionIdentifier) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const rows = db
-          .select()
-          .from(hvptTrials)
-          .where(
-            and(
-              eq(hvptTrials.trainingSession, String(trainingSession)),
-              isNull(hvptTrials.deletedAt),
-            ),
-          )
-          .orderBy(asc(hvptTrials.presentedAt))
-          .all();
+    return tryPersistence(() => {
+      const rows = db
+        .select()
+        .from(hvptTrials)
+        .where(
+          and(
+            eq(hvptTrials.trainingSession, String(trainingSession)),
+            isNull(hvptTrials.deletedAt),
+          ),
+        )
+        .orderBy(asc(hvptTrials.presentedAt))
+        .all();
 
-        return okAsync(rows.map(rowToHvptTrial));
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
-      }
+      return rows.map(rowToHvptTrial);
     });
   },
 
   save: (trial: HvptTrial) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = hvptTrialToRow(trial);
-        db.insert(hvptTrials).values(row).run();
-        return okAsync(undefined);
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
-      }
+    return tryPersistence(() => {
+      const row = hvptTrialToRow(trial);
+      db.insert(hvptTrials).values(row).run();
+      return undefined;
     });
   },
 });

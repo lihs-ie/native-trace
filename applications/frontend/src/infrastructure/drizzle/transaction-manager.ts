@@ -22,35 +22,37 @@ export const createDrizzleTransactionManager = (db: DrizzleDatabase): Transactio
       try {
         client.exec("BEGIN");
       } catch (e) {
-        return errAsync({
+        return errAsync<T, DomainError>({
           type: "persistenceFailed",
           reason: `BEGIN failed: ${String(e)}`,
-        } as DomainError);
+        });
       }
 
-      return work().andThen((value) => {
-        try {
-          client.exec("COMMIT");
-          return okAsync(value);
-        } catch (e) {
+      return work()
+        .andThen((value) => {
+          try {
+            client.exec("COMMIT");
+            return okAsync(value);
+          } catch (e) {
+            try {
+              client.exec("ROLLBACK");
+            } catch {
+              // ignore rollback error
+            }
+            return errAsync<T, DomainError>({
+              type: "persistenceFailed",
+              reason: `COMMIT failed: ${String(e)}`,
+            });
+          }
+        })
+        .mapErr((error) => {
           try {
             client.exec("ROLLBACK");
           } catch {
             // ignore rollback error
           }
-          return errAsync({
-            type: "persistenceFailed",
-            reason: `COMMIT failed: ${String(e)}`,
-          } as DomainError);
-        }
-      }).mapErr((error) => {
-        try {
-          client.exec("ROLLBACK");
-        } catch {
-          // ignore rollback error
-        }
-        return error;
-      });
+          return error;
+        });
     });
   },
 });
