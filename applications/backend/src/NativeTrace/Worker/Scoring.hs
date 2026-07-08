@@ -30,6 +30,8 @@ module NativeTrace.Worker.Scoring (
   -- ADR-019 D4 AAI ガードレール
   aaiDisplayEligibilityThreshold,
   articulatoryDisplayGuardrail,
+  -- ADR-019 D5 AAI estimate 突合・付与 (W39)
+  attachArticulatoryEstimates,
 )
 where
 
@@ -41,6 +43,7 @@ import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Ord (Down (..), comparing)
 import Data.Text (Text)
 import Data.Text qualified as Text
+import NativeTrace.Worker.AaiClient (RawArticulatoryEstimate (..))
 import NativeTrace.Worker.AnalyzerClient (
   AnalyzerResult (..),
   F0Contour (..),
@@ -169,6 +172,51 @@ vowelsAndApproximants =
     "ɹ",
     "ɾ"
   ]
+
+-- ---- ADR-019 D5 AAI estimate 突合・付与 (W39) ----
+
+-- | ガードレール（articulatoryDisplayGuardrail）通過 estimate を finding へ突合・付与する。
+-- 突合条件は phoneme 一致 または セグメント midpoint の findingAudioRange 含有
+-- （Application.hs ハンドラからの字句移動 — 判定式は不変）。
+attachArticulatoryEstimates :: [RawArticulatoryEstimate] -> [AssessmentFinding] -> [AssessmentFinding]
+attachArticulatoryEstimates rawEstimates findings =
+  let passed :: [(Text, Int, Int, ArticulatoryEstimate)]
+      passed =
+        [ (raePhoneme r, raeStartMs r, raeEndMs r, est)
+        | r <- rawEstimates,
+          Just est <-
+            [ articulatoryDisplayGuardrail
+                (raePhoneme r)
+                (raeStartMs r)
+                (raeEndMs r)
+                (raeDisplayEligibility r)
+                ( raeTongueTipX r,
+                  raeTongueTipY r,
+                  raeTongueDorsumX r,
+                  raeTongueDorsumY r,
+                  raeLipApertureX r,
+                  raeLipApertureY r
+                )
+            ]
+        ]
+      attachEstimate finding =
+        let expectedPhoneme = evidenceIpa (findingExpected finding)
+            inAudioRange segmentStartMs segmentEndMs =
+              case findingAudioRange finding of
+                Just range ->
+                  let midpointMs = (segmentStartMs + segmentEndMs) `div` 2
+                   in midpointMs >= startMs range && midpointMs <= endMs range
+                Nothing -> False
+            matched =
+              [ est
+              | (phoneme, segmentStartMs, segmentEndMs, est) <- passed,
+                Just phoneme == expectedPhoneme
+                  || inAudioRange segmentStartMs segmentEndMs
+              ]
+         in case matched of
+              (est : _) -> finding {findingArticulatoryEstimate = Just est}
+              [] -> finding
+   in map attachEstimate findings
 
 -- ---- 型 ----
 

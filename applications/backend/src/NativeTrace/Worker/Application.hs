@@ -11,7 +11,7 @@ import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding (encodeUtf8)
-import NativeTrace.Worker.AaiClient (RawArticulatoryEstimate (..), callAai)
+import NativeTrace.Worker.AaiClient (callAai)
 import NativeTrace.Worker.AnalyzerClient (AnalyzerShadowingLagResult (..), analyzeAudio, analyzeShadowingLag, analyzedPerPhonemeGop)
 import NativeTrace.Worker.Api (WorkerApi, workerApi)
 import NativeTrace.Worker.Assessment (
@@ -21,19 +21,15 @@ import NativeTrace.Worker.Assessment (
  )
 import NativeTrace.Worker.Assessment qualified as Assessment
 import NativeTrace.Worker.GoldenSpeakerClient (convertGoldenSpeaker)
-import NativeTrace.Worker.Scoring (articulatoryDisplayGuardrail, classifyGopDelta)
+import NativeTrace.Worker.Scoring (attachArticulatoryEstimates, classifyGopDelta)
 import NativeTrace.Worker.Types (
-  ArticulatoryEstimate,
-  AssessmentFinding (..),
   AssessmentRequest (..),
   AssessmentResponse (..),
   AudioMetadata (..),
-  AudioRange (..),
   GoldenSpeakerConversionDto,
   GopDeltaRequest (..),
   GopDeltaResponse,
   HealthResponse (..),
-  PronunciationEvidence (..),
   ShadowingLagDto (..),
   VersionResponse (..),
   WorkerError (..),
@@ -101,46 +97,11 @@ assessPronunciation multipart = do
           case maybeRawEstimates of
             Nothing -> pure baseResponse
             Just rawEstimates ->
-              let passed :: [(Text, Int, Int, ArticulatoryEstimate)]
-                  passed =
-                    [ (raePhoneme r, raeStartMs r, raeEndMs r, est)
-                    | r <- rawEstimates,
-                      Just est <-
-                        [ articulatoryDisplayGuardrail
-                            (raePhoneme r)
-                            (raeStartMs r)
-                            (raeEndMs r)
-                            (raeDisplayEligibility r)
-                            ( raeTongueTipX r,
-                              raeTongueTipY r,
-                              raeTongueDorsumX r,
-                              raeTongueDorsumY r,
-                              raeLipApertureX r,
-                              raeLipApertureY r
-                            )
-                        ]
-                    ]
-                  attachEstimate finding =
-                    let expectedPhoneme = evidenceIpa (findingExpected finding)
-                        inAudioRange segmentStartMs segmentEndMs =
-                          case findingAudioRange finding of
-                            Just range ->
-                              let midpointMs = (segmentStartMs + segmentEndMs) `div` 2
-                               in midpointMs >= startMs range && midpointMs <= endMs range
-                            Nothing -> False
-                        matched =
-                          [ est
-                          | (phoneme, segmentStartMs, segmentEndMs, est) <- passed,
-                            Just phoneme == expectedPhoneme
-                              || inAudioRange segmentStartMs segmentEndMs
-                          ]
-                     in case matched of
-                          (est : _) -> finding {findingArticulatoryEstimate = Just est}
-                          [] -> finding
-               in pure
-                    baseResponse
-                      { responseFindings = map attachEstimate (responseFindings baseResponse)
-                      }
+              pure
+                baseResponse
+                  { responseFindings =
+                      attachArticulatoryEstimates rawEstimates (responseFindings baseResponse)
+                  }
 
 -- | シャドーイング ラグ計測（M-SHL-3 / ADR-013）。reference_audio + learner_audio を
 -- analyzer の /v1/shadowing-lag に渡し、閾値判定（recommendSlowPlayback）を付与して返す。

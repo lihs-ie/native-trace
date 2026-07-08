@@ -5,7 +5,7 @@ import Data.ByteString.Lazy.Char8 qualified as LBS8
 import Data.Map.Strict qualified as Map
 import Data.Maybe (isJust, isNothing)
 import Data.Text qualified as Text
-import NativeTrace.Worker.AaiClient (callAai)
+import NativeTrace.Worker.AaiClient (RawArticulatoryEstimate (..), callAai)
 import NativeTrace.Worker.AnalyzerClient (
   AnalyzerResult (..),
   InsertedVowelInfo (..),
@@ -21,6 +21,7 @@ import NativeTrace.Worker.Assessment (buildAssessmentResponseFromGop)
 import NativeTrace.Worker.Scoring (
   aaiDisplayEligibilityThreshold,
   articulatoryDisplayGuardrail,
+  attachArticulatoryEstimates,
   audioQualityMinSnrDb,
   buildAssessmentScores,
   checkAudioQuality,
@@ -181,6 +182,50 @@ spec = do
               enriched = finding {findingArticulatoryEstimate = Just est}
            in findingScoreImpact enriched `shouldBe` findingScoreImpact finding
         [] -> expectationFailure "expected >=1 finding in fixture"
+
+  describe "attachArticulatoryEstimates (ADR-019 D5 / W39)" $ do
+    -- fixtureAnalyzerResult は audioRange (100,200)/(200,300)/(600,700) の 3 finding を生成する
+    -- （期待値は移設前の Application.hs ハンドラの挙動から導出）。
+    let fixtureFindings = generateFindingsFromGop bodyText fixtureAnalyzerResult
+    it "attaches a guardrail-passing estimate only to the matching finding (midpoint containment)" $ do
+      let rawEstimate =
+            RawArticulatoryEstimate
+              { raePhoneme = "ɛ",
+                raeStartMs = 100,
+                raeEndMs = 160,
+                raeTongueTipX = 0.10,
+                raeTongueTipY = 0.20,
+                raeTongueDorsumX = 0.30,
+                raeTongueDorsumY = 0.40,
+                raeLipApertureX = 0.50,
+                raeLipApertureY = 0.60,
+                raeDisplayEligibility = 0.6
+              }
+      let attached = attachArticulatoryEstimates [rawEstimate] fixtureFindings
+      -- midpoint 130ms は先頭 finding の audioRange (100,200) のみに含まれる
+      map (isJust . findingArticulatoryEstimate) attached `shouldBe` [True, False, False]
+      case attached of
+        (first : _) ->
+          findingArticulatoryEstimate first
+            `shouldBe` Just (ArticulatoryEstimate 0.10 0.20 0.30 0.40 0.50 0.60 0.6)
+        [] -> expectationFailure "expected >=1 finding in fixture"
+    it "ignores a guardrail-passing estimate that matches no finding (all stay Nothing)" $ do
+      let rawEstimate =
+            RawArticulatoryEstimate
+              { raePhoneme = "iː",
+                raeStartMs = 400,
+                raeEndMs = 460,
+                raeTongueTipX = 0.10,
+                raeTongueTipY = 0.20,
+                raeTongueDorsumX = 0.30,
+                raeTongueDorsumY = 0.40,
+                raeLipApertureX = 0.50,
+                raeLipApertureY = 0.60,
+                raeDisplayEligibility = 0.9
+              }
+      -- midpoint 430ms はどの finding の audioRange にも含まれず、phoneme "iː" も一致しない
+      let attached = attachArticulatoryEstimates [rawEstimate] fixtureFindings
+      all (isNothing . findingArticulatoryEstimate) attached `shouldBe` True
 
   describe "checkAudioQuality" $ do
     it "returns False (normal) when all criteria are satisfied" $ do
