@@ -1,19 +1,14 @@
-import { type NonEmptyList } from "./shared";
+import { type Brand, type NonEmptyList, createNonEmptyBrandedString } from "./shared";
 import { type RecordingAttemptIdentifier } from "./recording-attempt";
-
-declare const __brand: unique symbol;
-type Brand<T, B> = T & { readonly [__brand]: B };
 
 export type AudioFileIdentifier = Brand<string, "AudioFileIdentifier">;
 export type AudioMimeType = Brand<string, "AudioMimeType">;
 export type StorageKey = Brand<string, "StorageKey">;
 
-export const createAudioFileIdentifier = (
-  value: string,
-): AudioFileIdentifier | null =>
-  value.trim().length > 0 ? (value as AudioFileIdentifier) : null;
+export const createAudioFileIdentifier = (value: string): AudioFileIdentifier | null =>
+  createNonEmptyBrandedString<AudioFileIdentifier>(value);
 
-const ALLOWED_MIME_TYPES = [
+export const SUPPORTED_AUDIO_MIME_TYPES = [
   "audio/webm",
   "audio/mp4",
   "audio/mpeg",
@@ -22,12 +17,12 @@ const ALLOWED_MIME_TYPES = [
 ] as const;
 
 export const createAudioMimeType = (value: string): AudioMimeType | null =>
-  (ALLOWED_MIME_TYPES as readonly string[]).includes(value)
+  (SUPPORTED_AUDIO_MIME_TYPES as readonly string[]).includes(value)
     ? (value as AudioMimeType)
     : null;
 
 export const createStorageKey = (value: string): StorageKey | null =>
-  value.trim().length > 0 ? (value as StorageKey) : null;
+  createNonEmptyBrandedString<StorageKey>(value);
 
 export type StoredAudioFile = Readonly<{
   type: "stored";
@@ -81,19 +76,6 @@ export type AudioFileDeletionRequested = Readonly<{
 export type AudioFileDeleted = Readonly<{
   type: "audioFileDeleted";
   audioFile: DeletedAudioFile;
-  occurredAt: Date;
-}>;
-
-export type AudioFileDeletionFailed = Readonly<{
-  type: "audioFileDeletionFailed";
-  audioFile: DeleteFailedAudioFile;
-  occurredAt: Date;
-}>;
-
-export type AudioFileStored = Readonly<{
-  type: "audioFileStored";
-  audioFile: StoredAudioFile;
-  recordingAttempt: RecordingAttemptIdentifier;
   occurredAt: Date;
 }>;
 

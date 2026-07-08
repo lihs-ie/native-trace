@@ -38,3 +38,123 @@ rules:
       - "wiring_manifest.yml"
     reason: "AnalyzerClient.hs は worker→python-analyzer の HTTP 依存。ANALYZER_URL の配線を compose.yaml に明示する"
     smoke: "docker compose up -d analyzer worker && curl -fsS localhost:8787/health && curl -fsS localhost:8788/health"
+
+  # 注: when は drizzle schema 正本 (infrastructure/drizzle/schema.ts) のみを対象にする。
+  #     acl/**/schema.ts は Zod contract schema で DB migration とは無関係なので対象外。
+  - id: frontend-schema-needs-migration
+    when: "applications/frontend/src/infrastructure/drizzle/schema.ts"
+    require_one_of:
+      # drizzle-kit は migration を drizzle/ 直下にフラット生成する (meta/ は snapshot で SQL ではない)。
+      # verify-wiring の glob では ** が中間ディレクトリ 1 段以上を要求するため、直下を *.sql で指す。
+      - "applications/frontend/drizzle/*.sql"
+    reason: "drizzle schema.ts を変更したら pnpm db:generate で migration SQL を再生成する。typecheck 緑は migration 生成の証拠ではない (実機で no such table になる)。意図的に migration 不要な変更 (コメント等) なら .agent-evidence/wiring-waivers.txt に rule id を 1 行書いて理由を証跡化する"
+    smoke: "pnpm db:generate して drizzle/ に未追跡 diff が出ないこと (schema と migration が一致) を確認する"
+
+  - id: python-analyzer-pyproject-needs-dockerfile
+    when: "applications/python-analyzer/pyproject.toml"
+    require_one_of:
+      - "applications/python-analyzer/Dockerfile"
+    reason: "pyproject.toml に依存を追加しただけではコンテナに反映されない。Dockerfile はハードコード pip list なので Dockerfile の pip インストール行も共変更する。version bump 等で Dockerfile 不要な変更なら .agent-evidence/wiring-waivers.txt に rule id を 1 行書いて理由を証跡化する"
+    smoke: "docker compose up -d --build analyzer && curl -fsS localhost:8788/health"
+
+  # golden speaker 配線エッジ（ADR-012 / M-GRV-1 / M-GRV-4）
+  - id: golden-speaker-entrypoint-needs-app-wiring
+    when: "applications/golden-speaker/src/golden_speaker/interface/http_handler.py"
+    require_one_of:
+      - "applications/golden-speaker/src/golden_speaker/app.py"
+    reason: "http_handler.py の router を app.py の FastAPI Composition Root で include_router しなければ /v1/convert が到達不能になる（ORPHAN-1）"
+    smoke: "docker compose --profile golden up -d golden && curl -fsS localhost:8789/health"
+
+  - id: golden-speaker-compose-edge
+    when: "applications/golden-speaker/**"
+    require_one_of:
+      - "compose.yaml"
+      - "wiring_manifest.yml"
+    reason: "golden-speaker の変更は compose.yaml または wiring_manifest.yml も共変更して配線を明示する（ADR-012 / M-GRV-4）"
+    smoke: "docker compose --profile golden up -d golden && curl -fsS localhost:8789/health"
+
+  - id: golden-speaker-pyproject-needs-dockerfile
+    when: "applications/golden-speaker/pyproject.toml"
+    require_one_of:
+      - "applications/golden-speaker/Dockerfile"
+    reason: "pyproject.toml に依存を追加しただけではコンテナに反映されない。Dockerfile は pip インストール行のため共変更する"
+    smoke: "docker compose --profile golden up -d --build golden && curl -fsS localhost:8789/health"
+
+  # frontend/worker → golden /v1/convert HTTP エッジ（M-GRV-4）
+  # golden サービスは applications/frontend / applications/backend の内部型を import しない（HTTP 契約のみ）
+  # このエッジ記述は: frontend/worker → worker POST /golden-speaker/convert → golden POST /v1/convert → GoldenConversionResponse
+  - id: worker-golden-speaker-http-edge
+    when: "applications/golden-speaker/src/golden_speaker/interface/schema.py"
+    require_one_of:
+      - "compose.yaml"
+    reason: "GoldenConversionResponse スキーマ変更は compose.yaml の golden サービス定義と一致させる（worker/frontend が HTTP contract に合わせる）"
+    smoke: "grep 'GoldenConversionResponse' applications/golden-speaker/src/golden_speaker/interface/schema.py"
+
+  # aai service 配線エッジ（ADR-019 / M-AAI-1 / M-AAI-2 / M-AAI-16）
+  # aai service は applications/frontend / applications/backend の内部型を import しない（HTTP 契約のみ）
+  - id: aai-entrypoint-needs-app-wiring
+    when: "applications/aai/src/aai/interface/http_handler.py"
+    require_one_of:
+      - "applications/aai/src/aai/app.py"
+    reason: "http_handler.py の router を app.py の FastAPI Composition Root で include_router しなければ /v1/articulatory-inversion が到達不能になる（ORPHAN-E）"
+    smoke: "docker compose --profile aai up -d aai && curl -fsS localhost:8790/health"
+
+  - id: aai-compose-edge
+    when: "applications/aai/**"
+    require_one_of:
+      - "compose.yaml"
+      - "wiring_manifest.yml"
+    reason: "aai の変更は compose.yaml または wiring_manifest.yml も共変更して配線を明示する（ADR-019 / M-AAI-1）"
+    smoke: "docker compose --profile aai up -d aai && curl -fsS localhost:8790/health"
+
+  - id: aai-pyproject-needs-dockerfile
+    when: "applications/aai/pyproject.toml"
+    require_one_of:
+      - "applications/aai/Dockerfile"
+    reason: "pyproject.toml に依存を追加しただけではコンテナに反映されない。Dockerfile は pip インストール行のため共変更する"
+    smoke: "docker compose --profile aai up -d --build aai && curl -fsS localhost:8790/health"
+
+  # worker → aai HTTP エッジ（M-AAI-16）
+  # aai service は applications/frontend / applications/backend の内部型を import しない（HTTP 契約のみ）
+  # このエッジ記述は: worker POST /aai/articulatory-inversion → aai POST /v1/articulatory-inversion → ArticulatoryInversionResponse
+  - id: worker-aai-http-edge
+    when: "applications/aai/src/aai/interface/schema.py"
+    require_one_of:
+      - "compose.yaml"
+    reason: "ArticulatoryInversionResponse スキーマ変更は compose.yaml の aai サービス定義と一致させる（worker が HTTP contract に合わせる）"
+    smoke: "grep 'ArticulatoryInversionResponse' applications/aai/src/aai/interface/schema.py"
+
+  # full-cycle 配線エッジ（ADR-031 D3/D5/M-FCH-8）
+  # practice-attempts と retry-recordings の smoke は tier-1 full-cycle driver で実行する。
+  # CI コスト: cold analyzer start_period=180s のため local-first 前提。
+  # fullcycle.yml label-gated CI は後続 (ADR-031 Non-goals)。
+  - id: practice-attempts-fullcycle-smoke
+    when: "applications/frontend/src/app/api/v1/sections/*/practice-attempts/route.ts"
+    require_one_of:
+      - "applications/frontend/test/fullcycle/driver.ts"
+      - "applications/frontend/test/fullcycle/cases/gop-delta.case.ts"
+    reason: "practice-attempts route の変更は full-cycle driver (tier-1 smoke) で回帰検証する"
+    smoke: "pnpm test:fullcycle gop-delta"
+
+  - id: retry-recordings-fullcycle-smoke
+    when: "applications/frontend/src/app/api/v1/findings/*/retry-recordings/route.ts"
+    require_one_of:
+      - "applications/frontend/test/fullcycle/driver.ts"
+      - "applications/frontend/test/fullcycle/cases/gop-delta.case.ts"
+    reason: "retry-recordings route の変更は full-cycle driver (tier-1 smoke) で回帰検証する"
+    smoke: "pnpm test:fullcycle gop-delta"
+
+  # drift sentinel 配線エッジ（ADR-031 D12 Stage-3 / M-DRIFT-WIRING）
+  - id: drift-check
+    when: "applications/python-analyzer/test/selfeval/drift_check.py"
+    require_one_of:
+      - "package.json"
+    reason: "drift_check.py は package.json の test:drift スクリプトから呼び出される。test:drift が宣言されていなければ drift sentinel は孤立する"
+    smoke: "python3 applications/python-analyzer/test/selfeval/drift_check.py --analyzer-url http://localhost:8788"
+
+  - id: drift-compute-fingerprint
+    when: "applications/python-analyzer/test/selfeval/compute_fingerprint.py"
+    require_one_of:
+      - "applications/python-analyzer/test/fixtures/corpus/manifest.json"
+    reason: "compute_fingerprint.py --write は manifest.json の analyzerCommit を更新する。manifest への書き込み経路が宣言されていなければ fingerprint pin が死に続ける"
+    smoke: "python3 applications/python-analyzer/test/selfeval/compute_fingerprint.py --write"

@@ -7,8 +7,15 @@ import type { EngineFindingDto, EngineResultDto, WorkspaceDto } from "@/lib/api-
 import { toSeverityClass, SEVERITY_DISPLAY_LABELS } from "@/lib/severity";
 import { deriveEngineAgreement } from "@/lib/engine-agreement";
 import type { AgreementItem } from "@/lib/engine-agreement";
-import { Gauge, ScoreRows, HighlightedWorkspaceText } from "@/components/workspace";
+import { engineColorVariable, engineDisplayName } from "@/lib/engine-display";
+import {
+  Gauge,
+  ScoreRows,
+  HighlightedWorkspaceText,
+  SeverityCountPills,
+} from "@/components/workspace";
 import { AppBar } from "@/components/chrome/AppBar";
+import { formatDateTimeMinutes } from "@/lib/format-time";
 
 type PageProps = {
   params: Promise<{ materialIdentifier: string; sectionIdentifier: string }>;
@@ -18,20 +25,12 @@ type PageProps = {
 const COMPARE_WAVE_HEIGHTS = [40, 75, 55, 85, 45, 65, 50, 80, 38, 62, 48, 70];
 
 // engineKind から設計ラベルへの写像（design compare.html 準拠）
+// oss_worker は engine-display.ts の canonical 表示名 "OSS Worker" ではなく
+// このページ固有の "Rust OSS" を維持する（W33: 現行値不一致のためローカル残置）。
 const ENGINE_KIND_LABELS: Record<EngineResultDto["engineKind"], string> = {
-  cloud: "OpenAI API",
+  cloud: engineDisplayName("cloud"),
   oss_worker: "Rust OSS",
 };
-
-function formatDateTime(isoString: string): string {
-  const date = new Date(isoString);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const hour = String(date.getHours()).padStart(2, "0");
-  const minute = String(date.getMinutes()).padStart(2, "0");
-  return `${year}-${month}-${day} ${hour}:${minute}`;
-}
 
 type SeverityBadgeProps = {
   severity: EngineFindingDto["severity"];
@@ -102,7 +101,7 @@ type EngineColumnProps = {
 
 function EngineColumn({ engineResult, bodyText, isOss }: EngineColumnProps) {
   const [selectedFinding, setSelectedFinding] = useState<EngineFindingDto | null>(null);
-  const dotColor = isOss ? "var(--engine-rust)" : "var(--engine-openai)";
+  const dotColor = engineColorVariable(engineResult.engineKind);
 
   return (
     <div className={`ecol${isOss ? " ecol--oss" : ""}`}>
@@ -126,19 +125,7 @@ function EngineColumn({ engineResult, bodyText, isOss }: EngineColumnProps) {
           showMarks
         />
       </div>
-      <div className="ecol-sev">
-        {(["critical", "major", "minor", "suggestion"] as const).map((sev) => {
-          const cssClass = toSeverityClass(sev);
-          const count = engineResult.counts[sev];
-          const label = SEVERITY_DISPLAY_LABELS[cssClass];
-          return (
-            <span key={sev} className="sevpill">
-              <span className="dot" style={{ background: `var(--sev-${cssClass})` }} />
-              {count} {label}
-            </span>
-          );
-        })}
-      </div>
+      <SeverityCountPills counts={engineResult.counts} className="ecol-sev" />
     </div>
   );
 }
@@ -243,7 +230,9 @@ export default function ComparePage({ params }: PageProps) {
           />
           比較モード
         </span>
-        {latestAttempt && <span className="att">{formatDateTime(latestAttempt.createdAt)}</span>}
+        {latestAttempt && (
+          <span className="att">{formatDateTimeMinutes(latestAttempt.createdAt)}</span>
+        )}
         {audioUrl && (
           <div
             className="player"

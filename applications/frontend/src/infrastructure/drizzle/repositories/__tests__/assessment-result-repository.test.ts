@@ -10,7 +10,7 @@ import {
   createScore0To100,
   createTokenizerVersion,
   createAssessmentFindingIdentifier,
-  createTextRange,
+  type TextRange,
   createConfidence0To1,
 } from "../../../../domain/assessment-result";
 import { createAnalysisJobIdentifier } from "../../../../domain/analysis-job";
@@ -131,7 +131,7 @@ describe("DrizzleAssessmentResultRepository", () => {
     const analysisJob = createAnalysisJobIdentifier("JOB001")!;
     const tokenizerVersion = createTokenizerVersion("1.0.0")!;
     const findingId = createAssessmentFindingIdentifier("FIND001")!;
-    const textRange = createTextRange(0, 5)._unsafeUnwrap();
+    const textRange = { startOffset: 0, endOffset: 5 } as TextRange;
     const confidence = createConfidence0To1(0.9)._unsafeUnwrap();
 
     const { assessmentResult } = createAssessmentResult({
@@ -144,6 +144,10 @@ describe("DrizzleAssessmentResultRepository", () => {
         pronunciation: createScore0To100(85)._unsafeUnwrap(),
         connectedSpeech: createScore0To100(80)._unsafeUnwrap(),
         prosody: createScore0To100(78)._unsafeUnwrap(),
+        intelligibility: createScore0To100(86)._unsafeUnwrap(),
+        cefrOverall: { score: 64, band: "B2" },
+        cefrSegmental: { score: 58, band: "B1+" },
+        cefrProsodic: { score: 46, band: "B1" },
       },
       summary: { overallCommentJa: "良い発音です", overallCommentEn: "Good pronunciation" },
       findings: [
@@ -161,6 +165,19 @@ describe("DrizzleAssessmentResultRepository", () => {
           messageEn: "Slight pronunciation difference",
           scoreImpact: -2,
           confidence,
+          detectedTopCandidate: "[l]",
+          nBest: [{ phoneme: "[l]", confidence: 0.8 }],
+          matchesL1Pattern: true,
+          functionalLoad: "max",
+          catalogId: "l-r-substitution",
+          wordPair: null,
+          expectedPronunciation: null,
+          insertedVowel: null,
+          insertionPositionMs: null,
+          feedbackLayers: { whatJa: "観測", whyJa: "原因", howJa: "修正" },
+          dismissed: false,
+          wordPositionLabel: "initial" as const,
+          articulatoryEstimate: null,
         },
       ],
       segments: [{ textRange, audioRange: null, transcript: "hello", confidence: 0.9 }],
@@ -180,6 +197,27 @@ describe("DrizzleAssessmentResultRepository", () => {
         modelName: "gpt-4o",
       },
       now: new Date(),
+      perPhonemeGop: [{ word: "hello", phoneme: "h", gop: -3.0, heat: 1 }],
+      focusSounds: [
+        {
+          pair: "/l/·/r/",
+          phenomenon: "substitution",
+          functionalLoad: "max",
+          occurrences: 3,
+          priority: "now",
+          reasonJa: "弾き音への合流",
+          catalogId: "l-r-substitution",
+        },
+      ],
+      prosody: {
+        f0Contour: { timesMs: [0, 10], valuesHz: [120, 130] },
+        referenceF0Contour: { timesMs: [0, 10], valuesHz: [118, 126] },
+        wordStress: [{ word: "hello", wordIndex: 0, expectedStress: 1, predictedStress: 0 }],
+        rhythmNpvi: 40,
+        referenceNpvi: 65,
+        weakFormRate: 0.5,
+      },
+      engineSummaryMessageJa: "高FLの /l/-/r/ 置換が今回の最優先です。",
     });
 
     await repository.persist(assessmentResult);
@@ -187,6 +225,15 @@ describe("DrizzleAssessmentResultRepository", () => {
     expect(found.isOk()).toBe(true);
     expect(String(found._unsafeUnwrap().identifier)).toBe("AR001");
     expect(found._unsafeUnwrap().scores.overall).toBe(80);
+    // v2: 二段階スコア・finding 詳細・全音素 GOP が round-trip すること（M-107c/M-111 回帰防止）
+    expect(found._unsafeUnwrap().scores.intelligibility).toBe(86);
+    expect(found._unsafeUnwrap().scores.cefrOverall?.band).toBe("B2");
+    expect(found._unsafeUnwrap().findings[0].matchesL1Pattern).toBe(true);
+    expect(found._unsafeUnwrap().findings[0].feedbackLayers?.whatJa).toBe("観測");
+    expect(found._unsafeUnwrap().perPhonemeGop?.length).toBe(1);
+    expect(found._unsafeUnwrap().engineSummaryMessageJa).toContain("最優先");
+    // M-104R-b: wordPositionLabel が round-trip すること
+    expect(found._unsafeUnwrap().findings[0].wordPositionLabel).toBe("initial");
   });
 
   it("存在しない採点結果は notFound を返す", async () => {

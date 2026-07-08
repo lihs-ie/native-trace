@@ -2,6 +2,7 @@
 
 import { buildSegments } from "@/components/highlighted-text/segment";
 import { toSeverityClass } from "@/lib/severity";
+import { getPhenomenonIcon } from "@/lib/phenomenon";
 import type { EngineFindingDto } from "@/lib/api-types";
 
 type HighlightedWorkspaceTextProps = {
@@ -10,6 +11,8 @@ type HighlightedWorkspaceTextProps = {
   selectedFindingIdentifier: string | null;
   onSelect: (finding: EngineFindingDto) => void;
   showMarks: boolean;
+  /** v2: phenomenon アイコン (.hl-ico) を表示するか（デフォルト false） */
+  showPhenomenonIcons?: boolean;
 };
 
 export const HighlightedWorkspaceText = ({
@@ -18,6 +21,7 @@ export const HighlightedWorkspaceText = ({
   selectedFindingIdentifier,
   onSelect,
   showMarks,
+  showPhenomenonIcons = false,
 }: HighlightedWorkspaceTextProps) => {
   const highlights = showMarks
     ? findings.map((f) => ({
@@ -39,7 +43,11 @@ export const HighlightedWorkspaceText = ({
     <p className="ws-text">
       {segments.map((segment) => {
         if (segment.highlights.length === 0) {
-          return <span key={segment.startChar} className="w">{segment.text}</span>;
+          return (
+            <span key={segment.startChar} className="w">
+              {segment.text}
+            </span>
+          );
         }
 
         // 複数ハイライトが重なる場合、最初のものを代表として使う
@@ -48,14 +56,14 @@ export const HighlightedWorkspaceText = ({
         const matchedFinding = findings.find((f) => f.finding === dominantHighlight.finding);
         const isSelected = matchedFinding?.finding === selectedFindingIdentifier;
 
-        const classNames = [
-          "w",
-          "mk",
-          `mk--${severityClass}`,
-          isSelected ? "is-sel" : "",
-        ]
+        const classNames = ["w", "mk", `mk--${severityClass}`, isSelected ? "is-sel" : ""]
           .filter(Boolean)
           .join(" ");
+
+        const phenomenonIcon =
+          showPhenomenonIcons && matchedFinding?.phenomenon
+            ? getPhenomenonIcon(matchedFinding.phenomenon)
+            : null;
 
         return (
           <span
@@ -69,6 +77,7 @@ export const HighlightedWorkspaceText = ({
             }}
           >
             {segment.text}
+            {phenomenonIcon && <sup className="hl-ico">{phenomenonIcon}</sup>}
           </span>
         );
       })}

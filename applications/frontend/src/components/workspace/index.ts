@@ -1,7 +1,15 @@
+export { EngineSegSelector } from "./EngineSegSelector";
 export { Ribbon } from "./Ribbon";
 export { Gauge, calcGaugeDashOffset } from "./Gauge";
 export { ScoreRows } from "./ScoreRows";
+export { SeverityCountPills } from "./SeverityCountPills";
 export { EngineTabs } from "./EngineTabs";
 export { DetailPanel } from "./DetailPanel";
+export { DetailPanelV2 } from "./DetailPanelV2";
+export { ArticulationCard } from "./ArticulationCard";
 export { LiveWave } from "./LiveWave";
 export { HighlightedWorkspaceText } from "./HighlightedWorkspaceText";
+export { GopHeatmap } from "./GopHeatmap";
+export { F0Chart } from "./F0Chart";
+export { RailV2 } from "./RailV2";
+export { WorkspaceResultV2 } from "./WorkspaceResultV2";

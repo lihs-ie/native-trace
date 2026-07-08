@@ -11,27 +11,12 @@ set -euo pipefail
 repository_root="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 cd "$repository_root"
 
+source "$repository_root/scripts/lib/changed-files.sh"
+
 # 差分対象 (CI) か、引数で渡された単一ファイル (hook) か。
-if [ "$#" -gt 0 ]; then
-  changed="$1"
-else
-  base="${BASE_REF:-$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@refs/remotes/@@')}"
-  [ -z "${base:-}" ] && base="origin/main"
-  if git rev-parse --verify "$base" >/dev/null 2>&1; then
-    changed="$(git diff --name-only --diff-filter=ACMRT "$base"...HEAD)"
-  else
-    changed="$(git diff --name-only --diff-filter=ACMRT HEAD~1 2>/dev/null || git ls-files)"
-  fi
-  if [ -z "$changed" ]; then
-    # no committed diff vs base — fall back to working-tree changes so uncommitted/untracked
-    # work is not vacuously passed (CI always has a committed diff, so this branch is CI-inert).
-    changed="$(git diff --name-only --diff-filter=ACMRT HEAD 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null)"
-  fi
-fi
+changed="$(collect_changed_files "${1:-}")"
 
 # テスト系ディレクトリは除外 (テストダブルは正当)。docs/config はコード拡張子で除外。
-test_dir_re='(^|/)(test|tests|__tests__|spec|specs|fixtures|testdata|mocks?|stubs?|fakes?)(/|$)'
-code_ext_re='\.(ts|tsx|js|jsx|mjs|cjs|go|php|py|rb|java|kt|kts|hs|rs|scala|swift|c|cc|cpp|h|hpp)$'
 prod_changed="$(printf '%s\n' "$changed" | grep -Evi "$test_dir_re" | grep -Evi '(^|/)generated/' | grep -Ei "$code_ext_re" || true)"
 
 # allowlist (owner+expiry 付き・期限内) のパスを除外。
@@ -67,7 +52,11 @@ while IFS= read -r f; do
     *Mock.hs|*Stub.hs|*Fake.hs|*Dummy.hs|*mock.go|*stub.go|*fake.go|*mock.py|*stub.py|*fake.py|*mock.php|*stub.php)
       name_hits="${name_hits}${f}"$'\n' ;;
   esac
-  if grep -nEi 'jest\.mock\(|vi\.mock\(|\bsinon\b|gomock|testify/mock|\bmockery\b|unittest\.mock|[^a-zA-Z]patch\(|\bMockito\b|\bmockk\b|createMock|jest\.fn\(\)\.mock' "$f" >/dev/null 2>&1; then
+  # Note: [^a-zA-Z]patch\( targets unittest.mock.patch() but must not match
+  # Next.js App Router HTTP method handlers (export async function PATCH(...)).
+  # We filter out lines containing "function PATCH" before checking.
+  if grep -Ei '[^a-zA-Z]patch\(' "$f" 2>/dev/null | grep -viE 'function\s+PATCH\s*\(' | grep -q . 2>/dev/null \
+    || grep -nEi 'jest\.mock\(|vi\.mock\(|\bsinon\b|gomock|testify/mock|\bmockery\b|unittest\.mock|\bMockito\b|\bmockk\b|createMock|jest\.fn\(\)\.mock' "$f" >/dev/null 2>&1; then
     content_hits="${content_hits}${f}: mocking-library usage"$'\n'
   fi
   # Haskell: 非 test の src/app に test double 識別子・モジュール

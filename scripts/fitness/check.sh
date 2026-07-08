@@ -22,4 +22,7 @@ echo "== fitness: ast-grep scan =="
 echo "== fitness: eslint (dependency direction) =="
 pnpm --filter @native-trace/frontend lint
 
+echo "== fitness: no-harness-import-in-prod =="
+bash "$repository_root/scripts/verify-no-harness-import-in-prod.sh"
+
 echo "== fitness: OK =="

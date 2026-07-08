@@ -6,7 +6,6 @@
 
 import io
 import logging
-import math
 import subprocess
 from typing import Any  # noqa: UP035
 
@@ -16,7 +15,7 @@ import torchaudio  # type: ignore[import-untyped]
 from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor  # type: ignore[import-untyped]
 
 from python_analyzer.domain.audio import AudioInput
-from python_analyzer.domain.measurement import PhonemeGopMeasurement
+from python_analyzer.domain.measurement import NBestCandidate, PhonemeGopMeasurement
 from python_analyzer.domain.phoneme import (
     AlignmentBoundary,
     GopScore,
@@ -24,10 +23,47 @@ from python_analyzer.domain.phoneme import (
     PhonemeLabel,
 )
 from python_analyzer.infrastructure.audio_energy import (
+    compute_speech_active_rms,
     compute_speech_duration_seconds_from_energy,
+    compute_wada_snr,
+    rms_to_dbfs,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def top_n_phonemes(
+    avg_probs: "torch.Tensor",
+    vocabulary: list[str],
+    n: int = 3,
+) -> tuple[NBestCandidate, ...]:
+    """softmax 確率テンソルから上位 n 件の IPA 候補を返す純関数。
+
+    Args:
+        avg_probs: shape (V,) の softmax 確率テンソル（1 音素フレーム区間の平均値）。
+        vocabulary: モデルの語彙リスト（wav2vec2 vocab）。
+        n: 取得する上位候補数（デフォルト 3）。
+
+    Returns:
+        確率降順で上位 n 件の NBestCandidate タプル。
+        特殊トークン (<pad>/<unk>/<s>/</s>/|) は除外。
+    """
+    special_tokens = {"<pad>", "<unk>", "<s>", "</s>", "|", ""}
+    # 確率降順でソートしてインデックスを取得する
+    sorted_indices = torch.argsort(avg_probs, descending=True)
+    candidates: list[NBestCandidate] = []
+    for idx in sorted_indices.tolist():
+        if len(candidates) >= n:
+            break
+        if idx >= len(vocabulary):
+            continue
+        token = vocabulary[idx]
+        if token in special_tokens:
+            continue
+        confidence = float(avg_probs[idx].item())
+        candidates.append(NBestCandidate(phoneme=token, confidence=confidence))
+    return tuple(candidates)
+
 
 # Hugging Face モデル ID（ADR-001 で確定）
 _MODEL_ID = "facebook/wav2vec2-lv-60-espeak-cv-ft"
@@ -227,6 +263,7 @@ class Wav2Vec2Aligner:
             token_ids,
             reference_ipa,
             audio.duration_milliseconds,
+            vocabulary,
         )
         return boundaries, gop_measurements
 
@@ -252,31 +289,35 @@ class Wav2Vec2Aligner:
                         token_ids.append(char_id)
         return token_ids
 
-    def measure_audio_quality(self, audio: AudioInput) -> tuple[float, float]:
+    def measure_audio_quality(self, audio: AudioInput) -> tuple[float, float, float]:
         """録音品質を計測する。
 
-        16kHz モノラル waveform の RMS から mean dBFS を計算し、
-        エネルギーベース VAD で実音声長（秒）を計測する。
+        16kHz モノラル waveform の発話区間フレーム RMS から mean dBFS を計算し、
+        エネルギーベース VAD で実音声長（秒）と WADA-SNR 推定値（dB）を計測する。
 
-        dBFS = 20 * log10(RMS)。無音（RMS≒0）は -100.0 dBFS を返す。
+        mean_dbfs = 20 * log10(speech_active_rms)。
+        発話区間フレームが 0 件（no-speech）の場合は NO_SPEECH_DBFS_SENTINEL（-100.0）
+        dBFS を返す（番兵値、audio_energy.rms_to_dbfs 経由）。
+        発話区間フレームは audio_energy.compute_speech_active_rms で算出する
+        （energy-VAD フレーミング: 320 サンプル / 20ms、ENERGY_SILENCE_RMS_THRESHOLD）。
+        全区間 RMS の代わりに発話区間 RMS を使うことで、語間ポーズや末尾無音による
+        ラウドネス希釈を除去し、明瞭発話の誤棄却を防ぐ（ADR-015 D1）。
         speechDurationSeconds: compute_speech_duration_seconds_from_energy で算出する。
-        CTC 非 blank フレーム数は音素検出数に近く実発話時間と桁が乖離するため使わない。
-        エネルギーフレームの RMS > _ENERGY_SILENCE_RMS_THRESHOLD のフレームが発話区間。
+        estimated_snr_db: compute_wada_snr で算出する（ADR-032 D1）。
 
         Returns:
-            (mean_dbfs, speech_duration_seconds)
+            (mean_dbfs, speech_duration_seconds, estimated_snr_db)
         """
         waveform = self._load_audio_tensor(audio)
-        rms = float(waveform.pow(2).mean().sqrt().item())
-        if rms < 1e-9:
-            mean_dbfs = -100.0
-        else:
-            mean_dbfs = 20.0 * math.log10(rms)
-
         waveform_numpy = waveform.numpy()
-        speech_duration_seconds = compute_speech_duration_seconds_from_energy(waveform_numpy)
 
-        return mean_dbfs, speech_duration_seconds
+        speech_active_rms = compute_speech_active_rms(waveform_numpy)
+        mean_dbfs = rms_to_dbfs(speech_active_rms)
+
+        speech_duration_seconds = compute_speech_duration_seconds_from_energy(waveform_numpy)
+        estimated_snr_db = compute_wada_snr(waveform_numpy, _TARGET_SAMPLE_RATE)
+
+        return mean_dbfs, speech_duration_seconds, estimated_snr_db
 
     def _compute_boundaries_and_gop(
         self,
@@ -286,10 +327,13 @@ class Wav2Vec2Aligner:
         token_ids: list[int],
         reference_ipa: IpaSequence,
         audio_duration_milliseconds: int,
+        vocabulary: list[str] | None = None,
     ) -> tuple[tuple[AlignmentBoundary, ...], tuple[PhonemeGopMeasurement, ...]]:
         """整列結果から時間境界と GOP を計算する。
 
         GOP(p) = (1/T) * sum(log P(p|x_t)) （ADR-001）
+
+        vocabulary: top_n_phonemes に使用する語彙リスト。None の場合は n_best 算出をスキップ。
         """
         total_frames = len(aligned_token_sequence)
         frame_duration_ms = (
@@ -336,8 +380,18 @@ class Wav2Vec2Aligner:
             if frame_count > 0:
                 gop_frames = log_probs[start_frame : end_frame + 1, token_id]
                 gop_value = float(gop_frames.mean().item())
+                # n_best: 整列フレーム区間の softmax 平均から上位候補を取得する
+                if vocabulary is not None:
+                    frame_log_probs = log_probs[start_frame : end_frame + 1, :]
+                    avg_log_probs = frame_log_probs.mean(dim=0)
+                    # log_probs は log_softmax 値なので exp() で softmax 確率に戻す
+                    avg_softmax_probs = torch.exp(avg_log_probs)
+                    n_best = top_n_phonemes(avg_softmax_probs, vocabulary, n=3)
+                else:
+                    n_best = ()
             else:
                 gop_value = float("-inf")
+                n_best = ()
 
             boundaries.append(
                 AlignmentBoundary(
@@ -352,6 +406,7 @@ class Wav2Vec2Aligner:
                     gop=GopScore(value=gop_value),
                     start_milliseconds=start_ms,
                     end_milliseconds=end_ms,
+                    n_best=n_best,
                 )
             )
 

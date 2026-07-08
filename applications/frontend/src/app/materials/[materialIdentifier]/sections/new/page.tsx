@@ -51,15 +51,16 @@ export default function NewSectionPage({ params }: PageProps) {
       });
       router.push(`/materials/${materialIdentifier}`);
     } catch (error: unknown) {
-      setErrorMessage(
-        isApiClientError(error) ? error.message : "セクションの作成に失敗しました",
-      );
+      setErrorMessage(isApiClientError(error) ? error.message : "セクションの作成に失敗しました");
       setSubmitting(false);
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+    <form
+      onSubmit={handleSubmit}
+      style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}
+    >
       <AppBar
         crumb={
           <>
@@ -119,7 +120,8 @@ export default function NewSectionPage({ params }: PageProps) {
             <span className="field-lbl">
               英文本文 <span className="req-star">*</span>
               <span style={{ color: "var(--text-faint)", fontWeight: 400 }}>
-                {" "}— General American で練習する一節を貼り付け
+                {" "}
+                — General American で練習する一節を貼り付け
               </span>
             </span>
             <textarea
@@ -156,24 +158,22 @@ export default function NewSectionPage({ params }: PageProps) {
             <li className={`vcheck vcheck--${validation.isNotEmpty}`}>
               <span className="vi" />
               <span className="vt">
-                空でない本文{" "}
-                {metrics.chars > 0 && (
-                  <span>· {metrics.chars} chars</span>
-                )}
+                空でない本文 {metrics.chars > 0 && <span>· {metrics.chars} chars</span>}
               </span>
             </li>
             <li className={`vcheck vcheck--${validation.isWithinMaxLength}`}>
               <span className="vi" />
               <span className="vt">
-                最大文字数内{" "}
-                <span>· {MAX_BODY_TEXT_LENGTH.toLocaleString()} まで</span>
+                最大文字数内 <span>· {MAX_BODY_TEXT_LENGTH.toLocaleString()} まで</span>
               </span>
             </li>
             <li className={`vcheck vcheck--${validation.meetsEnglishRatio}`}>
               <span className="vi" />
               <span className="vt">
                 英字割合を満たす{" "}
-                <span>· {englishPercent}% ≥ {Math.round(MIN_ENGLISH_CHAR_RATIO * 100)}%</span>
+                <span>
+                  · {englishPercent}% ≥ {Math.round(MIN_ENGLISH_CHAR_RATIO * 100)}%
+                </span>
               </span>
             </li>
             <li className={`vcheck vcheck--${validation.hasNoControlCharacters}`}>
@@ -183,8 +183,7 @@ export default function NewSectionPage({ params }: PageProps) {
             <li className={`vcheck vcheck--${validation.isNotLong}`}>
               <span className="vi" />
               <span className="vt">
-                長文は分割を推奨{" "}
-                <span>· {LONG_BODY_WARN_LENGTH.toLocaleString()} 字超で warn</span>
+                長文は分割を推奨 <span>· {LONG_BODY_WARN_LENGTH.toLocaleString()} 字超で warn</span>
               </span>
             </li>
           </ul>
@@ -206,11 +205,7 @@ export default function NewSectionPage({ params }: PageProps) {
         >
           下書き保存
         </button>
-        <button
-          type="submit"
-          className="btn btn--primary"
-          disabled={!canSubmit}
-        >
+        <button type="submit" className="btn btn--primary" disabled={!canSubmit}>
           {submitting ? "作成中..." : "＋ セクションを作成"}
         </button>
       </div>

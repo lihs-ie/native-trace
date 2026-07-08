@@ -4,14 +4,17 @@ import Link from "next/link";
 import { use, useCallback, useEffect, useRef, useState } from "react";
 import { apiGet, apiPost, apiPostForm, isApiClientError } from "@/lib/api-client";
 import { nowMs } from "@/lib/now";
+import { detectBrowserEnvironment } from "@/lib/browser-environment";
+import { formatMinutesSeconds } from "@/lib/format-time";
 import {
   type AnalysisMode,
   type EngineFindingDto,
   type EngineResultDto,
   type WorkspaceDto,
 } from "@/lib/api-types";
-import { toSeverityClass, SEVERITY_DISPLAY_LABELS } from "@/lib/severity";
+import { engineColorVariable } from "@/lib/engine-display";
 import {
+  EngineSegSelector,
   Ribbon,
   Gauge,
   ScoreRows,
@@ -19,32 +22,20 @@ import {
   DetailPanel,
   LiveWave,
   HighlightedWorkspaceText,
+  WorkspaceResultV2,
+  SeverityCountPills,
 } from "@/components/workspace";
-import { computeRmsLevel, rmsLevelToDisplayPercentage } from "@/components/workspace/volume-meter";
+import { useRecordingWithVolumeMeter } from "@/components/workspace/use-recording-with-volume-meter";
+import { AppTop } from "@/components/chrome";
+
+// ワークスペースのポーリング周期（ms）。値の統一はしない（diagnostic ページの POLL_INTERVAL_MS とは別値）。
+const WORKSPACE_POLL_INTERVAL_MILLISECONDS = 2000;
 
 type PageProps = {
   params: Promise<{ materialIdentifier: string; sectionIdentifier: string }>;
 };
 
 type WorkspaceState = "idle" | "recording" | "analyzing" | "result" | "failed" | "low_quality";
-
-// dBFS display scale threshold: -35dBFS ≈ 43% in the log scale
-// ((−35 + 60) / 60) * 98 + 2 ≈ 43
-// Aligned with the backend quality-guard lower bound (meanDbfs < −35).
-// Voices below this level are likely to be rejected by the quality guard.
-const LOW_VOLUME_DISPLAY_THRESHOLD = 43;
-
-const detectBrowserInfo = () => ({
-  browserName: navigator.userAgent.includes("Chrome")
-    ? "Chrome"
-    : navigator.userAgent.includes("Firefox")
-      ? "Firefox"
-      : navigator.userAgent.includes("Safari")
-        ? "Safari"
-        : "Unknown",
-  browserVersion: navigator.userAgent,
-  deviceType: /Mobi|Android|iPhone/i.test(navigator.userAgent) ? "mobile" : "desktop",
-});
 
 export const deriveWorkspaceState = (
   workspace: WorkspaceDto | null,
@@ -88,29 +79,18 @@ export default function WorkspacePage({ params }: PageProps) {
   const [recordError, setRecordError] = useState<string | null>(null);
 
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>("comparison");
-  const [isRecording, setIsRecording] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const [activeEngineResult, setActiveEngineResult] = useState<string | null>(null);
   const [selectedFinding, setSelectedFinding] = useState<EngineFindingDto | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [recSeconds, setRecSeconds] = useState(0);
   const [playerTime, setPlayerTime] = useState<{ currentTime: number; duration: number }>({
     currentTime: 0,
     duration: 0,
   });
 
-  const [volumeLevel, setVolumeLevel] = useState(0);
-
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const startedAtRef = useRef<number>(0);
-  const recTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
-
-  const state = deriveWorkspaceState(workspace, isRecording, submitting);
+  const startedAtRef = useRef<number>(0);
 
   const refresh = useCallback(
     () =>
@@ -138,21 +118,9 @@ export default function WorkspacePage({ params }: PageProps) {
   // 初回取得 + 2 秒ポーリング
   useEffect(() => {
     void refresh();
-    const intervalId = setInterval(() => void refresh(), 2000);
+    const intervalId = setInterval(() => void refresh(), WORKSPACE_POLL_INTERVAL_MILLISECONDS);
     return () => clearInterval(intervalId);
   }, [refresh]);
-
-  // AudioContext のアンマウント時 cleanup
-  useEffect(() => {
-    return () => {
-      if (animationFrameRef.current !== null) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-      if (audioContextRef.current !== null) {
-        void audioContextRef.current.close();
-      }
-    };
-  }, []);
 
   const submitRecording = useCallback(
     async (blob: Blob) => {
@@ -169,7 +137,7 @@ export default function WorkspacePage({ params }: PageProps) {
       formData.append("recordedDurationMs", String(durationMs));
       formData.append("startedAt", new Date(startedAtRef.current).toISOString());
       formData.append("endedAt", new Date(endedAt).toISOString());
-      formData.append("browserInfo", JSON.stringify(detectBrowserInfo()));
+      formData.append("browserInfo", JSON.stringify(detectBrowserEnvironment()));
 
       try {
         await apiPostForm(`/api/v1/sections/${sectionIdentifier}/practice-attempts`, formData);
@@ -183,82 +151,32 @@ export default function WorkspacePage({ params }: PageProps) {
     [analysisMode, sectionIdentifier, refresh],
   );
 
-  const cleanupAudioContext = () => {
-    if (animationFrameRef.current !== null) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
-    if (audioContextRef.current !== null) {
-      void audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
-    setVolumeLevel(0);
-  };
+  // W35: getUserMedia 制約・AnalyserNode・peak-hold ループ・タイマー・cleanup は
+  // use-recording-with-volume-meter.ts に一本化（diagnostic ページと共有）。
+  // onstop 送信コールバック（submitRecording 呼び出し）はページ側に残す。
+  const {
+    isRecording,
+    recSeconds,
+    volumeLevel,
+    isLowVolume,
+    startRecording: startRecordingWithVolumeMeter,
+    stopRecording,
+  } = useRecordingWithVolumeMeter({
+    onStart: (startedAt) => {
+      startedAtRef.current = startedAt;
+    },
+    onStop: (blob) => {
+      void submitRecording(blob);
+    },
+    onError: (message) => setRecordError(message),
+  });
 
-  const startRecording = async () => {
+  const state = deriveWorkspaceState(workspace, isRecording, submitting);
+
+  const startRecording = () => {
     setRecordError(null);
     setSelectedFinding(null);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          autoGainControl: false,
-          noiseSuppression: false,
-          echoCancellation: false,
-        },
-      });
-
-      // Set up AudioContext for real-time volume metering
-      const audioContext = new AudioContext();
-      audioContextRef.current = audioContext;
-      const analyserNode = audioContext.createAnalyser();
-      analyserNode.fftSize = 512;
-      const mediaStreamSource = audioContext.createMediaStreamSource(stream);
-      mediaStreamSource.connect(analyserNode);
-
-      const timeDomainBuffer = new Uint8Array(analyserNode.fftSize);
-
-      const updateVolumeMeter = () => {
-        analyserNode.getByteTimeDomainData(timeDomainBuffer);
-        const rmsLevel = computeRmsLevel(timeDomainBuffer);
-        setVolumeLevel(rmsLevelToDisplayPercentage(rmsLevel));
-        animationFrameRef.current = requestAnimationFrame(updateVolumeMeter);
-      };
-      animationFrameRef.current = requestAnimationFrame(updateVolumeMeter);
-
-      const recorder = new MediaRecorder(stream);
-      chunksRef.current = [];
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) chunksRef.current.push(event.data);
-      };
-      recorder.onstop = () => {
-        stream.getTracks().forEach((track) => track.stop());
-        cleanupAudioContext();
-        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
-        void submitRecording(blob);
-      };
-      startedAtRef.current = nowMs();
-      setRecSeconds(0);
-      mediaRecorderRef.current = recorder;
-      recorder.start();
-      setIsRecording(true);
-
-      recTimerRef.current = setInterval(() => {
-        setRecSeconds((s) => s + 1);
-      }, 1000);
-    } catch {
-      cleanupAudioContext();
-      setRecordError("マイクへのアクセスに失敗しました。ブラウザの権限を確認してください。");
-    }
-  };
-
-  const stopRecording = () => {
-    if (recTimerRef.current) {
-      clearInterval(recTimerRef.current);
-      recTimerRef.current = null;
-    }
-    mediaRecorderRef.current?.stop();
-    setIsRecording(false);
-    // AudioContext cleanup happens in recorder.onstop after stream tracks are stopped
+    void startRecordingWithVolumeMeter();
   };
 
   const handleAddEngine = async () => {
@@ -281,7 +199,7 @@ export default function WorkspacePage({ params }: PageProps) {
   };
 
   // 録音秒数のフォーマット
-  const formattedRecTime = `${Math.floor(recSeconds / 60)}:${String(recSeconds % 60).padStart(2, "0")}`;
+  const formattedRecTime = formatMinutesSeconds(recSeconds);
 
   // 秒数を m:ss 形式にフォーマット
   const formatTime = (seconds: number): string => {
@@ -318,9 +236,7 @@ export default function WorkspacePage({ params }: PageProps) {
     <div className="ws" data-state={state} data-annostyle="underline" data-tone="standard">
       {/* app-top */}
       <div className="app-top">
-        <div className="app-brand">
-          NativeTrace <span className="ipa">/ˈneɪtɪv treɪs/</span>
-        </div>
+        <AppTop />
         <div className="crumb" style={{ marginLeft: "16px" }}>
           <span>{materialIdentifier}</span>
           <span className="sep">›</span>
@@ -349,31 +265,17 @@ export default function WorkspacePage({ params }: PageProps) {
       {/* process ribbon */}
       <Ribbon state={state} />
 
-      {/* body */}
-      <div className="ws-body">
-        {/* main reading area */}
-        <div className="ws-main">
-          {workspace ? (
-            <HighlightedWorkspaceText
-              bodyText={workspace.section.bodyText}
-              findings={activeFindings}
-              selectedFindingIdentifier={selectedFinding?.finding ?? null}
-              onSelect={setSelectedFinding}
-              showMarks={state === "result"}
-            />
-          ) : (
-            <p className="ws-text" />
-          )}
-          <div className="reading-hint">
-            読み上げて録音してください。解析結果はこの本文の上に直接表示されます。
-          </div>
-        </div>
-
-        {/* result rail */}
-        <div className="ws-rail">
-          {/* engine tabs */}
-          <div className="rail-block">
-            {workspace && workspace.resultsByEngine.length > 0 && (
+      {/* body — 結果状態は v2 レイアウト、それ以外は v1 */}
+      {state === "result" && activeResult ? (
+        <>
+          {/* engine tabs (v2 ではタブを ws2 の上部に配置) */}
+          {workspace && workspace.resultsByEngine.length > 0 && (
+            <div
+              style={{
+                padding: "var(--sp-3) var(--sp-6) 0",
+                borderTop: "1px solid var(--border-faint)",
+              }}
+            >
               <EngineTabs
                 engines={workspace.resultsByEngine}
                 activeEngine={activeEngineResult}
@@ -383,75 +285,67 @@ export default function WorkspacePage({ params }: PageProps) {
                 }}
                 onAddEngine={handleAddEngine}
               />
+            </div>
+          )}
+          <WorkspaceResultV2
+            bodyText={workspace!.section.bodyText}
+            engineResult={activeResult}
+            sectionIdentifier={sectionIdentifier}
+            latestRecordingAttemptIdentifier={latestReadyAttempt?.identifier ?? null}
+          />
+        </>
+      ) : (
+        <div className="ws-body">
+          {/* main reading area */}
+          <div className="ws-main">
+            {workspace ? (
+              <HighlightedWorkspaceText
+                bodyText={workspace.section.bodyText}
+                findings={activeFindings}
+                selectedFindingIdentifier={selectedFinding?.finding ?? null}
+                onSelect={setSelectedFinding}
+                showMarks={false}
+              />
+            ) : (
+              <p className="ws-text" />
             )}
-
-            {/* gauge + score rows */}
-            {activeResult && (
-              <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-                <Gauge overall={activeResult.scores.overall} />
-                <ScoreRows scores={activeResult.scores} />
-              </div>
-            )}
-
-            {/* sevcount */}
-            {activeResult && (
-              <div className="sevcount">
-                {(["critical", "major", "minor", "suggestion"] as const).map((sev) => {
-                  const cssClass = toSeverityClass(sev);
-                  const count = activeResult.counts[sev];
-                  const label = SEVERITY_DISPLAY_LABELS[cssClass];
-                  return (
-                    <span key={sev} className="sevpill">
-                      <span className="dot" style={{ background: `var(--sev-${cssClass})` }} />
-                      {count} {label}
-                    </span>
-                  );
-                })}
-              </div>
-            )}
+            <div className="reading-hint">
+              読み上げて録音してください。解析結果はこの本文の上に直接表示されます。
+            </div>
           </div>
 
-          {/* detail panel */}
-          <div className="rail-block">
-            <div className="rail-h">選択中の指摘</div>
-            <DetailPanel finding={selectedFinding} onClose={() => setSelectedFinding(null)} />
+          {/* result rail (v1 — idle/recording/analyzing/failed 状態のみ) */}
+          <div className="ws-rail">
+            <div className="rail-block">
+              {/* gauge + score rows */}
+              {activeResult && (
+                <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                  <Gauge overall={activeResult.scores.overall} />
+                  <ScoreRows scores={activeResult.scores} />
+                </div>
+              )}
+
+              {/* sevcount */}
+              {activeResult && (
+                <SeverityCountPills counts={activeResult.counts} className="sevcount" />
+              )}
+            </div>
+
+            {/* detail panel (v1) */}
+            <div className="rail-block">
+              <div className="rail-h">選択中の指摘</div>
+              <DetailPanel finding={selectedFinding} onClose={() => setSelectedFinding(null)} />
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* dock */}
       <div className="ws-dock">
         {/* idle */}
         <div className="dock-row dock-idle">
           <div className="left">
-            <div className="seg" id="engineSeg">
-              <button
-                className={`seg-item${analysisMode === "cloudOnly" ? " is-active" : ""}`}
-                type="button"
-                data-eng="openai"
-                onClick={() => setAnalysisMode("cloudOnly")}
-              >
-                <span className="eng-dot" style={{ background: "var(--engine-openai)" }} />
-                OpenAI API
-              </button>
-              <button
-                className={`seg-item${analysisMode === "ossWorkerOnly" ? " is-active" : ""}`}
-                type="button"
-                data-eng="rust"
-                onClick={() => setAnalysisMode("ossWorkerOnly")}
-              >
-                <span className="eng-dot" style={{ background: "var(--engine-rust)" }} />
-                OSS Worker
-              </button>
-              <button
-                className={`seg-item${analysisMode === "comparison" ? " is-active" : ""}`}
-                type="button"
-                data-eng="compare"
-                onClick={() => setAnalysisMode("comparison")}
-              >
-                ⊕ 比較
-              </button>
-            </div>
+            <EngineSegSelector value={analysisMode} onChange={setAnalysisMode} />
             <span className="hint">エンジンを選んで録音 →</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
@@ -471,15 +365,13 @@ export default function WorkspacePage({ params }: PageProps) {
           <span className="rec-time">{formattedRecTime}</span>
           <LiveWave />
           <div
-            className={`volume-meter${volumeLevel < LOW_VOLUME_DISPLAY_THRESHOLD ? " volume-meter--low" : ""}`}
+            className={`volume-meter${isLowVolume ? " volume-meter--low" : ""}`}
             aria-label={`音量レベル ${Math.round(volumeLevel)}%`}
           >
             <div className="volume-meter-track">
               <div className="volume-meter-bar" style={{ width: `${volumeLevel.toFixed(1)}%` }} />
             </div>
-            <span className="volume-meter-label">
-              {volumeLevel < LOW_VOLUME_DISPLAY_THRESHOLD ? "音量小" : "音量OK"}
-            </span>
+            <span className="volume-meter-label">{isLowVolume ? "音量小" : "音量OK"}</span>
           </div>
           <span className="status status--fail" style={{ border: "none", background: "none" }}>
             <span className="sd" />
@@ -504,10 +396,7 @@ export default function WorkspacePage({ params }: PageProps) {
                   <span
                     className="eng-dot"
                     style={{
-                      background:
-                        engine.engineKind === "cloud"
-                          ? "var(--engine-openai)"
-                          : "var(--engine-rust)",
+                      background: engineColorVariable(engine.engineKind),
                     }}
                   />
                   {engine.engineName}
@@ -613,9 +502,12 @@ export default function WorkspacePage({ params }: PageProps) {
               サーバーとの通信でエラーが発生しました。再度録音してお試しください。
             </span>
           </div>
-          <button className="btn btn--sm btn--primary" type="button" onClick={startRecording}>
-            ● 録音し直す
-          </button>
+          <div className="dock-rerecord-group">
+            <EngineSegSelector value={analysisMode} onChange={setAnalysisMode} />
+            <button className="btn btn--sm btn--primary" type="button" onClick={startRecording}>
+              ● 録音し直す
+            </button>
+          </div>
         </div>
 
         {/* low_quality */}
@@ -629,9 +521,12 @@ export default function WorkspacePage({ params }: PageProps) {
               音量が小さいか、録音時間が短すぎます。マイクに近づいて、はっきりと録音してください。
             </span>
           </div>
-          <button className="btn btn--sm btn--primary" type="button" onClick={startRecording}>
-            ● 録音し直す
-          </button>
+          <div className="dock-rerecord-group">
+            <EngineSegSelector value={analysisMode} onChange={setAnalysisMode} />
+            <button className="btn btn--sm btn--primary" type="button" onClick={startRecording}>
+              ● 録音し直す
+            </button>
+          </div>
         </div>
       </div>
     </div>

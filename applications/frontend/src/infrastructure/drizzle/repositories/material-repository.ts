@@ -14,8 +14,9 @@ import {
   createMaterialIdentifier,
 } from "../../../domain/material";
 import { type MaterialSearchCriteria } from "../../../domain/criteria";
-import { type DomainError } from "../../../domain/shared";
+import { notFound } from "../../../domain/shared";
 import { okAsync, errAsync } from "neverthrow";
+import { tryPersistence, tryPersistenceResult } from "./try-persistence";
 
 type MaterialRow = typeof materials.$inferSelect;
 
@@ -74,108 +75,77 @@ const materialToRow = (material: Material): MaterialRow => {
   };
 };
 
-export const createDrizzleMaterialRepository = (
-  db: DrizzleDatabase,
-): MaterialRepository => ({
+export const createDrizzleMaterialRepository = (db: DrizzleDatabase): MaterialRepository => ({
   find: (identifier: MaterialIdentifier) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = db
-          .select()
-          .from(materials)
-          .where(eq(materials.identifier, String(identifier)))
-          .get();
+    return tryPersistenceResult(() => {
+      const row = db
+        .select()
+        .from(materials)
+        .where(eq(materials.identifier, String(identifier)))
+        .get();
 
-        if (!row || row.deletedAt) {
-          return errAsync({
-            type: "notFound",
-            resource: "Material",
-            identifier: String(identifier),
-          } as DomainError);
-        }
-
-        return okAsync(rowToMaterial(row) as ActiveMaterial);
-      } catch (e) {
-        return errAsync({
-          type: "persistenceFailed",
-          reason: String(e),
-        } as DomainError);
+      if (!row || row.deletedAt) {
+        return errAsync(notFound("Material", String(identifier)));
       }
+
+      return okAsync(rowToMaterial(row) as ActiveMaterial);
     });
   },
 
   search: (criteria: MaterialSearchCriteria) => {
-    return okAsync(null).andThen(() => {
-      try {
-        if (criteria.type === "activeMaterials") {
-          const rows = db
-            .select()
-            .from(materials)
-            .where(isNull(materials.deletedAt))
-            .orderBy(desc(materials.updatedAt))
-            .offset(criteria.pagination.offset)
-            .limit(criteria.pagination.limit)
-            .all();
-
-          const countRows = db
-            .select()
-            .from(materials)
-            .where(isNull(materials.deletedAt))
-            .all();
-
-          return okAsync({
-            items: rows.map(rowToMaterial),
-            total: countRows.length,
-          } as MaterialPage);
-        }
-
-        // includingRetiredForHistory
+    return tryPersistence(() => {
+      if (criteria.type === "activeMaterials") {
         const rows = db
           .select()
           .from(materials)
+          .where(isNull(materials.deletedAt))
           .orderBy(desc(materials.updatedAt))
           .offset(criteria.pagination.offset)
           .limit(criteria.pagination.limit)
           .all();
 
-        const countRows = db.select().from(materials).all();
+        const countRows = db.select().from(materials).where(isNull(materials.deletedAt)).all();
 
-        return okAsync({
+        return {
           items: rows.map(rowToMaterial),
           total: countRows.length,
-        } as MaterialPage);
-      } catch (e) {
-        return errAsync({
-          type: "persistenceFailed",
-          reason: String(e),
-        } as DomainError);
+        } as MaterialPage;
       }
+
+      // includingRetiredForHistory
+      const rows = db
+        .select()
+        .from(materials)
+        .orderBy(desc(materials.updatedAt))
+        .offset(criteria.pagination.offset)
+        .limit(criteria.pagination.limit)
+        .all();
+
+      const countRows = db.select().from(materials).all();
+
+      return {
+        items: rows.map(rowToMaterial),
+        total: countRows.length,
+      } as MaterialPage;
     });
   },
 
   persist: (material: Material) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = materialToRow(material);
-        db.insert(materials)
-          .values(row)
-          .onConflictDoUpdate({
-            target: materials.identifier,
-            set: {
-              title: row.title,
-              sourceJson: row.sourceJson,
-              updatedAt: row.updatedAt,
-              deletedAt: row.deletedAt,
-            },
-          })
-          .run();
-        return okAsync(undefined);
-      } catch (e) {
-        return errAsync({
-          type: "persistenceFailed",
-          reason: String(e),
-        } as DomainError);
-      }
+    return tryPersistence(() => {
+      const row = materialToRow(material);
+      db.insert(materials)
+        .values(row)
+        .onConflictDoUpdate({
+          target: materials.identifier,
+          set: {
+            title: row.title,
+            sourceJson: row.sourceJson,
+            updatedAt: row.updatedAt,
+            deletedAt: row.deletedAt,
+          },
+        })
+        .run();
+      return undefined;
     });
   },
 });

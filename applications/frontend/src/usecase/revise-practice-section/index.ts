@@ -1,4 +1,4 @@
-import { type ResultAsync, errAsync, okAsync } from "neverthrow";
+import { type ResultAsync, errAsync, ok, okAsync } from "neverthrow";
 import { z } from "zod";
 import { type DomainError, type NonEmptyList, validationFailed } from "../../domain/shared";
 import {
@@ -12,6 +12,7 @@ import {
   createSection,
   createSectionIdentifier,
   createSectionBodyText,
+  createSectionVersion,
   type SectionCreated,
 } from "../../domain/section";
 import { type SectionSeriesRepository } from "../port/section-series-repository";
@@ -20,6 +21,7 @@ import { type TransactionManager } from "../port/transaction-manager";
 import { type EntropyProvider } from "../port/entropy-provider";
 import { type Clock } from "../port/clock";
 import { type Logger } from "../port/logger";
+import { parseInput } from "../shared/validation";
 
 // ---- Input ----
 
@@ -72,18 +74,17 @@ export const createRevisePracticeSection =
   (dependencies: RevisePracticeSectionDependencies) =>
   (input: RevisePracticeSectionInput): ResultAsync<RevisePracticeSectionOutput, DomainError> => {
     // 1. Zod 検証
-    const parsed = revisePracticeSectionSchema.safeParse(input);
-    if (!parsed.success) {
-      return errAsync(
-        validationFailed("input", parsed.error.errors.map((e) => e.message).join(", ")),
-      );
+    const parsedInput = parseInput(revisePracticeSectionSchema, input);
+    if (parsedInput.isErr()) {
+      return errAsync(parsedInput.error);
     }
+    const parsed = parsedInput.value;
 
     // 少なくとも1つのフィールドが必要
     if (
-      parsed.data.title === undefined &&
-      parsed.data.displayOrder === undefined &&
-      parsed.data.bodyText === undefined
+      parsed.title === undefined &&
+      parsed.displayOrder === undefined &&
+      parsed.bodyText === undefined
     ) {
       return errAsync(
         validationFailed(
@@ -93,15 +94,15 @@ export const createRevisePracticeSection =
       );
     }
 
-    const seriesIdentifierResult = createSectionSeriesIdentifier(parsed.data.sectionSeries);
+    const seriesIdentifierResult = createSectionSeriesIdentifier(parsed.sectionSeries);
     if (!seriesIdentifierResult) {
       return errAsync(validationFailed("sectionSeries", "不正なSectionSeriesIDです"));
     }
 
     // bodyText がある場合は事前に VO 変換（validation first）
     let newBodyText = null;
-    if (parsed.data.bodyText !== undefined) {
-      const bodyTextResult = createSectionBodyText(parsed.data.bodyText);
+    if (parsed.bodyText !== undefined) {
+      const bodyTextResult = createSectionBodyText(parsed.bodyText);
       if (bodyTextResult.isErr()) return errAsync(bodyTextResult.error);
       newBodyText = bodyTextResult.value;
     }
@@ -115,27 +116,19 @@ export const createRevisePracticeSection =
 
           // 3. title / displayOrder の決定（未指定は現行維持）
           let newTitleResult: ReturnType<typeof createSectionTitle>;
-          if (parsed.data.title !== undefined) {
-            newTitleResult = createSectionTitle(parsed.data.title);
+          if (parsed.title !== undefined) {
+            newTitleResult = createSectionTitle(parsed.title);
           } else {
-            newTitleResult = {
-              isOk: () => true,
-              isErr: () => false,
-              value: existingSeries.title,
-            } as ReturnType<typeof createSectionTitle>;
+            newTitleResult = ok(existingSeries.title);
           }
           if (newTitleResult.isErr()) return errAsync(newTitleResult.error);
           const newTitle = newTitleResult.value;
 
           let newDisplayOrderResult: ReturnType<typeof createSectionDisplayOrder>;
-          if (parsed.data.displayOrder !== undefined) {
-            newDisplayOrderResult = createSectionDisplayOrder(parsed.data.displayOrder);
+          if (parsed.displayOrder !== undefined) {
+            newDisplayOrderResult = createSectionDisplayOrder(parsed.displayOrder);
           } else {
-            newDisplayOrderResult = {
-              isOk: () => true,
-              isErr: () => false,
-              value: existingSeries.displayOrder,
-            } as ReturnType<typeof createSectionDisplayOrder>;
+            newDisplayOrderResult = ok(existingSeries.displayOrder);
           }
           if (newDisplayOrderResult.isErr()) return errAsync(newDisplayOrderResult.error);
           const newDisplayOrder = newDisplayOrderResult.value;
@@ -165,11 +158,17 @@ export const createRevisePracticeSection =
                       );
                     }
 
-                    // createSectionVersion は Result を返すが、値は計算済みなので cast
+                    // latestVersion + 1 は常に正整数だが、cast で迂回せず
+                    // createSectionVersion の Result を正しく伝播する
+                    const nextVersionResult = createSectionVersion(nextVersion);
+                    if (nextVersionResult.isErr()) {
+                      return errAsync(nextVersionResult.error);
+                    }
+
                     const { section: newSection, events: sectionEvents } = createSection({
                       identifier: sectionIdentifierResult,
                       sectionSeries: revisedSeries.identifier,
-                      version: nextVersion as never,
+                      version: nextVersionResult.value,
                       bodyText: newBodyText!,
                       now,
                     });

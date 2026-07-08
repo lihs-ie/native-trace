@@ -4,10 +4,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "../../schema";
 import { type DrizzleDatabase } from "../../client";
 import { createDrizzleAnalysisRunRepository } from "../analysis-run-repository";
-import {
-  createAnalysisRunIdentifier,
-  createAnalysisRun,
-} from "../../../../domain/analysis-run";
+import { createAnalysisRunIdentifier, createAnalysisRun } from "../../../../domain/analysis-run";
 import { createRecordingAttemptIdentifier } from "../../../../domain/recording-attempt";
 
 const createTestDb = () => {
@@ -53,10 +50,12 @@ describe("DrizzleAnalysisRunRepository", () => {
     db = drizzle(sqlite, { schema }) as DrizzleDatabase;
 
     const now = new Date().toISOString();
-    sqlite.prepare(
-      `INSERT INTO recording_attempts (identifier, section, status, input_kind, created_at, updated_at)
+    sqlite
+      .prepare(
+        `INSERT INTO recording_attempts (identifier, section, status, input_kind, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run("REC001", "SEC001", "ready", "browser_recording", now, now);
+      )
+      .run("REC001", "SEC001", "ready", "browser_recording", now, now);
   });
 
   afterEach(() => {
@@ -104,7 +103,9 @@ describe("DrizzleAnalysisRunRepository", () => {
     expect(updateResult.isOk()).toBe(true);
 
     // DB 行のステータスが更新されていることを直接確認
-    const row = sqlite.prepare("SELECT status FROM analysis_runs WHERE identifier = ?").get("RUN002") as { status: string };
+    const row = sqlite
+      .prepare("SELECT status FROM analysis_runs WHERE identifier = ?")
+      .get("RUN002") as { status: string };
     expect(row.status).toBe("succeeded");
   });
 });

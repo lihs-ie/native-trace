@@ -36,6 +36,19 @@ function buildFinding(
     messageEn: null,
     scoreImpact: -5,
     confidence: 0.9,
+    detectedTopCandidate: null,
+    nBest: null,
+    matchesL1Pattern: false,
+    functionalLoad: null,
+    catalogId: null,
+    wordPair: null,
+    expectedPronunciation: null,
+    insertedVowel: null,
+    insertionPositionMs: null,
+    feedbackLayers: null,
+    dismissed: false,
+    acousticEvidence: null,
+    articulatoryEstimate: null,
   };
 }
 
@@ -55,18 +68,24 @@ function buildEngineResult(
       pronunciation: 80,
       connectedSpeech: 80,
       prosody: 80,
+      intelligibility: null,
+      cefrOverall: null,
+      cefrSegmental: null,
+      cefrProsodic: null,
     },
     counts: { critical: 0, major: 0, minor: 0, suggestion: 0 },
     findings,
+    engineSummaryMessageJa: null,
+    perPhonemeGop: null,
+    focusSounds: null,
+    prosody: null,
   };
 }
 
 describe("deriveEngineAgreement", () => {
   describe("both bucket — 重なる範囲", () => {
     it("同一範囲の finding は both に入る（severity 一致）", () => {
-      const cloudResult = buildEngineResult("cloud", [
-        buildFinding("c1", 0, 5, "major", "hello"),
-      ]);
+      const cloudResult = buildEngineResult("cloud", [buildFinding("c1", 0, 5, "major", "hello")]);
       const ossResult = buildEngineResult("oss_worker", [
         buildFinding("o1", 0, 5, "major", "hello"),
       ]);
@@ -80,12 +99,8 @@ describe("deriveEngineAgreement", () => {
     });
 
     it("同一範囲の finding は both に入る（severity 相違）", () => {
-      const cloudResult = buildEngineResult("cloud", [
-        buildFinding("c1", 10, 20, "critical"),
-      ]);
-      const ossResult = buildEngineResult("oss_worker", [
-        buildFinding("o1", 10, 20, "major"),
-      ]);
+      const cloudResult = buildEngineResult("cloud", [buildFinding("c1", 10, 20, "critical")]);
+      const ossResult = buildEngineResult("oss_worker", [buildFinding("o1", 10, 20, "major")]);
       const result = deriveEngineAgreement(cloudResult, ossResult);
       expect(result.both).toHaveLength(1);
       expect(result.both[0].cloudSeverity).toBe("critical");
@@ -93,12 +108,8 @@ describe("deriveEngineAgreement", () => {
     });
 
     it("部分重複は both に入る", () => {
-      const cloudResult = buildEngineResult("cloud", [
-        buildFinding("c1", 5, 15, "minor"),
-      ]);
-      const ossResult = buildEngineResult("oss_worker", [
-        buildFinding("o1", 10, 20, "minor"),
-      ]);
+      const cloudResult = buildEngineResult("cloud", [buildFinding("c1", 5, 15, "minor")]);
+      const ossResult = buildEngineResult("oss_worker", [buildFinding("o1", 10, 20, "minor")]);
       const result = deriveEngineAgreement(cloudResult, ossResult);
       expect(result.both).toHaveLength(1);
       expect(result.cloudOnly).toHaveLength(0);
@@ -135,9 +146,7 @@ describe("deriveEngineAgreement", () => {
   describe("ossWorkerOnly bucket", () => {
     it("oss にのみある finding は ossWorkerOnly に入る", () => {
       const cloudResult = buildEngineResult("cloud", []);
-      const ossResult = buildEngineResult("oss_worker", [
-        buildFinding("o1", 30, 40, "suggestion"),
-      ]);
+      const ossResult = buildEngineResult("oss_worker", [buildFinding("o1", 30, 40, "suggestion")]);
       const result = deriveEngineAgreement(cloudResult, ossResult);
       expect(result.ossWorkerOnly).toHaveLength(1);
       expect(result.ossWorkerOnly[0].severity).toBe("suggestion");
@@ -160,12 +169,8 @@ describe("deriveEngineAgreement", () => {
   describe("境界値", () => {
     it("隣接（endChar == startChar）は非重複", () => {
       // cloud: [0, 5) oss: [5, 10) — endChar==startChar は重ならない
-      const cloudResult = buildEngineResult("cloud", [
-        buildFinding("c1", 0, 5, "minor"),
-      ]);
-      const ossResult = buildEngineResult("oss_worker", [
-        buildFinding("o1", 5, 10, "minor"),
-      ]);
+      const cloudResult = buildEngineResult("cloud", [buildFinding("c1", 0, 5, "minor")]);
+      const ossResult = buildEngineResult("oss_worker", [buildFinding("o1", 5, 10, "minor")]);
       const result = deriveEngineAgreement(cloudResult, ossResult);
       expect(result.both).toHaveLength(0);
       expect(result.cloudOnly).toHaveLength(1);
@@ -174,23 +179,15 @@ describe("deriveEngineAgreement", () => {
 
     it("内包（一方が他方を完全に含む）は重複", () => {
       // cloud: [2, 8) oss: [3, 6) — oss は cloud に内包される
-      const cloudResult = buildEngineResult("cloud", [
-        buildFinding("c1", 2, 8, "major"),
-      ]);
-      const ossResult = buildEngineResult("oss_worker", [
-        buildFinding("o1", 3, 6, "major"),
-      ]);
+      const cloudResult = buildEngineResult("cloud", [buildFinding("c1", 2, 8, "major")]);
+      const ossResult = buildEngineResult("oss_worker", [buildFinding("o1", 3, 6, "major")]);
       const result = deriveEngineAgreement(cloudResult, ossResult);
       expect(result.both).toHaveLength(1);
     });
 
     it("完全一致は重複", () => {
-      const cloudResult = buildEngineResult("cloud", [
-        buildFinding("c1", 7, 14, "critical"),
-      ]);
-      const ossResult = buildEngineResult("oss_worker", [
-        buildFinding("o1", 7, 14, "major"),
-      ]);
+      const cloudResult = buildEngineResult("cloud", [buildFinding("c1", 7, 14, "critical")]);
+      const ossResult = buildEngineResult("oss_worker", [buildFinding("o1", 7, 14, "major")]);
       const result = deriveEngineAgreement(cloudResult, ossResult);
       expect(result.both).toHaveLength(1);
     });
@@ -217,13 +214,13 @@ describe("deriveEngineAgreement", () => {
   describe("複数 findings の混合", () => {
     it("both/cloudOnly/ossWorkerOnly が混在する場合を正しく振り分ける", () => {
       const cloudResult = buildEngineResult("cloud", [
-        buildFinding("c1", 0, 10, "major", "with you"),    // oss と重複 → both
-        buildFinding("c2", 20, 35, "minor", "honored"),    // oss と非重複 → cloudOnly
-        buildFinding("c3", 40, 55, "suggestion"),          // oss と非重複 → cloudOnly
+        buildFinding("c1", 0, 10, "major", "with you"), // oss と重複 → both
+        buildFinding("c2", 20, 35, "minor", "honored"), // oss と非重複 → cloudOnly
+        buildFinding("c3", 40, 55, "suggestion"), // oss と非重複 → cloudOnly
       ]);
       const ossResult = buildEngineResult("oss_worker", [
-        buildFinding("o1", 5, 15, "major", "with you"),    // cloud c1 と重複 → both
-        buildFinding("o2", 60, 75, "critical"),             // cloud と非重複 → ossWorkerOnly
+        buildFinding("o1", 5, 15, "major", "with you"), // cloud c1 と重複 → both
+        buildFinding("o2", 60, 75, "critical"), // cloud と非重複 → ossWorkerOnly
       ]);
       const result = deriveEngineAgreement(cloudResult, ossResult);
       expect(result.both).toHaveLength(1);

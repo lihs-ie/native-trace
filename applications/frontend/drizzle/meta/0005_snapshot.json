@@ -1,0 +1,1908 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "6233387e-045c-4a84-8162-4d9b57b5cfd6",
+  "prevId": "ab9bf09a-9c04-4ade-8c66-df2189b02a8a",
+  "tables": {
+    "analysis_jobs": {
+      "name": "analysis_jobs",
+      "columns": {
+        "identifier": {
+          "name": "identifier",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "analysis_run": {
+          "name": "analysis_run",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "engine": {
+          "name": "engine",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "engine_config_json": {
+          "name": "engine_config_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "priority": {
+          "name": "priority",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "attempt_count": {
+          "name": "attempt_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "max_attempts": {
+          "name": "max_attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 3
+        },
+        "next_run_at": {
+          "name": "next_run_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "lease_owner": {
+          "name": "lease_owner",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "lease_token": {
+          "name": "lease_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "leased_until": {
+          "name": "leased_until",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "queued_at": {
+          "name": "queued_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "canceled_at": {
+          "name": "canceled_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "last_error_code": {
+          "name": "last_error_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "last_error_message": {
+          "name": "last_error_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_analysis_jobs_runnable": {
+          "name": "idx_analysis_jobs_runnable",
+          "columns": [
+            "status",
+            "next_run_at",
+            "attempt_count",
+            "max_attempts",
+            "priority",
+            "created_at"
+          ],
+          "isUnique": false
+        },
+        "idx_analysis_jobs_expired_lease": {
+          "name": "idx_analysis_jobs_expired_lease",
+          "columns": [
+            "status",
+            "leased_until",
+            "attempt_count",
+            "max_attempts",
+            "priority",
+            "created_at"
+          ],
+          "isUnique": false
+        },
+        "idx_analysis_jobs_run_engine": {
+          "name": "idx_analysis_jobs_run_engine",
+          "columns": ["analysis_run", "engine"],
+          "isUnique": false
+        },
+        "idx_analysis_jobs_run_status": {
+          "name": "idx_analysis_jobs_run_status",
+          "columns": ["analysis_run", "deleted_at", "status"],
+          "isUnique": false
+        },
+        "uq_analysis_jobs_run_engine": {
+          "name": "uq_analysis_jobs_run_engine",
+          "columns": ["analysis_run", "engine"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "analysis_jobs_analysis_run_analysis_runs_identifier_fk": {
+          "name": "analysis_jobs_analysis_run_analysis_runs_identifier_fk",
+          "tableFrom": "analysis_jobs",
+          "tableTo": "analysis_runs",
+          "columnsFrom": ["analysis_run"],
+          "columnsTo": ["identifier"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ck_analysis_jobs_engine": {
+          "name": "ck_analysis_jobs_engine",
+          "value": "\"analysis_jobs\".\"engine\" IN ('cloud', 'oss_worker')"
+        },
+        "ck_analysis_jobs_engine_config_json": {
+          "name": "ck_analysis_jobs_engine_config_json",
+          "value": "json_valid(\"analysis_jobs\".\"engine_config_json\")"
+        },
+        "ck_analysis_jobs_status": {
+          "name": "ck_analysis_jobs_status",
+          "value": "\"analysis_jobs\".\"status\" IN ('queued', 'leased', 'running', 'succeeded', 'failed', 'canceled')"
+        },
+        "ck_analysis_jobs_attempt_count": {
+          "name": "ck_analysis_jobs_attempt_count",
+          "value": "\"analysis_jobs\".\"attempt_count\" >= 0"
+        },
+        "ck_analysis_jobs_max_attempts": {
+          "name": "ck_analysis_jobs_max_attempts",
+          "value": "\"analysis_jobs\".\"max_attempts\" >= 1"
+        },
+        "ck_analysis_jobs_attempt_limit": {
+          "name": "ck_analysis_jobs_attempt_limit",
+          "value": "\"analysis_jobs\".\"attempt_count\" <= \"analysis_jobs\".\"max_attempts\""
+        },
+        "ck_analysis_jobs_lease_fields": {
+          "name": "ck_analysis_jobs_lease_fields",
+          "value": "\"analysis_jobs\".\"status\" NOT IN ('leased', 'running') OR (\"analysis_jobs\".\"lease_token\" IS NOT NULL AND \"analysis_jobs\".\"leased_until\" IS NOT NULL)"
+        }
+      }
+    },
+    "analysis_runs": {
+      "name": "analysis_runs",
+      "columns": {
+        "identifier": {
+          "name": "identifier",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "recording_attempt": {
+          "name": "recording_attempt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "mode": {
+          "name": "mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "canceled_at": {
+          "name": "canceled_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_analysis_runs_recording_attempt_created": {
+          "name": "idx_analysis_runs_recording_attempt_created",
+          "columns": ["recording_attempt", "deleted_at", "created_at"],
+          "isUnique": false
+        },
+        "idx_analysis_runs_status": {
+          "name": "idx_analysis_runs_status",
+          "columns": ["status", "deleted_at", "updated_at"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "analysis_runs_recording_attempt_recording_attempts_identifier_fk": {
+          "name": "analysis_runs_recording_attempt_recording_attempts_identifier_fk",
+          "tableFrom": "analysis_runs",
+          "tableTo": "recording_attempts",
+          "columnsFrom": ["recording_attempt"],
+          "columnsTo": ["identifier"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ck_analysis_runs_mode": {
+          "name": "ck_analysis_runs_mode",
+          "value": "\"analysis_runs\".\"mode\" IN ('cloud_only', 'oss_worker_only', 'comparison')"
+        },
+        "ck_analysis_runs_status": {
+          "name": "ck_analysis_runs_status",
+          "value": "\"analysis_runs\".\"status\" IN ('queued', 'running', 'partial_succeeded', 'succeeded', 'failed', 'canceled')"
+        }
+      }
+    },
+    "assessment_results": {
+      "name": "assessment_results",
+      "columns": {
+        "identifier": {
+          "name": "identifier",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "analysis_job": {
+          "name": "analysis_job",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "overall_score": {
+          "name": "overall_score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "accuracy_score": {
+          "name": "accuracy_score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "native_likeness_score": {
+          "name": "native_likeness_score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "pronunciation_score": {
+          "name": "pronunciation_score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "connected_speech_score": {
+          "name": "connected_speech_score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "prosody_score": {
+          "name": "prosody_score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "assessment_result_json": {
+          "name": "assessment_result_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "raw_response_json": {
+          "name": "raw_response_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "engine_snapshot_json": {
+          "name": "engine_snapshot_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tokenizer_version": {
+          "name": "tokenizer_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_assessment_results_analysis_job": {
+          "name": "idx_assessment_results_analysis_job",
+          "columns": ["analysis_job", "deleted_at"],
+          "isUnique": false
+        },
+        "idx_assessment_results_scores": {
+          "name": "idx_assessment_results_scores",
+          "columns": ["deleted_at", "created_at", "overall_score"],
+          "isUnique": false
+        },
+        "uq_assessment_results_analysis_job": {
+          "name": "uq_assessment_results_analysis_job",
+          "columns": ["analysis_job"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "assessment_results_analysis_job_analysis_jobs_identifier_fk": {
+          "name": "assessment_results_analysis_job_analysis_jobs_identifier_fk",
+          "tableFrom": "assessment_results",
+          "tableTo": "analysis_jobs",
+          "columnsFrom": ["analysis_job"],
+          "columnsTo": ["identifier"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ck_assessment_results_overall_score": {
+          "name": "ck_assessment_results_overall_score",
+          "value": "\"assessment_results\".\"overall_score\" BETWEEN 0 AND 100"
+        },
+        "ck_assessment_results_accuracy_score": {
+          "name": "ck_assessment_results_accuracy_score",
+          "value": "\"assessment_results\".\"accuracy_score\" BETWEEN 0 AND 100"
+        },
+        "ck_assessment_results_native_likeness_score": {
+          "name": "ck_assessment_results_native_likeness_score",
+          "value": "\"assessment_results\".\"native_likeness_score\" BETWEEN 0 AND 100"
+        },
+        "ck_assessment_results_pronunciation_score": {
+          "name": "ck_assessment_results_pronunciation_score",
+          "value": "\"assessment_results\".\"pronunciation_score\" BETWEEN 0 AND 100"
+        },
+        "ck_assessment_results_connected_speech_score": {
+          "name": "ck_assessment_results_connected_speech_score",
+          "value": "\"assessment_results\".\"connected_speech_score\" BETWEEN 0 AND 100"
+        },
+        "ck_assessment_results_prosody_score": {
+          "name": "ck_assessment_results_prosody_score",
+          "value": "\"assessment_results\".\"prosody_score\" BETWEEN 0 AND 100"
+        },
+        "ck_assessment_results_assessment_json": {
+          "name": "ck_assessment_results_assessment_json",
+          "value": "json_valid(\"assessment_results\".\"assessment_result_json\")"
+        },
+        "ck_assessment_results_raw_response_json": {
+          "name": "ck_assessment_results_raw_response_json",
+          "value": "json_valid(\"assessment_results\".\"raw_response_json\")"
+        },
+        "ck_assessment_results_engine_snapshot_json": {
+          "name": "ck_assessment_results_engine_snapshot_json",
+          "value": "json_valid(\"assessment_results\".\"engine_snapshot_json\")"
+        }
+      }
+    },
+    "audio_files": {
+      "name": "audio_files",
+      "columns": {
+        "identifier": {
+          "name": "identifier",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "recording_attempt": {
+          "name": "recording_attempt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "storage_key": {
+          "name": "storage_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "mime_type": {
+          "name": "mime_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "size_bytes": {
+          "name": "size_bytes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "duration_milliseconds": {
+          "name": "duration_milliseconds",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sample_rate": {
+          "name": "sample_rate",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "channel_count": {
+          "name": "channel_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "sha256": {
+          "name": "sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "physical_deleted_at": {
+          "name": "physical_deleted_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "delete_failure_reason": {
+          "name": "delete_failure_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_audio_files_recording_attempt": {
+          "name": "idx_audio_files_recording_attempt",
+          "columns": ["recording_attempt"],
+          "isUnique": false
+        },
+        "idx_audio_files_delete_status": {
+          "name": "idx_audio_files_delete_status",
+          "columns": ["status", "deleted_at", "updated_at"],
+          "isUnique": false
+        },
+        "uq_audio_files_recording_attempt": {
+          "name": "uq_audio_files_recording_attempt",
+          "columns": ["recording_attempt"],
+          "isUnique": true
+        },
+        "uq_audio_files_storage_key": {
+          "name": "uq_audio_files_storage_key",
+          "columns": ["storage_key"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "audio_files_recording_attempt_recording_attempts_identifier_fk": {
+          "name": "audio_files_recording_attempt_recording_attempts_identifier_fk",
+          "tableFrom": "audio_files",
+          "tableTo": "recording_attempts",
+          "columnsFrom": ["recording_attempt"],
+          "columnsTo": ["identifier"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ck_audio_files_status": {
+          "name": "ck_audio_files_status",
+          "value": "\"audio_files\".\"status\" IN ('stored', 'deletion_pending', 'physically_deleted', 'delete_failed')"
+        },
+        "ck_audio_files_size_bytes": {
+          "name": "ck_audio_files_size_bytes",
+          "value": "\"audio_files\".\"size_bytes\" BETWEEN 1 AND 104857600"
+        },
+        "ck_audio_files_duration": {
+          "name": "ck_audio_files_duration",
+          "value": "\"audio_files\".\"duration_milliseconds\" BETWEEN 1 AND 600000"
+        },
+        "ck_audio_files_sample_rate": {
+          "name": "ck_audio_files_sample_rate",
+          "value": "\"audio_files\".\"sample_rate\" IS NULL OR \"audio_files\".\"sample_rate\" > 0"
+        },
+        "ck_audio_files_channel_count": {
+          "name": "ck_audio_files_channel_count",
+          "value": "\"audio_files\".\"channel_count\" IS NULL OR \"audio_files\".\"channel_count\" > 0"
+        },
+        "ck_audio_files_sha256": {
+          "name": "ck_audio_files_sha256",
+          "value": "length(\"audio_files\".\"sha256\") = 64"
+        }
+      }
+    },
+    "diagnostic_sessions": {
+      "name": "diagnostic_sessions",
+      "columns": {
+        "identifier": {
+          "name": "identifier",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "learner": {
+          "name": "learner",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "prompt_set_json": {
+          "name": "prompt_set_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "weakness_profile": {
+          "name": "weakness_profile",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "assessment_result_json": {
+          "name": "assessment_result_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_diagnostic_sessions_learner_created": {
+          "name": "idx_diagnostic_sessions_learner_created",
+          "columns": ["learner", "deleted_at", "created_at"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ck_diagnostic_sessions_status": {
+          "name": "ck_diagnostic_sessions_status",
+          "value": "\"diagnostic_sessions\".\"status\" IN ('pending', 'completed')"
+        },
+        "ck_diagnostic_sessions_prompt_set_json": {
+          "name": "ck_diagnostic_sessions_prompt_set_json",
+          "value": "json_valid(\"diagnostic_sessions\".\"prompt_set_json\")"
+        },
+        "ck_diagnostic_sessions_assessment_result_json": {
+          "name": "ck_diagnostic_sessions_assessment_result_json",
+          "value": "\"diagnostic_sessions\".\"assessment_result_json\" IS NULL OR json_valid(\"diagnostic_sessions\".\"assessment_result_json\")"
+        },
+        "ck_diagnostic_sessions_completed": {
+          "name": "ck_diagnostic_sessions_completed",
+          "value": "\"diagnostic_sessions\".\"status\" != 'completed' OR (\"diagnostic_sessions\".\"weakness_profile\" IS NOT NULL AND \"diagnostic_sessions\".\"assessment_result_json\" IS NOT NULL AND \"diagnostic_sessions\".\"completed_at\" IS NOT NULL)"
+        }
+      }
+    },
+    "finding_dismissals": {
+      "name": "finding_dismissals",
+      "columns": {
+        "identifier": {
+          "name": "identifier",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "assessment_result": {
+          "name": "assessment_result",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "finding_identifier": {
+          "name": "finding_identifier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "dismissed_at": {
+          "name": "dismissed_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "undone_at": {
+          "name": "undone_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_finding_dismissals_assessment_result": {
+          "name": "idx_finding_dismissals_assessment_result",
+          "columns": ["assessment_result", "undone_at"],
+          "isUnique": false
+        },
+        "idx_finding_dismissals_finding": {
+          "name": "idx_finding_dismissals_finding",
+          "columns": ["assessment_result", "finding_identifier", "undone_at"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "finding_dismissals_assessment_result_assessment_results_identifier_fk": {
+          "name": "finding_dismissals_assessment_result_assessment_results_identifier_fk",
+          "tableFrom": "finding_dismissals",
+          "tableTo": "assessment_results",
+          "columnsFrom": ["assessment_result"],
+          "columnsTo": ["identifier"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ck_finding_dismissals_dismissed_at": {
+          "name": "ck_finding_dismissals_dismissed_at",
+          "value": "\"finding_dismissals\".\"dismissed_at\" > 0"
+        },
+        "ck_finding_dismissals_undone_at": {
+          "name": "ck_finding_dismissals_undone_at",
+          "value": "\"finding_dismissals\".\"undone_at\" IS NULL OR \"finding_dismissals\".\"undone_at\" > \"finding_dismissals\".\"dismissed_at\""
+        }
+      }
+    },
+    "hvpt_trials": {
+      "name": "hvpt_trials",
+      "columns": {
+        "identifier": {
+          "name": "identifier",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "training_session": {
+          "name": "training_session",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "stimulus": {
+          "name": "stimulus",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "contrast": {
+          "name": "contrast",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "correct_label_json": {
+          "name": "correct_label_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "response_json": {
+          "name": "response_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "correct": {
+          "name": "correct",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "reaction_time_milliseconds": {
+          "name": "reaction_time_milliseconds",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "presented_at": {
+          "name": "presented_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_hvpt_trials_training_session": {
+          "name": "idx_hvpt_trials_training_session",
+          "columns": ["training_session", "deleted_at", "presented_at"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "hvpt_trials_training_session_training_sessions_identifier_fk": {
+          "name": "hvpt_trials_training_session_training_sessions_identifier_fk",
+          "tableFrom": "hvpt_trials",
+          "tableTo": "training_sessions",
+          "columnsFrom": ["training_session"],
+          "columnsTo": ["identifier"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ck_hvpt_trials_correct": {
+          "name": "ck_hvpt_trials_correct",
+          "value": "\"hvpt_trials\".\"correct\" IN (0, 1)"
+        },
+        "ck_hvpt_trials_reaction_time": {
+          "name": "ck_hvpt_trials_reaction_time",
+          "value": "\"hvpt_trials\".\"reaction_time_milliseconds\" > 0"
+        },
+        "ck_hvpt_trials_correct_label_json": {
+          "name": "ck_hvpt_trials_correct_label_json",
+          "value": "json_valid(\"hvpt_trials\".\"correct_label_json\")"
+        },
+        "ck_hvpt_trials_response_json": {
+          "name": "ck_hvpt_trials_response_json",
+          "value": "json_valid(\"hvpt_trials\".\"response_json\")"
+        }
+      }
+    },
+    "materials": {
+      "name": "materials",
+      "columns": {
+        "identifier": {
+          "name": "identifier",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_json": {
+          "name": "source_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_materials_active_updated": {
+          "name": "idx_materials_active_updated",
+          "columns": ["deleted_at", "updated_at"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ck_materials_title_not_blank": {
+          "name": "ck_materials_title_not_blank",
+          "value": "length(trim(\"materials\".\"title\")) > 0"
+        },
+        "ck_materials_source_json": {
+          "name": "ck_materials_source_json",
+          "value": "\"materials\".\"source_json\" IS NULL OR json_valid(\"materials\".\"source_json\")"
+        }
+      }
+    },
+    "progress_snapshots": {
+      "name": "progress_snapshots",
+      "columns": {
+        "identifier": {
+          "name": "identifier",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "learner": {
+          "name": "learner",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "section": {
+          "name": "section",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_assessment": {
+          "name": "source_assessment",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "task_kind": {
+          "name": "task_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cefr_overall_score": {
+          "name": "cefr_overall_score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cefr_segmental_score": {
+          "name": "cefr_segmental_score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cefr_prosodic_score": {
+          "name": "cefr_prosodic_score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "focus_scores_json": {
+          "name": "focus_scores_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cumulative_training_minutes": {
+          "name": "cumulative_training_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "captured_at": {
+          "name": "captured_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_progress_snapshots_learner_captured": {
+          "name": "idx_progress_snapshots_learner_captured",
+          "columns": ["learner", "deleted_at", "captured_at"],
+          "isUnique": false
+        },
+        "idx_progress_snapshots_section_captured": {
+          "name": "idx_progress_snapshots_section_captured",
+          "columns": ["section", "deleted_at", "captured_at"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "progress_snapshots_source_assessment_assessment_results_identifier_fk": {
+          "name": "progress_snapshots_source_assessment_assessment_results_identifier_fk",
+          "tableFrom": "progress_snapshots",
+          "tableTo": "assessment_results",
+          "columnsFrom": ["source_assessment"],
+          "columnsTo": ["identifier"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ck_progress_snapshots_task_kind": {
+          "name": "ck_progress_snapshots_task_kind",
+          "value": "\"progress_snapshots\".\"task_kind\" IN ('rereading', 'drill')"
+        },
+        "ck_progress_snapshots_cefr_overall_score": {
+          "name": "ck_progress_snapshots_cefr_overall_score",
+          "value": "\"progress_snapshots\".\"cefr_overall_score\" BETWEEN 0 AND 100"
+        },
+        "ck_progress_snapshots_cefr_segmental_score": {
+          "name": "ck_progress_snapshots_cefr_segmental_score",
+          "value": "\"progress_snapshots\".\"cefr_segmental_score\" BETWEEN 0 AND 100"
+        },
+        "ck_progress_snapshots_cefr_prosodic_score": {
+          "name": "ck_progress_snapshots_cefr_prosodic_score",
+          "value": "\"progress_snapshots\".\"cefr_prosodic_score\" BETWEEN 0 AND 100"
+        },
+        "ck_progress_snapshots_focus_scores_json": {
+          "name": "ck_progress_snapshots_focus_scores_json",
+          "value": "json_valid(\"progress_snapshots\".\"focus_scores_json\")"
+        },
+        "ck_progress_snapshots_cumulative_training_minutes": {
+          "name": "ck_progress_snapshots_cumulative_training_minutes",
+          "value": "\"progress_snapshots\".\"cumulative_training_minutes\" >= 0"
+        }
+      }
+    },
+    "recording_attempts": {
+      "name": "recording_attempts",
+      "columns": {
+        "identifier": {
+          "name": "identifier",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "section": {
+          "name": "section",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "input_kind": {
+          "name": "input_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ended_at": {
+          "name": "ended_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "duration_milliseconds": {
+          "name": "duration_milliseconds",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "browser_info_json": {
+          "name": "browser_info_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "original_file_name": {
+          "name": "original_file_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "failure_reason": {
+          "name": "failure_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_recording_attempts_section_recorded": {
+          "name": "idx_recording_attempts_section_recorded",
+          "columns": ["section", "deleted_at", "created_at"],
+          "isUnique": false
+        },
+        "idx_recording_attempts_status": {
+          "name": "idx_recording_attempts_status",
+          "columns": ["status", "deleted_at"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "recording_attempts_section_sections_identifier_fk": {
+          "name": "recording_attempts_section_sections_identifier_fk",
+          "tableFrom": "recording_attempts",
+          "tableTo": "sections",
+          "columnsFrom": ["section"],
+          "columnsTo": ["identifier"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ck_recording_attempts_status": {
+          "name": "ck_recording_attempts_status",
+          "value": "\"recording_attempts\".\"status\" IN ('saving', 'ready', 'failed')"
+        },
+        "ck_recording_attempts_input_kind": {
+          "name": "ck_recording_attempts_input_kind",
+          "value": "\"recording_attempts\".\"input_kind\" IN ('browser_recording', 'uploaded_file')"
+        },
+        "ck_recording_attempts_duration": {
+          "name": "ck_recording_attempts_duration",
+          "value": "\"recording_attempts\".\"duration_milliseconds\" IS NULL OR \"recording_attempts\".\"duration_milliseconds\" BETWEEN 1 AND 600000"
+        },
+        "ck_recording_attempts_browser_info_json": {
+          "name": "ck_recording_attempts_browser_info_json",
+          "value": "\"recording_attempts\".\"browser_info_json\" IS NULL OR json_valid(\"recording_attempts\".\"browser_info_json\")"
+        },
+        "ck_recording_attempts_ready_duration": {
+          "name": "ck_recording_attempts_ready_duration",
+          "value": "\"recording_attempts\".\"status\" != 'ready' OR \"recording_attempts\".\"duration_milliseconds\" IS NOT NULL"
+        },
+        "ck_recording_attempts_browser_origin": {
+          "name": "ck_recording_attempts_browser_origin",
+          "value": "NOT (\"recording_attempts\".\"input_kind\" = 'browser_recording' AND \"recording_attempts\".\"status\" = 'ready') OR (\"recording_attempts\".\"started_at\" IS NOT NULL AND \"recording_attempts\".\"ended_at\" IS NOT NULL AND \"recording_attempts\".\"browser_info_json\" IS NOT NULL)"
+        },
+        "ck_recording_attempts_uploaded_origin": {
+          "name": "ck_recording_attempts_uploaded_origin",
+          "value": "NOT (\"recording_attempts\".\"input_kind\" = 'uploaded_file' AND \"recording_attempts\".\"status\" = 'ready') OR (\"recording_attempts\".\"started_at\" IS NULL AND \"recording_attempts\".\"ended_at\" IS NULL AND \"recording_attempts\".\"browser_info_json\" IS NULL AND length(trim(\"recording_attempts\".\"original_file_name\")) > 0)"
+        }
+      }
+    },
+    "section_series": {
+      "name": "section_series",
+      "columns": {
+        "identifier": {
+          "name": "identifier",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "material": {
+          "name": "material",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "display_order": {
+          "name": "display_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_section_series_material_order": {
+          "name": "idx_section_series_material_order",
+          "columns": ["material", "deleted_at", "display_order"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "section_series_material_materials_identifier_fk": {
+          "name": "section_series_material_materials_identifier_fk",
+          "tableFrom": "section_series",
+          "tableTo": "materials",
+          "columnsFrom": ["material"],
+          "columnsTo": ["identifier"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ck_section_series_title_not_blank": {
+          "name": "ck_section_series_title_not_blank",
+          "value": "length(trim(\"section_series\".\"title\")) > 0"
+        },
+        "ck_section_series_display_order": {
+          "name": "ck_section_series_display_order",
+          "value": "\"section_series\".\"display_order\" >= 0"
+        }
+      }
+    },
+    "sections": {
+      "name": "sections",
+      "columns": {
+        "identifier": {
+          "name": "identifier",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "section_series": {
+          "name": "section_series",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "version_number": {
+          "name": "version_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "body_text": {
+          "name": "body_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "body_text_hash": {
+          "name": "body_text_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_sections_latest": {
+          "name": "idx_sections_latest",
+          "columns": ["section_series", "deleted_at", "version_number"],
+          "isUnique": false
+        },
+        "idx_sections_body_hash": {
+          "name": "idx_sections_body_hash",
+          "columns": ["section_series", "body_text_hash"],
+          "isUnique": false
+        },
+        "uq_sections_series_version": {
+          "name": "uq_sections_series_version",
+          "columns": ["section_series", "version_number"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "sections_section_series_section_series_identifier_fk": {
+          "name": "sections_section_series_section_series_identifier_fk",
+          "tableFrom": "sections",
+          "tableTo": "section_series",
+          "columnsFrom": ["section_series"],
+          "columnsTo": ["identifier"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ck_sections_version_number": {
+          "name": "ck_sections_version_number",
+          "value": "\"sections\".\"version_number\" >= 1"
+        },
+        "ck_sections_body_text_not_blank": {
+          "name": "ck_sections_body_text_not_blank",
+          "value": "length(trim(\"sections\".\"body_text\")) > 0"
+        }
+      }
+    },
+    "spacing_schedules": {
+      "name": "spacing_schedules",
+      "columns": {
+        "identifier": {
+          "name": "identifier",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "learner": {
+          "name": "learner",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "focus_sound": {
+          "name": "focus_sound",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "contrast": {
+          "name": "contrast",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "next_presentation_at": {
+          "name": "next_presentation_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "recent_accuracy": {
+          "name": "recent_accuracy",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_spacing_schedules_due": {
+          "name": "idx_spacing_schedules_due",
+          "columns": ["state", "deleted_at", "next_presentation_at"],
+          "isUnique": false
+        },
+        "idx_spacing_schedules_learner_contrast": {
+          "name": "idx_spacing_schedules_learner_contrast",
+          "columns": ["learner", "contrast", "deleted_at"],
+          "isUnique": false
+        },
+        "uq_spacing_schedules_learner_contrast": {
+          "name": "uq_spacing_schedules_learner_contrast",
+          "columns": ["learner", "contrast"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "spacing_schedules_focus_sound_weakness_profiles_identifier_fk": {
+          "name": "spacing_schedules_focus_sound_weakness_profiles_identifier_fk",
+          "tableFrom": "spacing_schedules",
+          "tableTo": "weakness_profiles",
+          "columnsFrom": ["focus_sound"],
+          "columnsTo": ["identifier"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ck_spacing_schedules_state": {
+          "name": "ck_spacing_schedules_state",
+          "value": "\"spacing_schedules\".\"state\" IN ('rest', 'due', 'gate', 'done')"
+        },
+        "ck_spacing_schedules_recent_accuracy": {
+          "name": "ck_spacing_schedules_recent_accuracy",
+          "value": "\"spacing_schedules\".\"recent_accuracy\" IS NULL OR (\"spacing_schedules\".\"recent_accuracy\" >= 0 AND \"spacing_schedules\".\"recent_accuracy\" <= 1)"
+        }
+      }
+    },
+    "training_sessions": {
+      "name": "training_sessions",
+      "columns": {
+        "identifier": {
+          "name": "identifier",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "learner": {
+          "name": "learner",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "contrast": {
+          "name": "contrast",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ended_at": {
+          "name": "ended_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "aborted_at": {
+          "name": "aborted_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "duration_minutes": {
+          "name": "duration_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "session_accuracy": {
+          "name": "session_accuracy",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_training_sessions_learner_started": {
+          "name": "idx_training_sessions_learner_started",
+          "columns": ["learner", "deleted_at", "started_at"],
+          "isUnique": false
+        },
+        "idx_training_sessions_contrast_started": {
+          "name": "idx_training_sessions_contrast_started",
+          "columns": ["learner", "contrast", "deleted_at", "started_at"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ck_training_sessions_kind": {
+          "name": "ck_training_sessions_kind",
+          "value": "\"training_sessions\".\"kind\" IN ('hvpt_identification', 'production_drill', 'shadowing')"
+        },
+        "ck_training_sessions_status": {
+          "name": "ck_training_sessions_status",
+          "value": "\"training_sessions\".\"status\" IN ('in_progress', 'completed', 'aborted')"
+        },
+        "ck_training_sessions_completed": {
+          "name": "ck_training_sessions_completed",
+          "value": "\"training_sessions\".\"status\" != 'completed' OR (\"training_sessions\".\"ended_at\" IS NOT NULL AND \"training_sessions\".\"duration_minutes\" IS NOT NULL)"
+        },
+        "ck_training_sessions_aborted": {
+          "name": "ck_training_sessions_aborted",
+          "value": "\"training_sessions\".\"status\" != 'aborted' OR \"training_sessions\".\"aborted_at\" IS NOT NULL"
+        },
+        "ck_training_sessions_duration_minutes": {
+          "name": "ck_training_sessions_duration_minutes",
+          "value": "\"training_sessions\".\"duration_minutes\" IS NULL OR (\"training_sessions\".\"duration_minutes\" >= 1 AND \"training_sessions\".\"duration_minutes\" <= 30)"
+        },
+        "ck_training_sessions_session_accuracy": {
+          "name": "ck_training_sessions_session_accuracy",
+          "value": "\"training_sessions\".\"session_accuracy\" IS NULL OR (\"training_sessions\".\"session_accuracy\" >= 0 AND \"training_sessions\".\"session_accuracy\" <= 1)"
+        }
+      }
+    },
+    "weakness_profiles": {
+      "name": "weakness_profiles",
+      "columns": {
+        "identifier": {
+          "name": "identifier",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "learner": {
+          "name": "learner",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "diagnostic_session": {
+          "name": "diagnostic_session",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "focus_sounds_json": {
+          "name": "focus_sounds_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "last_updated_at": {
+          "name": "last_updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_weakness_profiles_learner": {
+          "name": "idx_weakness_profiles_learner",
+          "columns": ["learner", "deleted_at"],
+          "isUnique": false
+        },
+        "uq_weakness_profiles_learner": {
+          "name": "uq_weakness_profiles_learner",
+          "columns": ["learner"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "weakness_profiles_diagnostic_session_diagnostic_sessions_identifier_fk": {
+          "name": "weakness_profiles_diagnostic_session_diagnostic_sessions_identifier_fk",
+          "tableFrom": "weakness_profiles",
+          "tableTo": "diagnostic_sessions",
+          "columnsFrom": ["diagnostic_session"],
+          "columnsTo": ["identifier"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ck_weakness_profiles_focus_sounds_json": {
+          "name": "ck_weakness_profiles_focus_sounds_json",
+          "value": "json_valid(\"weakness_profiles\".\"focus_sounds_json\")"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

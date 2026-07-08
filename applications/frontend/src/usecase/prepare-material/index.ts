@@ -14,6 +14,7 @@ import { type TransactionManager } from "../port/transaction-manager";
 import { type EntropyProvider } from "../port/entropy-provider";
 import { type Clock } from "../port/clock";
 import { type Logger } from "../port/logger";
+import { parseInput } from "../shared/validation";
 
 // ---- Input ----
 
@@ -70,27 +71,26 @@ const toMaterialOutput = (material: ActiveMaterial): PrepareMaterialMaterialOutp
 export const createPrepareMaterial =
   (dependencies: PrepareMaterialDependencies) =>
   (input: PrepareMaterialInput): ResultAsync<PrepareMaterialOutput, DomainError> => {
-    const parsed = prepareMaterialSchema.safeParse(input);
-    if (!parsed.success) {
-      return errAsync(
-        validationFailed("input", parsed.error.errors.map((e) => e.message).join(", "))
-      );
+    const parsedInput = parseInput(prepareMaterialSchema, input);
+    if (parsedInput.isErr()) {
+      return errAsync(parsedInput.error);
     }
+    const parsed = parsedInput.value;
 
-    const titleResult = createMaterialTitle(parsed.data.title);
+    const titleResult = createMaterialTitle(parsed.title);
     if (titleResult.isErr()) return errAsync(titleResult.error);
 
     const title = titleResult.value;
 
     // source を解析
     let source = null;
-    if (parsed.data.source) {
-      const sourceType = parsed.data.source.sourceType ?? "other";
+    if (parsed.source) {
+      const sourceType = parsed.source.sourceType ?? "other";
       const sourceResult = createMaterialSource({
         sourceType,
-        url: parsed.data.source.sourceUrl ?? null,
-        sourceTitle: parsed.data.source.sourceTitle ?? null,
-        speakerName: parsed.data.source.speakerName ?? null,
+        url: parsed.source.sourceUrl ?? null,
+        sourceTitle: parsed.source.sourceTitle ?? null,
+        speakerName: parsed.source.speakerName ?? null,
       });
       if (sourceResult.isErr()) return errAsync(sourceResult.error);
       source = sourceResult.value;

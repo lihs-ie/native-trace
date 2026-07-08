@@ -1,0 +1,40 @@
+# scripts/module-to-dist.txt — Python import module root -> PyPI distribution name の対応表。
+# scripts/verify-analyzer-deps.sh が読む。1 行 = `module dist`（空白区切り、# 行はコメント）。
+#
+# 背景: applications/python-analyzer / applications/golden-speaker の Dockerfile は
+#   pyproject.toml ではなくハードコードした pip install 行で依存を焼き込む。pyproject に
+#   依存を足しても Dockerfile の pip 行を直さないと image に入らず ModuleNotFoundError が
+#   起動時 import で握り潰され、silent runtime dead-wiring になる（incident: kokoro 2026-06-12 /
+#   scipy 2026-06-19）。verify-analyzer-deps.sh は src の実 import を distribution に解決し
+#   Dockerfile の pip 行と突き合わせる。その import->distribution 解決の正本がこのファイル。
+#
+# 重要: import 名と distribution 名が食い違う renaming はここに必ず書く。
+#   src で新しい third-party を import したら、stdlib でも first-party でもない限り
+#   この表に 1 行追加すること（未登録なら verify が FAIL する＝silent-skip しない設計）。
+#
+# 形式: `<import module root> <pip distribution name>`
+#   distribution 名は pip install で書く綴り。verify 側で lowercase / `_`->`-` / extras / version
+#   指定子を正規化して Dockerfile の pip 行と比較するので、ここは pyproject/Dockerfile の綴りで良い。
+
+# --- 既知の renaming（import 名 != distribution 名）---
+parselmouth praat-parselmouth
+PIL Pillow
+cv2 opencv-python
+yaml PyYAML
+sklearn scikit-learn
+
+# --- identity 系（import 名 == distribution 名。実 import を seed）---
+# python-analyzer
+fastapi fastapi
+pydantic pydantic
+uvicorn uvicorn
+transformers transformers
+torch torch
+torchaudio torchaudio
+soundfile soundfile
+numpy numpy
+scipy scipy
+kokoro kokoro
+# golden-speaker（rvc_python は import 名にアンダースコア、distribution はハイフン）
+rvc_python rvc-python
+huggingface_hub huggingface_hub

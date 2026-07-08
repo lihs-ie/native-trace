@@ -9,25 +9,10 @@ set -euo pipefail
 repository_root="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 cd "$repository_root"
 
-if [ "$#" -gt 0 ]; then
-  changed="$1"
-else
-  base="${BASE_REF:-$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@refs/remotes/@@')}"
-  [ -z "${base:-}" ] && base="origin/main"
-  if git rev-parse --verify "$base" >/dev/null 2>&1; then
-    changed="$(git diff --name-only --diff-filter=ACMRT "$base"...HEAD)"
-  else
-    changed="$(git diff --name-only --diff-filter=ACMRT HEAD~1 2>/dev/null || git ls-files)"
-  fi
-  if [ -z "$changed" ]; then
-    # no committed diff vs base — fall back to working-tree changes so uncommitted/untracked
-    # work is not vacuously passed (CI always has a committed diff, so this branch is CI-inert).
-    changed="$(git diff --name-only --diff-filter=ACMRT HEAD 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null)"
-  fi
-fi
+source "$repository_root/scripts/lib/changed-files.sh"
 
-test_dir_re='(^|/)(test|tests|__tests__|spec|specs|fixtures|testdata|mocks?|stubs?|fakes?)(/|$)'
-code_ext_re='\.(ts|tsx|js|jsx|mjs|cjs|go|php|py|rb|java|kt|kts|hs|rs|scala|swift|c|cc|cpp|h|hpp)$'
+changed="$(collect_changed_files "${1:-}")"
+
 prod_changed="$(printf '%s\n' "$changed" | grep -Evi "$test_dir_re" | grep -Ei "$code_ext_re" || true)"
 
 # 本番経路の迂回パターン。設定読み込みそのもの (config 層) は別ルールで管理するため、

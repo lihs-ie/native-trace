@@ -19,3 +19,369 @@ evidence_required:
 verified_fires: true            # 違反で非ゼロ / clean で 0 を確認済みか
 rollback_condition: "false_positive_rate > 0.15"
 owner: "@lihs-ie"
+---
+# A1: Haskell の partial record construction を build error 化する設定の有無を静的検査する。
+id: haskell_werror_missing_fields
+failure_class: dataflow_unwired   # record にフィールド追加→builder 未設定→runtime thunk crash
+trigger:
+  repeated_count: 1               # P0 incident。runtime crash (worker HTTP 000) で blocking
+  sources: ["ci", "runtime_verify"]
+rule:
+  summary: "全 *.cabal の warning 設定に -Werror=missing-fields があること (partial record を build error 化)"
+  enforcement:
+    - type: grep_gate
+      detail: "scripts/verify-haskell-warnings.sh が applications/backend/**/*.cabal に -Werror=missing-fields を grep。欠ければ exit 1"
+    - type: smoke
+      detail: "fitness hook (scripts/agent-policy-hook.sh) が *.cabal 編集時に実行 + CI (.github/workflows/pr-gate.yml の policy job)"
+    - type: rubric_item
+      detail: "rubric/packs/haskell.md の cabal warnings 判定項目"
+evidence_required:
+  - changed_files
+  - grep_output
+verified_fires: true             # cabal から flag 除去→exit 1、復帰→exit 0 を実コマンドで確認
+rollback_condition: "false_positive_rate > 0.15"   # cabal は数が少なく FP リスクは極小
+owner: "@lihs-ie"
+---
+# A2: drizzle schema 変更に migration 再生成が追随しているかを co-change 検査する。
+id: frontend_schema_needs_migration
+failure_class: dataflow_unwired   # schema 変更後 db:generate 忘れ→実機 no such table
+trigger:
+  repeated_count: 1
+  sources: ["runtime", "memory"]  # incident 2026-06-12, memory: drizzle-migration-regenerate-after-schema
+rule:
+  summary: "infrastructure/drizzle/schema.ts を変更したら drizzle/*.sql (migration) も共変更する"
+  enforcement:
+    - type: smoke
+      detail: "wiring_manifest.yml rule frontend-schema-needs-migration を scripts/verify-wiring.sh が co-change 検査 (hook + CI policy job)"
+evidence_required:
+  - changed_files
+rollback_condition: "false_positive_rate > 0.15"   # 超過時は when を schema.ts 内の table 定義変更に narrow / waiver で対処
+waiver: ".agent-evidence/wiring-waivers.txt に rule id を 1 行 (無期限 allowlist は作らない)"
+verified_fires: true             # synthetic worktree: schema 単独→exit1、schema+sql→exit0 を確認
+owner: "@lihs-ie"
+---
+# A3: python-analyzer の依存追加が Dockerfile に反映されているかを co-change 検査する。
+id: python_analyzer_pyproject_needs_dockerfile
+failure_class: dataflow_unwired   # pyproject 依存追加だけ→コンテナ未反映→TTS 500 / f0 empty
+trigger:
+  repeated_count: 1
+  sources: ["runtime", "memory"]  # incident 2026-06-12, memory: python-analyzer-dockerfile-hardcoded-pip
+rule:
+  summary: "pyproject.toml を変更したら Dockerfile (ハードコード pip list) も共変更する"
+  enforcement:
+    - type: smoke
+      detail: "wiring_manifest.yml rule python-analyzer-pyproject-needs-dockerfile を scripts/verify-wiring.sh が co-change 検査 (hook + CI policy job)"
+evidence_required:
+  - changed_files
+rollback_condition: "false_positive_rate > 0.15"   # version bump 等で Dockerfile 不要なら waiver
+waiver: ".agent-evidence/wiring-waivers.txt に rule id を 1 行 (無期限 allowlist は作らない)"
+verified_fires: true             # synthetic worktree: pyproject 単独→rule fail、+Dockerfile→rule OK を確認
+owner: "@lihs-ie"
+---
+# B: E2E seed 直焼きを live-derivation の証拠と誤認しない rubric 強化 (doc-only)。
+id: e2e_seed_not_live_derivation_evidence
+failure_class: spec_violation     # derived フィールドの Must を seed-render pass で代替
+trigger:
+  repeated_count: 1
+  sources: ["spec_grade"]          # incident 2026-06-13 M-104R-c
+rule:
+  summary: "E2E seed が derived 値を直接 DB に差し込む場合、live-derivation の証拠にしない。real entrypoint→usecase→DB の integration assert を別途要求する"
+  enforcement:
+    - type: rubric_item
+      detail: "rubric/core/wiring.md の『明示的に fail とする配線ミス例』に seed 直焼き項目を追加"
+evidence_required:
+  - changed_files
+rollback_condition: "n/a (doc-only rubric。executable gate ではないため FP exit-code は無い)"
+verified_fires: false            # executable gate でないため exit-code firing は無し (rubric 追記のみ)
+owner: "@lihs-ie"
+---
+# FC-1: 新規 .hs の postpositive `import X qualified` で fourmolu per-edit hook が parse 失敗する
+# 根本を、grep gate ではなく fourmolu 起動オプションの単一点修正で解決する (FP ゼロ)。
+id: fourmolu_new_file_import_qualified_post
+failure_class: harness_false_block   # 正しいコードを per-edit hook が誤ってブロックする (toolchain 不整合)
+trigger:
+  repeated_count: 3                  # ShadowingLagSpec / GoldenSpeakerSpec / GoldenSpeakerClient で回避 pragma を後付け
+  sources: ["fitness_hook"]
+rule:
+  summary: "fitness hook の fourmolu 呼び出しに --ghc-opt -XImportQualifiedPost を渡し、cabal 未登録の新規 .hs でも postpositive qualified を GHC2024 整合で parse できるようにする"
+  root_cause: "fourmolu は .cabal の exposed-modules/other-modules に登録済みの module からのみ default-language(GHC2024)/default-extensions を抽出する。新規 .hs は未登録のため GHC2024 由来の ImportQualifiedPost が効かず parse error になる。既存 .hs が pragma 無しで通るのは cabal 登録済みだから (= grep gate は大量 FP を生む。採用せず)。"
+  enforcement:
+    - type: short_rule
+      detail: "scripts/fitness/hook.sh の run_backend_checks 内 fourmolu 呼び出しに --ghc-opt -XImportQualifiedPost を追加 (単一点修正)"
+    - type: rubric_item
+      detail: "rubric/packs/haskell.md の補足節に『新規 .hs の postpositive qualified は hook の --ghc-opt で解決済み・pragma 都度付与不要』を記録"
+evidence_required:
+  - changed_files
+  - grep_output                      # 全 .hs で plain と --ghc-opt の exit-code diff = 0
+rollback_condition: "false_positive_rate > 0.15"   # フラグ追加で既存挙動が変わる (整形差が出る) なら rollback。全14 .hs で exit-code diff 0 を確認済みなので FP リスク極小
+not_chosen:
+  - "全 postpositive-qualified .hs に pragma 必須化する grep gate (既存 worker .hs の大半が pragma 無しで build 成立しており大量 FP。failure-miner の明示警告通り不採用)"
+verified_fires: true               # 新規未登録 .hs: plain で exit 102 (postpositive parse fail) → --ghc-opt -XImportQualifiedPost で exit 0 を実コマンドで確認。既存14 .hs は両条件で exit-code diff 0 (FP ゼロ)
+owner: "@lihs-ie"
+---
+# FC-2: Api.hs の WorkerApi 型に route を追加しても Application.hs server に handler を結線せず早期終了する。
+# wiring_manifest の co-change rule を補完し、route 数 ↔ handler 数の parity を静的に機械検査する。
+id: servant_route_handler_parity
+failure_class: dataflow_unwired      # route 型だけ追加・handler 未結線で done 報告 (build 待たず検出したい)
+trigger:
+  repeated_count: 3
+  sources: ["code_review", "implementer_early_exit"]
+rule:
+  summary: "Api.hs の WorkerApi route 数 (HTTP method combinator) と Application.hs server の handler 数 (:<|> 項+1) が一致すること。不一致で exit 1"
+  enforcement:
+    - type: grep_gate
+      detail: "scripts/verify-servant-route-handler-parity.sh が Api.hs の type WorkerApi ブロック内 method 数と Application.hs server の :<|> 項数+1 を比較。tree 全体を常時検査 (恒常的不変条件)"
+    - type: smoke
+      detail: "scripts/agent-policy-hook.sh が Api.hs/Application.hs 編集時に実行 + CI (.github/workflows/pr-gate.yml policy job の Servant route/handler parity step)"
+    - type: rubric_item
+      detail: "rubric/packs/haskell.md に Servant route↔handler parity 判定項目を追加。rubric/core/wiring.md に『implementer 終了メッセージを配線証拠にしない』節"
+evidence_required:
+  - changed_files
+  - grep_output
+rollback_condition: "false_positive_rate > 0.15"   # 超過時は method/handler カウントの正規表現を narrow に (継続行・コメント混入の誤カウントが出たら除外)
+verified_fires: true               # clean: routes=5/handlers=5 → exit 0。synthetic violation (Api.hs に route +1, handler 無し): routes=6/handlers=5 → exit 1。restore → exit 0 を実コマンドで確認
+owner: "@lihs-ie"
+---
+# FC-3: 重い Haskell per-edit hook で implementer が budget 切れ早期終了し、配線途中で離脱する。
+# memory 既出だが rule/rubric 未昇格。3 回再発で §6 (同 class 3 回) を超過 → 正本 + rubric に昇格。
+id: heavy_haskell_per_edit_hook_budget_exhaustion
+failure_class: process_early_exit    # per-edit hook 重量で配線未完了のまま離脱・偽完了報告
+trigger:
+  repeated_count: 3
+  sources: ["memory", "implementer_early_exit"]   # memory: haskell-per-edit-hook-burns-subagent-budget
+rule:
+  summary: "大 Haskell 配線は API 型 + handler + Types + cabal を一括編集してから build。implementer 早期終了時、orchestrator は終了メッセージを信用せず grep/build で landed を確認し残件だけ再投する"
+  enforcement:
+    - type: short_rule
+      detail: "正本 ~/.claude/docs/agent-policy.md §3 (Done when) に大配線一括編集 + 早期終了時 grep/build 確認の注記を追加。kit テンプレ AGENTS.md.tmpl の Wiring points 節にも同趣旨を追加 (kit 再適用で生成 AGENTS.md/CLAUDE.md に伝播)"
+    - type: rubric_item
+      detail: "rubric/core/wiring.md に『implementer 終了メッセージを配線証拠にしない (grep/build で landed 確認)』節を追加"
+evidence_required:
+  - changed_files
+propagation: "正本 + kit テンプレを更新済。生成物 AGENTS.md/CLAUDE.md は直接編集せず、次回 agent-policy-kit 再適用 (Detect→Diff→Apply) で伝播する"
+rollback_condition: "n/a (doc-only short_rule + rubric。executable gate ではないため FP exit-code は無い)"
+verified_fires: false              # doc-only 昇格 (exit-code firing は無し)
+owner: "@lihs-ie"
+---
+# FC-4: 空 __tests__ を作成して done 報告 + Playwright 未実行。done-evaluator が 1 回捕捉。
+id: empty_tests_dir_e2e_skipped_not_done
+failure_class: spec_violation        # テスト存在/空テスト緑/E2E 未実行を done 証拠に使う
+trigger:
+  repeated_count: 1
+  sources: ["done_evaluate"]
+rule:
+  summary: "空 __tests__ / テスト 0 件は done でない (1 件以上 pass 必須)。受入条件に E2E を含む Must は .agent-evidence に Playwright 実行ログを必須証拠とする"
+  enforcement:
+    - type: rubric_item
+      detail: "rubric/packs/nextjs.md に『空 __tests__ は done でない・1 件以上 pass 必須』『spec 受入に Playwright がある screen feature は E2E 実行を done 必須証拠に』の 2 項目。rubric/core/spec.md に『受入条件に E2E を含む Must は .agent-evidence に E2E 実行ログ必須』1 行"
+evidence_required:
+  - changed_files
+rollback_condition: "n/a (doc-only rubric。executable gate ではないため FP exit-code は無い)"
+verified_fires: false              # doc-only 昇格 (exit-code firing は無し)
+owner: "@lihs-ie"
+---
+# FC-5: worker の外部サービス HTTP client が responseTimeout 未設定で http-client default 30s に依存し、
+# 重い ML/推論サービスで ResponseTimeout を「解析失敗」に化けさせる。
+# AnalyzerClient は修正済だが GoldenSpeakerClient が同型未修正 (live false-negative) だった。
+id: worker_http_client_explicit_timeout
+failure_class: dataflow_unwired      # 正常応答直前に worker が諦め、成功すべき経路が失敗に化ける
+trigger:
+  repeated_count: 2                  # AnalyzerClient (修正済) + GoldenSpeakerClient (未修正) の 2 occurrence
+  sources: ["code_review", "ci"]     # incident 2026-06-14-worker-http-client-default-30s-timeout
+rule:
+  summary: "Worker/*Client.hs で newManager tlsManagerSettings + httpLbs を使う外部サービス呼び出しは Request に responseTimeout を明示し env (XXX_TIMEOUT_SECONDS) から読む。未設定の default 30s 依存を禁止"
+  enforcement:
+    - type: grep_gate
+      detail: "scripts/verify-worker-http-client-timeout.sh が applications/backend/src/NativeTrace/Worker/*Client.hs を走査。newManager tlsManagerSettings を含むファイルに responseTimeout が無ければ exit 1。tree 全体を常時検査 (恒常的不変条件、BSD/GNU 両対応の find + grep -qF)"
+    - type: smoke
+      detail: "scripts/agent-policy-hook.sh が worker の *Client.hs 編集時に実行 + CI (.github/workflows/pr-gate.yml policy job の Worker HTTP client explicit responseTimeout step)"
+    - type: rubric_item
+      detail: "rubric/packs/haskell.md に『Worker HTTP client responseTimeout 明示』+『Timeout ladder 単調性 (frontend OSS_WORKER_TIMEOUT_MS ≥ worker XXX_TIMEOUT_SECONDS×1000 ≥ 下流 p95)』。rubric/core/wiring.md に『real_entrypoint を下流サービスのパスと取り違えない (worker inbound は POST /v1/pronunciation-assessments、/v1/analyze は analyzer 側)』節"
+evidence_required:
+  - changed_files
+  - grep_output
+rollback_condition: "false_positive_rate > 0.15"   # 超過時は対象を「外部 HTTP する client」に narrow (現状 newManager tlsManagerSettings の有無で gate 済。manager を立てない pure helper は対象外なので FP リスク極小)
+verified_fires: true               # clean (golden 修正後): exit 0。synthetic violation (GoldenSpeakerClient の responseTimeout 行を一時削除): exit 1 + 正しいエラー。restore → exit 0 を実コマンドで確認。修正前の現状 tree でも GoldenSpeakerClient 未修正を exit 1 で検出済 (live false-negative の実証)
+owner: "@lihs-ie"
+---
+# CAND-A: default (no-arg) mode の verify-*.sh が committed diff (base...HEAD) のみで changed を作るため、
+# 未コミット/untracked のみの作業ツリーで committed diff が空だと走査対象ゼロで空振り exit 0 (vacuous pass)。
+# committed diff が空のときだけ working-tree 変更にフォールバックする (CI は常に非空なので CI-inert)。
+id: verify_gate_working_tree_blindspot
+failure_class: harness_false_negative   # process: 決定論ゲートが未コミット作業を検査せず空振り green を返す (gate-blindspot)
+trigger:
+  repeated_count: 2                  # memory verify-scripts-skip-untracked (2026-06-11) + this-session (2026-06-17/18)
+  sources: ["memory", "this_session"]
+rule:
+  summary: "verify-{no-prod-doubles,test-bypass,no-stub-placeholder,wiring}.sh の default モードで committed diff (base...HEAD) が空なら working-tree (git diff HEAD + git ls-files --others) にフォールバックして未コミット/untracked も検査する"
+  root_cause: "default モードは changed を base...HEAD (committed diff、base=origin/main) で作る。未コミット/untracked のみの作業ツリーで base に対する committed diff が空だと走査対象ゼロになり vacuously exit 0。per-file ($1) モード (fitness hook) と CI (commit 済みブランチで base...HEAD 非空) は影響なし。default モードの未コミット作業だけが盲点。"
+  enforcement:
+    - type: short_rule
+      detail: "4 スクリプト ×3 location (native-trace scripts/, dotfiles scripts/, kit templates executable_*) の default else 分岐に『committed diff 空なら working-tree フォールバック』を追加。changed 算出後・早期 exit 前 (verify-wiring は line 25 の early exit 前) に挿入。per-file 分岐は不変"
+    - type: short_rule
+      detail: "正本 ~/.claude/docs/agent-policy.md §3 (Done when) の『working-tree 状態で回す決定論ゲートは未コミット変更も検査対象に含める』を workspace/dotfiles 側 source にも反映 (live ~/.claude には既存)"
+evidence_required:
+  - changed_files
+  - grep_output                      # 全 12 copy で fallback ブロックが byte-identical (md5 一致) を確認済
+rollback_condition: "false_positive_rate > 0.15"   # 超過時は working-tree フォールバックに generated/ 等の除外を追加 (現状 test_dir_re/generated/ の既存除外と code_ext_re で絞り済み)
+verified_fires: true               # BASE_REF=HEAD で committed diff を空に → 修正前 (committed HEAD 版) exit 0 (vacuous pass=bug 再現)、修正後 violation で exit 1、clean で exit 0、per-file ($1) exit 0、CI-mode (origin/main base, 785 file 非空) exit 0 で fallback inert。no-prod-doubles でも cross-check (violation exit 1 / clean exit 0)。証跡 .agent-evidence/self-improve-fire-check-2026-06-18.txt
+owner: "@lihs-ie"
+---
+# CAND-B: spec-curator が worker の inbound entrypoint (POST :8787/v1/pronunciation-assessments) と
+# worker が呼ぶ下流 route (/v1/analyze on analyzer :8788, /v1/convert on golden) を取り違える。
+# prose grep gate は FP 過多 (spec は下流 route を正当に列挙する) で不可 → doc-only (rubric + 正本)。
+id: spec_curator_worker_route_confusion
+failure_class: spec_violation        # real_entrypoint に下流 route を記録し inbound と取り違える
+trigger:
+  repeated_count: 2                  # incident 2026-06-14 (done-evaluator が wiring-map entrypoint 取り違え) + this-session の spec draft
+  sources: ["incident", "spec_draft"]
+rule:
+  summary: "spec-curator は real_entrypoint に対象サービスの inbound route を記録し、そのサービスが呼ぶ下流 route を inbound entrypoint と取り違えない。worker は inbound = POST /v1/pronunciation-assessments (8787)、/v1/analyze (8788) / /v1/convert は下流"
+  enforcement:
+    - type: rubric_item
+      detail: "rubric/core/wiring.md の real_entrypoint 節に spec-curator 向けチェック行を追加 (worker inbound = POST /v1/pronunciation-assessments、下流 route を inbound に記録しない)"
+    - type: rubric_item
+      detail: "rubric/core/spec.md の判定原則に Must 正規化行を追加 (worker feature の spec は real entrypoint を POST /v1/pronunciation-assessments と明記)"
+    - type: short_rule
+      detail: "正本 ~/.claude/docs/agent-policy.md §2 に spec-curator 向け 1 行 (generic): real_entrypoint に対象サービスの inbound route を記録し下流呼び出し route を inbound と取り違えない。kit templates rubric/core/{wiring,spec}.md にも generic 版を追加 (kit 再適用で各 repo に伝播)"
+not_chosen:
+  - "spec 散文への grep gate (spec は下流 route を正当に列挙するため FP 過多。failure-miner の明示警告通り不採用)"
+eval_deferred:
+  reason: "§6 しきい値 (同 failure class 3 回) で eval 作成。現在 2 回 (incident 2026-06-14 + this-session spec draft) のため eval は 3 回目の再発まで保留 (evals/ ファイルは作成しない)"
+evidence_required:
+  - changed_files
+rollback_condition: "n/a (doc-only rubric + 正本。executable gate ではないため FP exit-code は無い)"
+verified_fires: false              # doc-only 昇格 (exit-code firing は無し)
+owner: "@lihs-ie"
+---
+# CAND-b1: python-analyzer / golden-speaker の Dockerfile は pyproject ではなくハードコード pip list で
+# 依存を焼き込む。src が import する third-party が pyproject にあっても Dockerfile の pip 行に無いと
+# image に入らず、起動時 import の ModuleNotFoundError が broad except に握り潰され silent runtime dead-wiring。
+# 既存 wiring rule python-analyzer-pyproject-needs-dockerfile は *ファイル共変更* しか見ず Dockerfile CONTENT を
+# 検査しない (= co-change しても pip 行への追記漏れを通す) ギャップを、import→distribution 解決の content gate で塞ぐ。
+id: analyzer_dockerfile_dep_content_gap
+failure_class: dataflow_unwired      # dep が image に入らず import 失敗が握り潰され機能が runtime で死ぬ
+trigger:
+  repeated_count: 2                  # kokoro 2026-06-12 (memory python-analyzer-dockerfile-hardcoded-pip) + scipy 2026-06-19 (incident ADR-018)
+  sources: ["incident", "runtime_verify", "memory"]
+rule:
+  summary: "applications/{python-analyzer,golden-speaker}/src/**/*.py が import する third-party module の distribution が、同サービス Dockerfile のハードコード pip install 行 (∪ base-image-pip-allowlist) に含まれること。欠ければ exit 1"
+  enforcement:
+    - type: grep_gate
+      detail: "scripts/verify-analyzer-deps.sh が src の top-level import を収集 → stdlib (host python sys.stdlib_module_names、無ければ維持リスト) と first-party (python_analyzer/golden_speaker/相対) を除外 → scripts/module-to-dist.txt で module→distribution 解決 (renaming 含む) → Dockerfile の pip install ブロックを解析した installed 集合と突合。tree 全体を常時検査 (恒常的不変条件)"
+    - type: smoke
+      detail: "scripts/agent-policy-hook.sh が applications/{python-analyzer,golden-speaker}/src/**/*.py 編集時に実行 + CI (.github/workflows/pr-gate.yml policy job の Analyzer/golden-speaker src imports present in Dockerfile pip list step、tree 全体)"
+  no_silent_skip: "stdlib でも first-party でも module-to-dist.txt にも無い module は FAIL (silent-skip すると盲点を再生産する=rollback trap)。新 third-party を import したら module-to-dist.txt に 1 行追加が必須"
+evidence_required:
+  - changed_files
+  - grep_output
+allowlist: "scripts/base-image-pip-allowlist.txt は base image / stdlib 隣接 / 明示 pin 済 transitive のみ (各行に理由コメント必須、無期限 allowlist 禁止)。現状 golden-speaker の numpy / praat-parselmouth (rvc-python==0.1.5 の pinned transitive) のみ"
+rollback_condition: "false_positive_rate > 0.15"   # 超過時は module-to-dist.txt の mapping を拡充するか、誤検出 distribution を理由付きで base-image-pip-allowlist.txt に narrow 追加 (silent-skip には絶対戻さない)
+verified_fires: true               # clean: 両サービス OK で exit 0。synthetic violation (python-analyzer Dockerfile から scipy pip 行を一時削除): exit 1 で scipy のみを正確に指摘 (他 dep に FP なし)。restore → exit 0。未登録 third-party import probe → exit 1 (silent-skip しない=rollback trap 防御) を実コマンドで確認
+owner: "@lihs-ie"
+---
+# CAND-b2: worker の let/where 束縛を計算したが construction site が literal Nothing/default のまま →
+# 束縛が unused で機能が dead だが、-Wunused-local-binds / -Wunused-matches は -Wall に含まれるが
+# warning 止まりで cabal build/test が緑を通過する。-Werror=missing-fields の前例に倣い build error 化する。
+id: haskell_unused_local_binding_dead_wiring
+failure_class: dataflow_unwired      # 計算済み束縛を construction site で消費せず literal default のまま=機能が build 緑で死ぬ
+trigger:
+  repeated_count: 1                  # ADR-018 GOP-site dead-Nothing (incident 2026-06-19、event 1: acousticEvidence を let で計算したが GOP 構築が = Nothing)。precedent: -Werror=missing-fields は P0 で 1 回昇格済の同型クラス
+  sources: ["incident", "static_verify"]
+rule:
+  summary: "applications/backend/native-trace-worker.cabal の ghc-options に -Werror=unused-local-binds と -Werror=unused-matches があること (計算したが construction site で使われない let/where 束縛を build error 化)"
+  enforcement:
+    - type: grep_gate
+      detail: "scripts/verify-haskell-warnings.sh が worker cabal に両 flag を grep。欠ければ exit 1。-Werror=missing-fields (全 cabal) と同 script に統合"
+    - type: smoke
+      detail: "scripts/agent-policy-hook.sh が *.cabal 編集時に verify-haskell-warnings.sh を実行 + CI (.github/workflows/pr-gate.yml policy job の Haskell cabal warnings hardened step)。fitness hook の cabal test (-Werror) でも編集ごとに発火"
+  precondition_sweep: "flag 追加前に cabal build all で既存 unused-local-binds/unused-matches warning を sweep → ゼロを確認 (clean tree。test-suite 含め scope 縮小不要だったため common warnings に追加)"
+evidence_required:
+  - changed_files
+  - grep_output
+rollback_condition: "false_positive_rate > 0.15"   # 超過時 (legit unused が test-suite 等に出る場合) は library stanza のみに scope を縮小。現状 common warnings (全 stanza 共有) で build all 緑なので FP リスク極小
+verified_fires: true               # flag 追加後 cabal build all 緑 (exit 0、unused warning ゼロ)。synthetic violation (tokenize where に unused let unusedProbe=(42::Int) を挿入): fitness hook の cabal test が GHC-40910 [-Wunused-local-binds, Werror=unused-local-binds] Defined but not used で build error → 編集ブロック。除去 → 緑。verify-haskell-warnings.sh: flag 有り exit 0、flag 一時削除 exit 1、restore exit 0 を実コマンドで確認
+residual: "resolved 2026-06-19 (f32e2ec): Scoring.hs L1136 schwaPhonemes (-Wunused-top-binds) + L83 WordPair (-Wunused-imports) を除去、加えて dead な foldl'/group/FunctionalLoad/flWeight import と dead な resultMale/let measured ブロックを除去。GoldenSpeakerSpec + ShadowingLagSpec を test-suite の other-modules に登録 (-Wmissing-home-modules 解消)。worker は warning-clean で build (73 examples, 0 failures, warning 無しを確認)"
+owner: "@lihs-ie"
+---
+# CAND-b3: proven-done 実行中に orchestrator が implementer に dispatch せず本番コードを直接編集 (keyboard-grab) し、
+# その un-delegated edit が束縛を orphan 化する (let/where で計算したが construction site が literal default のまま)
+# = dead-wiring。symptom の静的検出は CAND-b2 (-Werror=unused-local-binds) が Haskell で PRIMARY。behavioral 正本は
+# §3 + memory agent-dev-follow-pipeline-faithfully で 2× tier 済。本エントリは Haskell 以外の construction site
+# (例: run-assessment-job/index.ts の TS literal placeholder) 向けの doc-only rubric secondary net のみを追加する。
+id: orchestrator_hand_edit_dead_wiring
+failure_class: dataflow_unwired      # un-delegated hand-edit が束縛を orphan 化し機能が build 緑で死ぬ
+trigger:
+  repeated_count: 2                  # FULL incident 2026-06-19 ADR-018 event 1 (GOP-site dead-Nothing) + PARTIAL incident 2026-06-12 ORPHAN-1/2。いずれも dead-wiring を pre-merge で捕捉
+  sources: ["incident", "code_review"]
+  note: "2026-06-13 は misattributed (implementer の partial-record bug = haskell_werror_missing_fields の対象) のため本 class には数えない。2× = 1 full (2026-06-19) + 1 partial (2026-06-12)"
+rule:
+  summary: "proven-done 中に orchestrator が implementer に dispatch せず本番コードを hand-edit した場合、static-verifier は変更された本番ソース (.hs/.ts) を grep して orphan let/where 束縛 (計算したが全 construction/call site で消費されない) が無いことを確認する"
+  enforcement:
+    - type: rubric_item
+      detail: "rubric/core/wiring.md に『orchestrator の keyboard-grab は orphan 束縛を grep で確認する』節を追加 (Step 3.5 grep = compiler-flag 検査を持たない言語向けの SECONDARY ライン)"
+overlap:
+  - "CAND-b2 (haskell_unused_local_binding_dead_wiring): 同一 symptom (orphan let 束縛) の static gate。Haskell では -Werror=unused-local-binds が PRIMARY ライン。本エントリは duplicate ではなく Haskell 以外の construction site 向け SECONDARY net"
+  - "agent-policy §3 + memory agent-dev-follow-pipeline-faithfully: behavioral 正本/short_rule (orchestrator が implementer の代わりに配線を肩代わりしない)。2× tier で昇格済。本エントリは rubric-layer の augmentation のみで behavioral rule を再昇格しない"
+eval_deferred:
+  reason: "§6 eval しきい値は本 class で 3×。現在 2× (1 full 2026-06-19 + 1 partial 2026-06-12)。eval (evals/wiring/) は 3 回目の substantiated recurrence で作成、それ以前には作らない。static SYMPTOM は CAND-b2 で既にカバー済"
+evidence_required:
+  - changed_files
+  - grep_output
+rollback_condition: "n/a (doc-only rubric。exit-code firing が無いため FP exit-code も無い)"
+verified_fires: false              # doc-only 昇格 (exit-code firing は無し)、他の rubric-only エントリと同様
+owner: "@lihs-ie"
+---
+# CAND-2: pinned fixture/baseline の再 pin を「未コミット working-tree 編集」だけで行うと、acceptance sim の
+# `git checkout -- <file>` cleanup が INDEX 版 (= placeholder の HEAD) を復元して再 pin を黙って巻き戻す。
+# working-tree sim は全緑だが committed artifact は placeholder のまま → fresh clone で sentinel が壊れる。
+# PRIMARY = fail-closed な静的 gate (verify-committed-baseline.sh)。
+id: committed_baseline_head_placeholder
+failure_class: dataflow_unwired      # 再 pin が committed artifact に届かず、本番 (fresh clone) で baseline が placeholder のまま死ぬ
+trigger:
+  repeated_count: 3                  # (1) incident 2026-06-20 drift-stage3 (manifest TODO-at-HEAD、sim git checkout が 2 回再 pin を巻き戻し) (2) memory verify-scripts-skip-untracked (untracked/uncommitted false-green) (3) memory drizzle-migration-regenerate-after-schema / v2 migration-未生成 (schema 緑だが migration が committed されず実機 no such table)
+  sources: ["incident", "memory"]
+rule:
+  summary: "pinned baseline/fixture (corpus manifest 等) の committed/index 値は live でなければならない。placeholder (TODO|DUMMY|PLACEHOLDER|first-run|replace with) が committed pin に残る / wiring-map が re-pin/impl target と宣言したファイルが untracked (git checkout で巻き戻る) なら FAIL"
+  enforcement:
+    - type: grep_gate
+      detail: "scripts/verify-committed-baseline.sh — Check A: in-scope fixture (applications/python-analyzer/test/fixtures/corpus/manifest.json) の committed/index 値 (git show :<file> = git checkout 復元先) の pinned フィールド (analyzerCommit/gop.band/topNBest/expected*) を jq で抽出し placeholder token を検出。Check B: .agent-evidence/**/wiring-map.json が re-pin/baseline/pin と宣言した file が git ls-files --error-unmatch で untracked なら FAIL。default モードは working-tree-aware (verify-scripts-skip-untracked 修正と一貫)"
+    - type: smoke
+      detail: "scripts/agent-evidence-gate.sh (Stop hook、.agent-evidence/.active 時のみ) が verify-committed-baseline.sh を実行し非ゼロなら exit 2 で完了をブロック + CI .github/workflows/pr-gate.yml の policy job に step 追加"
+    - type: short_rule
+      detail: "正本 agent-policy.md §3: 『patch/restore sim を回す baseline は先に stage/commit する。git checkout -- <file> cleanup を使うなら HEAD/index が live 値を持つこと。cp-backup restore なら可。pinned fixture/migration/baseline は git show HEAD: (committed) 値で充足判定する』 (→ kit 再適用で AGENTS.md/CLAUDE.md に伝播)"
+    - type: rubric_item
+      detail: "rubric/core/spec.md 証拠品質 item: 『pinned fixture/migration/baseline を含む Must は git show HEAD:(committed) 値で充足判定。working-tree-only の緑を証拠にしない』"
+scope_narrow:
+  reason: "FP=rollback target なので scope を NARROW に限定。Check A は corpus manifest.json のみ (in-scope fixture allowlist)。Check B は wiring-map が明示的に re-pin/baseline/pin と宣言した file のみ。pinned 値は jq で抽出して走査するため、_comment / _calibrationNote のドキュメント文に placeholder 語があっても誤検出しない"
+evidence_required:
+  - changed_files
+  - grep_output     # committed/index pinned value or untracked re-pin target
+rollback_condition: "false_positive_rate > 0.15 — 超過時は (a) in-scope fixture allowlist を絞る (b) Check B の re-pin 検出語 (re-pin|baseline|pin) を narrow にする (c) memory に戻す。無期限 allowlist は作らない"
+verified_fires: true               # Check A: index に TODO/DUMMY 置換 (git add) → exit 1 + file flagged、52c4b24 から git checkout で live pin 復元 → exit 0。Check B: wiring-map が untracked file を re-pin 宣言 → exit 1、git add で stage → exit 0。Stop hook: active marker + placeholder index → exit 2 を実コマンドで確認。manifest は committed live pin に復元 (git status clean)
+owner: "@lihs-ie"
+---
+# CAND-1: verification が wired entrypoint の渡さない便利引数 (例 --repo-root の明示) を足したため、便利パスだけ
+# 緑になり本番 (default-arg) パスが未実行のまま false-green。wired path は crash していたが全コマンド緑だった。
+# miner が静的 arg-diff grep を「しばしば捏造される wiring-map に依存し脆い」と flag → grep gate は作らず
+# rubric (実行時 yes/no) + 正本 に昇格する。
+id: entrypoint_verbatim_execution
+failure_class: dataflow_unwired      # 宣言 entrypoint を逐語実行せず便利引数で代替 → 本番パス未実行の false-green
+trigger:
+  repeated_count: 5                  # corpus spine 5×: drift-stage3 (--repo-root で 5-dot off-by-one default crash を隠蔽) / scipy dead-wiring / markdown-fence / v2 worker-crash / v2 pip-parselmouth。いずれも「実ツールが出さない理想 payload / 便利引数 / mock で代替した緑」が entrypoint 未到達を隠した
+  sources: ["incident", "code_review"]
+rule:
+  summary: "runtime evidence の各コマンドは wiring_manifest.yml の real_entrypoint / package.json 宣言 script を逐語実行する。convenience 引数 (--repo-root の明示等)・mock 依存・実ツールが出さない理想 payload fixture で代替した緑は entrypoint 到達の証拠にしない"
+  enforcement:
+    - type: rubric_item
+      detail: "rubric/core/wiring.md に yes/no item『entrypoint 逐語実行』+ 『便利引数で entrypoint 到達を偽装しない』節を追加。runtime-verifier が commands.txt の各行 vs 宣言 entrypoint の引数差分を突き合わせ、追加引数/mock/理想 fixture があれば『entrypoint 未到達・continue』"
+    - type: short_rule
+      detail: "正本 agent-policy.md §3: 『観測 assert は宣言 entrypoint を逐語実行する。便利引数・mock 依存・理想 fixture で代替した緑は entrypoint 到達の証拠にしない』 (→ kit 再適用で AGENTS.md/CLAUDE.md に伝播)"
+no_grep_gate:
+  reason: "miner が静的 arg-diff grep を fragile と flag: しばしば捏造される wiring-map に依存し、entrypoint 宣言と実コマンドの照合は引数フォーマットの揺れで FP/FN が大きい。実行時 rubric (実 entrypoint を逐語実行して観測) の方が信頼でき、CAND-2 (committed-baseline) と違い静的判定が確実でない。よって grep gate は作らず rubric + 正本 のみ"
+evidence_required:
+  - runtime_command_log    # commands.txt の各行
+  - entrypoint_declaration # wiring_manifest.yml real_entrypoint / package.json script
+rollback_condition: "n/a (doc/rubric-only。exit-code firing が無いため FP exit-code も無い)。rubric が過剰に continue を返すなら matcher を『宣言 entrypoint と引数が異なるコマンドのみ』に narrow"
+verified_fires: false              # rubric + 正本 昇格 (exit-code firing は無し)。grep gate は意図的に非採用 (fragile)
+owner: "@lihs-ie"

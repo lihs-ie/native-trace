@@ -104,7 +104,7 @@ const makeBrowserRecordingInput = () => ({
     durationMilliseconds: 5000,
     startedAt: new Date("2026-01-01T00:00:00Z"),
     endedAt: new Date("2026-01-01T00:00:05Z"),
-    browserInfo: {
+    browserEnvironment: {
       browserName: "Chrome",
       deviceType: "pc" as const,
       recordingApiType: "MediaRecorder",

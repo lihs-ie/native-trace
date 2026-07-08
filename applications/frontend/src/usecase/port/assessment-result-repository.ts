@@ -12,6 +12,8 @@ export type AssessmentResultPage = Readonly<{
 
 export type AssessmentResultRepository = Readonly<{
   find: (identifier: AssessmentResultIdentifier) => ResultAsync<AssessmentResult, DomainError>;
-  search: (criteria: AssessmentResultSearchCriteria) => ResultAsync<AssessmentResultPage, DomainError>;
+  search: (
+    criteria: AssessmentResultSearchCriteria,
+  ) => ResultAsync<AssessmentResultPage, DomainError>;
   persist: (result: AssessmentResult) => ResultAsync<void, DomainError>;
 }>;

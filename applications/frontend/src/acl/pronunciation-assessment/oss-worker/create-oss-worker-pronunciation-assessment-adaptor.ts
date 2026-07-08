@@ -16,6 +16,7 @@ import { type DomainError } from "../../../domain/shared";
 import { type Clock } from "../../../usecase/port/clock";
 import { type Logger } from "../../../usecase/port/logger";
 import { assessmentEngineFailed, classifyFetchError } from "../shared/errors";
+import { fetchJsonWithTimeout } from "../shared/fetch-json";
 import { buildOssWorkerRequest } from "./request-mapper";
 import { mapOssWorkerResponse } from "./response-mapper";
 
@@ -42,27 +43,8 @@ export const createOssWorkerPronunciationAssessmentAdaptor = (
       url,
     });
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), dependencies.timeoutMilliseconds);
-
     return fromPromise(
-      globalThis
-        .fetch(url, { method: "POST", body, signal: controller.signal })
-        .then(async (response) => {
-          clearTimeout(timeoutId);
-          const status = response.status;
-          let rawBody: unknown;
-          try {
-            rawBody = await (response.json() as Promise<unknown>);
-          } catch {
-            rawBody = null;
-          }
-          return { status, rawBody };
-        })
-        .catch((error: unknown) => {
-          clearTimeout(timeoutId);
-          throw error;
-        }),
+      fetchJsonWithTimeout(url, { method: "POST", body }, dependencies.timeoutMilliseconds),
       (fetchError): DomainError =>
         assessmentEngineFailed(
           "oss_worker",

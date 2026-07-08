@@ -40,7 +40,7 @@ const makeReadyRecordingAttempt = (): RecordingAttempt => ({
     type: "browser_recording",
     startedAt: new Date("2026-01-02T00:00:00Z"),
     endedAt: new Date("2026-01-02T00:01:00Z"),
-    browserInfo: {
+    browserEnvironment: {
       browserName: "Chrome",
       deviceType: "pc",
       recordingApiType: "MediaRecorder",
@@ -55,6 +55,7 @@ const makeAnalysisRun = (): AnalysisRun => ({
   identifier: "01ANALYSISRUN" as AnalysisRunIdentifier,
   recordingAttempt: "01ATTEMPT" as RecordingAttemptIdentifier,
   mode: "cloud_only",
+  status: "succeeded",
   createdAt: new Date("2026-01-02T00:01:00Z"),
 });
 
@@ -68,6 +69,10 @@ const makeAssessmentResult = (overallScore: number): AssessmentResult => ({
     pronunciation: 82 as Score0To100,
     connectedSpeech: 70 as Score0To100,
     prosody: 78 as Score0To100,
+    intelligibility: null,
+    cefrOverall: null,
+    cefrSegmental: null,
+    cefrProsodic: null,
   },
   summary: {
     overallCommentJa: "発音は概ね良好です",
@@ -98,6 +103,10 @@ const makeAssessmentResult = (overallScore: number): AssessmentResult => ({
     modelName: "gpt-4o-audio",
   },
   createdAt: new Date("2026-01-02T00:02:00Z"),
+  perPhonemeGop: null,
+  focusSounds: null,
+  prosody: null,
+  engineSummaryMessageJa: null,
 });
 
 const makeSectionSeries = (): ActiveSectionSeries => ({

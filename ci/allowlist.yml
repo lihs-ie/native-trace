@@ -14,3 +14,18 @@ entries:
     owner: "@lihs-ie"
     reason: "page.tsx の client fetch をテストするためのモック。テストファイル専用で本番パスへの混入なし。"
     expires_at: "2027-06-30"
+  - rule: no-prod-doubles
+    path: "applications/frontend/src/app/api/v1/tts/route.test.ts"
+    owner: "@lihs-ie"
+    reason: "TTS プロキシ route の unit/contract test。vi.mock で config モジュールをモックし fetch を vi.stubGlobal で差し替える。テストファイル専用で本番パスへの混入なし (M-124)。"
+    expires_at: "2027-06-30"
+  - rule: no-prod-doubles
+    path: "applications/frontend/src/app/materials/*/sections/*/page.render.test.tsx"
+    owner: "@lihs-ie"
+    reason: "WorkspacePage の low_quality / failed 状態 render 統合テスト。vi.mock(@/lib/api-client) をテストファイル内に閉じ、EngineSegSelector の dock 描画到達を assert する。本番コードへの混入なし (Must-1 / Must-2)。"
+    expires_at: "2027-06-30"
+  - rule: no-prod-doubles
+    path: "applications/frontend/src/app/api/v1/findings/*/retry-recordings/route.test.ts"
+    owner: "@lihs-ie"
+    reason: "retry-recordings route の unit/contract test。vi.mock で registry/fixture/gop-delta-adaptor をテストファイル内に閉じ、normal/low_quality/422 の各パスを assert する。本番コードへの混入なし (M-CRL-11/M-CRL-13/M-CRL-16)。"
+    expires_at: "2027-06-30"

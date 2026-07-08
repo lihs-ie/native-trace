@@ -1,0 +1,17 @@
+# Fitness function: rvc (MIT) must not be imported outside golden-speaker
+# ADR-012: RVC engine is confined to the golden-speaker service (HTTP boundary isolation).
+# ADR-006 pattern: same as no-parselmouth-outside-python-analyzer.
+# Importing rvc_python or rvc in python-analyzer / frontend / backend violates the license boundary.
+id: no-rvc-outside-golden-speaker
+language: python
+severity: error
+message: "rvc / rvc_python は applications/golden-speaker/ 内部にのみ import 可（ADR-012）。このファイルでの import はサービス境界違反。"
+ignores:
+  - applications/golden-speaker/**
+rule:
+  any:
+    - pattern: import rvc_python
+    - pattern: from rvc_python import $$$
+    - pattern: import rvc
+    - pattern: from rvc import $$$
+    - pattern: from rvc_python.infer import $$$

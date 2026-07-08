@@ -16,5 +16,8 @@ export type AnalysisRunRepository = Readonly<{
   find: (identifier: AnalysisRunIdentifier) => ResultAsync<AnalysisRun, DomainError>;
   search: (criteria: AnalysisRunSearchCriteria) => ResultAsync<AnalysisRunPage, DomainError>;
   persist: (analysisRun: AnalysisRun) => ResultAsync<void, DomainError>;
-  updateStatus: (identifier: AnalysisRunIdentifier, status: AnalysisRunStatus) => ResultAsync<void, DomainError>;
+  updateStatus: (
+    identifier: AnalysisRunIdentifier,
+    status: AnalysisRunStatus,
+  ) => ResultAsync<void, DomainError>;
 }>;

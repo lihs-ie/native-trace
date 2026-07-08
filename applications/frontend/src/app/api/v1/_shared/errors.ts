@@ -6,6 +6,7 @@
  */
 
 import type { DomainError } from "../../../../domain/shared";
+import { generateRequestIdentifier } from "./response";
 
 type ErrorEnvelope = Readonly<{
   error: Readonly<{
@@ -20,9 +21,25 @@ type ErrorEnvelope = Readonly<{
   }>;
 }>;
 
-const generateRequestIdentifier = (): string => {
-  const uuid = globalThis.crypto.randomUUID().replace(/-/g, "");
-  return `req_${uuid}`;
+/**
+ * エラー封筒 `{ error: { code, message, details? }, meta: { requestIdentifier } }` を組み立てる（W31）。
+ * 封筒 JSON 形状は凍結（§4.1.3）— details は指定時のみ含める。
+ */
+export const errorResponse = (
+  status: number,
+  code: string,
+  message: string,
+  details?: ErrorEnvelope["error"]["details"],
+): Response => {
+  const envelope: ErrorEnvelope = {
+    error: {
+      code,
+      message,
+      ...(details ? { details } : {}),
+    },
+    meta: { requestIdentifier: generateRequestIdentifier() },
+  };
+  return Response.json(envelope, { status });
 };
 
 type DomainErrorMapping = {
@@ -31,7 +48,9 @@ type DomainErrorMapping = {
   message: string;
 };
 
-const mapDomainError = (error: DomainError): DomainErrorMapping & { details?: ErrorEnvelope["error"]["details"] } => {
+const mapDomainError = (
+  error: DomainError,
+): DomainErrorMapping & { details?: ErrorEnvelope["error"]["details"] } => {
   switch (error.type) {
     case "validationFailed":
       return {
@@ -89,17 +108,5 @@ const mapDomainError = (error: DomainError): DomainErrorMapping & { details?: Er
 
 export const domainErrorToResponse = (error: DomainError): Response => {
   const mapping = mapDomainError(error);
-  const envelope: ErrorEnvelope = {
-    error: {
-      code: mapping.code,
-      message: mapping.message,
-      ...(mapping.details ? { details: mapping.details } : {}),
-    },
-    meta: { requestIdentifier: generateRequestIdentifier() },
-  };
-  return Response.json(envelope, { status: mapping.status });
-};
-
-export const domainErrorToStatus = (error: DomainError): number => {
-  return mapDomainError(error).status;
+  return errorResponse(mapping.status, mapping.code, mapping.message, mapping.details);
 };

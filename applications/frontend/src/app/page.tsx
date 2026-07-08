@@ -2,22 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { apiGet, isApiClientError } from "@/lib/api-client";
-import type { MaterialDto } from "@/lib/api-types";
+import { useRouter } from "next/navigation";
+import { apiGet, apiPost, isApiClientError } from "@/lib/api-client";
+import type { MaterialDto, MaterialStatsDto, DiagnosticSessionDto } from "@/lib/api-types";
+import { MATERIAL_COMPLETED_SCORE } from "@/lib/score-bands";
+import { diagnosticSessionKey } from "@/lib/session-storage-keys";
+import { SOURCE_TYPE_LABELS, isTed } from "@/lib/material-source";
 import { AppTop } from "@/components/chrome/AppTop";
 import { HomeNav } from "@/components/chrome/HomeNav";
-
-const SOURCE_TYPE_LABELS: Record<string, string> = {
-  ted: "TED",
-  youtube: "YouTube",
-  speech: "スピーチ",
-  article: "記事",
-  book: "書籍",
-  other: "その他",
-};
-
-const isTed = (sourceType: string): boolean =>
-  sourceType.toLowerCase() === "ted";
 
 const formatRelativeDate = (isoString: string): string => {
   const date = new Date(isoString);
@@ -42,22 +34,152 @@ const getSourceLabel = (sourceType: string): string =>
 
 const buildByLine = (
   speakerName: string | null | undefined,
-  sourceTitle: string | null | undefined
+  sourceTitle: string | null | undefined,
 ): string => {
   const parts = [speakerName, sourceTitle].filter(
-    (part): part is string => typeof part === "string" && part.length > 0
+    (part): part is string => typeof part === "string" && part.length > 0,
   );
   return parts.join(" · ");
 };
 
-type MaterialListData =
-  | { materials?: MaterialDto[] }
-  | MaterialDto[];
+/**
+ * スコア推移バー (spark) をレンダリングする。
+ * 点が 1 件以下のとき honest empty として非表示にする（固定ダミーバーは置かない）。
+ */
+const ScoreSpark = ({ history }: { history: ReadonlyArray<number> }) => {
+  if (history.length <= 1) {
+    return <div className="spark" aria-hidden="true" />;
+  }
+
+  const minScore = Math.min(...history);
+  const maxScore = Math.max(...history);
+  const range = maxScore - minScore;
+
+  return (
+    <div className="spark" title="試行ごとの最高スコア推移">
+      {history.map((score, index) => {
+        const heightPercent = range === 0 ? 50 : Math.round(((score - minScore) / range) * 70 + 20);
+        const isLast = index === history.length - 1;
+        const isUp = index > 0 && score >= history[index - 1];
+        const className = isLast ? "last" : isUp ? "up" : "";
+        return <i key={index} className={className} style={{ height: `${heightPercent}%` }} />;
+      })}
+    </div>
+  );
+};
+
+/**
+ * material の .stats セクションをレンダリングする。
+ * sections / 試行数 / 最高スコアを実データで表示する。
+ * データが無いスロットは honest empty（表示しないか 0 表示）。
+ */
+const MaterialStatsSection = ({ stats }: { stats: MaterialStatsDto }) => {
+  const hasAnySections = stats.sectionSeriesCount > 0;
+  const hasAnyAttempts = stats.recordingAttemptCount > 0;
+
+  if (!hasAnySections && !hasAnyAttempts) {
+    return (
+      <div className="stats">
+        <span style={{ color: "var(--text-faint)" }}>セクション未作成</span>
+        <span className="best" style={{ color: "var(--text-faint)" }}>
+          未録音
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="stats">
+      {hasAnySections && (
+        <span>
+          <b>{stats.sectionSeriesCount}</b>{" "}
+          {stats.sectionSeriesCount === 1 ? "section" : "sections"}
+        </span>
+      )}
+      {hasAnyAttempts && (
+        <span>
+          <b>{stats.recordingAttemptCount}</b> 試行
+        </span>
+      )}
+      {stats.bestOverallScore !== null && (
+        <span className="best">
+          最高 <b style={{ color: "var(--accent-text)" }}>{stats.bestOverallScore}</b>
+        </span>
+      )}
+    </div>
+  );
+};
+
+/**
+ * .lib-head .sub のテキストを組み立てる。
+ * sections 数 / 最終練習日時を実データで表示する。
+ */
+const buildLibrarySubLine = (materials: MaterialDto[]): string => {
+  const totalSections = materials.reduce((sum, m) => sum + m.stats.sectionSeriesCount, 0);
+
+  const lastPracticedDates = materials
+    .map((m) => m.stats.lastPracticedAt)
+    .filter((d): d is string => d !== null)
+    .map((d) => new Date(d));
+
+  const latestPracticed =
+    lastPracticedDates.length > 0
+      ? new Date(Math.max(...lastPracticedDates.map((d) => d.getTime())))
+      : null;
+
+  const parts: string[] = [];
+  parts.push(`${materials.length} materials`);
+  if (totalSections > 0) {
+    parts.push(`${totalSections} sections`);
+  }
+  if (latestPracticed) {
+    parts.push(`last practiced ${formatRelativeDate(latestPracticed.toISOString())}`);
+  }
+
+  return parts.join(" · ");
+};
+
+/**
+ * material の状態を判定する。
+ * - noSections: section_series がない（未着手）
+ * - noAttempts: section はあるが試行なし（未録音）
+ * - practicing: 試行あり、最高スコア < MATERIAL_COMPLETED_SCORE（練習中）
+ * - completed: 最高スコア >= MATERIAL_COMPLETED_SCORE（完了）
+ */
+type MaterialStatus = "noSections" | "noAttempts" | "practicing" | "completed";
+
+const getMaterialStatus = (stats: MaterialStatsDto): MaterialStatus => {
+  if (stats.sectionSeriesCount === 0) return "noSections";
+  if (stats.recordingAttemptCount === 0) return "noAttempts";
+  if (stats.bestOverallScore !== null && stats.bestOverallScore >= MATERIAL_COMPLETED_SCORE)
+    return "completed";
+  return "practicing";
+};
+
+type MaterialListData = { materials?: MaterialDto[] } | MaterialDto[];
 
 export default function LibraryPage() {
+  const router = useRouter();
   const [materials, setMaterials] = useState<MaterialDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [diagnosticStarting, setDiagnosticStarting] = useState(false);
+  const [diagnosticError, setDiagnosticError] = useState<string | null>(null);
+
+  const startDiagnosticSession = async () => {
+    setDiagnosticStarting(true);
+    setDiagnosticError(null);
+    try {
+      const session = await apiPost<DiagnosticSessionDto>("/api/v1/diagnostic-sessions", {});
+      sessionStorage.setItem(diagnosticSessionKey(session.identifier), JSON.stringify(session));
+      router.push(`/diagnostic/${session.identifier}`);
+    } catch (error: unknown) {
+      setDiagnosticStarting(false);
+      setDiagnosticError(
+        isApiClientError(error) ? error.message : "診断セッションの開始に失敗しました",
+      );
+    }
+  };
 
   useEffect(() => {
     apiGet<MaterialListData>("/api/v1/materials")
@@ -81,18 +203,40 @@ export default function LibraryPage() {
       });
   }, []);
 
+  // フィルタカウントを実集計する
+  const filterCounts = {
+    all: materials.length,
+    practicing: materials.filter((m) => getMaterialStatus(m.stats) === "practicing").length,
+    untouched: materials.filter(
+      (m) =>
+        getMaterialStatus(m.stats) === "noSections" || getMaterialStatus(m.stats) === "noAttempts",
+    ).length,
+    completed: materials.filter((m) => getMaterialStatus(m.stats) === "completed").length,
+  };
+
   return (
     <div>
       <div className="home-top">
         <AppTop />
         <HomeNav active="library" />
-        <Link
-          href="/materials/new"
-          className="btn btn--sm btn--primary"
-          style={{ marginLeft: "auto" }}
-        >
-          ＋ 新しい教材
-        </Link>
+        <div style={{ marginLeft: "auto", display: "flex", gap: "8px", alignItems: "center" }}>
+          {diagnosticError && (
+            <span style={{ fontSize: "var(--text-xs)", color: "var(--sev-critical-text)" }}>
+              {diagnosticError}
+            </span>
+          )}
+          <button
+            type="button"
+            className="btn btn--sm btn--secondary"
+            onClick={() => void startDiagnosticSession()}
+            disabled={diagnosticStarting}
+          >
+            {diagnosticStarting ? "開始中..." : "診断を始める"}
+          </button>
+          <Link href="/materials/new" className="btn btn--sm btn--primary">
+            ＋ 新しい教材
+          </Link>
+        </div>
       </div>
 
       <main>
@@ -125,7 +269,8 @@ export default function LibraryPage() {
             <div className="empty-mark">/t/</div>
             <h2>最初の教材を作成しましょう</h2>
             <p>
-              TED やスピーチのスクリプトを貼り付けて題材を作り、本文をドラッグ選択して練習セクションに切り出します。録音・解析・添削はすべて同じ画面で行えます。
+              TED
+              やスピーチのスクリプトを貼り付けて題材を作り、本文をドラッグ選択して練習セクションに切り出します。録音・解析・添削はすべて同じ画面で行えます。
             </p>
             <div className="empty-actions">
               <Link href="/materials/new" className="btn btn--primary">
@@ -154,36 +299,32 @@ export default function LibraryPage() {
             <div className="lib-head">
               <div>
                 <h2>教材ライブラリ</h2>
-                <div className="sub">
-                  {materials.length} materials
-                </div>
+                <div className="sub">{buildLibrarySubLine(materials)}</div>
               </div>
             </div>
 
             <div className="lib-filters">
               <span className="fpill is-active">
-                すべて <span className="fn">{materials.length}</span>
+                すべて <span className="fn">{filterCounts.all}</span>
               </span>
               <span className="fpill">
-                練習中 <span className="fn">0</span>
+                練習中 <span className="fn">{filterCounts.practicing}</span>
               </span>
               <span className="fpill">
-                未着手 <span className="fn">0</span>
+                未着手 <span className="fn">{filterCounts.untouched}</span>
               </span>
               <span className="fpill">
-                完了 <span className="fn">0</span>
+                完了 <span className="fn">{filterCounts.completed}</span>
               </span>
             </div>
 
             <div className="mat-grid">
               {materials.map((material) => {
                 const sourceType = material.source?.sourceType ?? "";
-                const sourceLabel = sourceType
-                  ? getSourceLabel(sourceType)
-                  : null;
+                const sourceLabel = sourceType ? getSourceLabel(sourceType) : null;
                 const byLine = buildByLine(
                   material.source?.speakerName,
-                  material.source?.sourceTitle
+                  material.source?.sourceTitle,
                 );
 
                 return (
@@ -196,40 +337,21 @@ export default function LibraryPage() {
                     <div className="src">
                       {sourceLabel && (
                         <span
-                          className={[
-                            "srctag",
-                            isTed(sourceType) ? "srctag--ted" : "",
-                          ]
+                          className={["srctag", isTed(sourceType) ? "srctag--ted" : ""]
                             .filter(Boolean)
                             .join(" ")}
                         >
                           {sourceLabel}
                         </span>
                       )}
-                      <span className="when">
-                        {formatRelativeDate(material.updatedAt)}
-                      </span>
+                      <span className="when">{formatRelativeDate(material.updatedAt)}</span>
                     </div>
                     <div>
                       <h3>{material.title}</h3>
                       {byLine && <div className="by">{byLine}</div>}
                     </div>
-                    <div className="spark" style={{ opacity: 0.4 }}>
-                      <i style={{ height: "18%" }}></i>
-                      <i style={{ height: "18%" }}></i>
-                      <i style={{ height: "18%" }}></i>
-                    </div>
-                    <div className="stats">
-                      <span style={{ color: "var(--text-faint)" }}>
-                        セクション未作成
-                      </span>
-                      <span
-                        className="best"
-                        style={{ color: "var(--text-faint)" }}
-                      >
-                        未録音
-                      </span>
-                    </div>
+                    <ScoreSpark history={material.stats.overallScoreHistory} />
+                    <MaterialStatsSection stats={material.stats} />
                   </Link>
                 );
               })}
@@ -246,9 +368,7 @@ export default function LibraryPage() {
                 }}
               >
                 <span className="plus">＋</span>
-                <span style={{ fontSize: "var(--text-sm)" }}>
-                  英文を貼り付けて新しい教材を作成
-                </span>
+                <span style={{ fontSize: "var(--text-sm)" }}>英文を貼り付けて新しい教材を作成</span>
               </Link>
             </div>
           </>

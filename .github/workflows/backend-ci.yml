@@ -26,8 +26,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: haskell-actions/run-fourmolu@v11
+      - uses: haskell-actions/run-fourmolu@v13
         with:
+          # v11 downloads the fourmolu binary from a no-".zip" URL; fourmolu
+          # >= 0.20.0.0 ships release assets only as .zip, so v11 404s and
+          # mis-reports "unformatted files" without ever running fourmolu.
+          # v13 version-gates the .zip handling. Pin the version for
+          # deterministic formatting (the action itself recommends pinning).
+          version: "0.20.0.0"
           pattern: |
             applications/backend/**/*.hs
 

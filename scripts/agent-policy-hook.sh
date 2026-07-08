@@ -87,6 +87,72 @@ $out"
   fi
 done
 
+# *.cabal を編集したら cabal warning 設定の硬さ (-Werror=missing-fields) を repo 全体で検査する。
+# verify-haskell-warnings.sh は単一ファイル引数ではなく tree 全体を検査する設計のため、
+# トリガーは「編集ファイルが *.cabal か否か」で判定する。
+case "$rel" in
+  *.cabal)
+    if [ -f scripts/verify-haskell-warnings.sh ]; then
+      if ! out="$(bash scripts/verify-haskell-warnings.sh 2>&1)"; then
+        violations="${violations}
+== verify-haskell-warnings.sh ==
+$out"
+      fi
+    fi
+    ;;
+esac
+
+# Servant の Api.hs (route 型) / Application.hs (handler 結線) を編集したら
+# route 数 ↔ handler 数の parity を tree 全体で検査する (FC-2)。
+# verify-servant-route-handler-parity.sh は単一ファイル引数ではなく両ファイルを常に読む設計のため、
+# トリガーは「編集ファイルが Api.hs / Application.hs か否か」で判定する。
+case "$rel" in
+  applications/backend/src/NativeTrace/Worker/Api.hs | \
+    applications/backend/src/NativeTrace/Worker/Application.hs)
+    if [ -f scripts/verify-servant-route-handler-parity.sh ]; then
+      if ! out="$(bash scripts/verify-servant-route-handler-parity.sh 2>&1)"; then
+        violations="${violations}
+== verify-servant-route-handler-parity.sh ==
+$out"
+      fi
+    fi
+    ;;
+esac
+
+# Worker の外部サービス HTTP クライアント (*Client.hs) を編集したら responseTimeout 明示を
+# tree 全体で検査する (incident 2026-06-14-worker-http-client-default-30s-timeout)。
+# verify-worker-http-client-timeout.sh は単一ファイル引数ではなく worker 配下を常に読む設計のため、
+# トリガーは「編集ファイルが worker の *Client.hs か否か」で判定する。
+case "$rel" in
+  applications/backend/src/NativeTrace/Worker/*Client.hs)
+    if [ -f scripts/verify-worker-http-client-timeout.sh ]; then
+      if ! out="$(bash scripts/verify-worker-http-client-timeout.sh 2>&1)"; then
+        violations="${violations}
+== verify-worker-http-client-timeout.sh ==
+$out"
+      fi
+    fi
+    ;;
+esac
+
+# python-analyzer / golden-speaker の src の *.py を編集したら、その src が import する
+# third-party 依存が Dockerfile のハードコード pip list に含まれているかを tree 全体で検査する
+# (incident 2026-06-19-adr018-scipy-dockerfile-runtime-dead-wiring / kokoro 2026-06-12)。
+# verify-analyzer-deps.sh は単一ファイル引数ではなく両サービスの src/Dockerfile を常に読む設計のため、
+# トリガーは「編集ファイルがそれら src 配下の *.py か否か」で判定する。
+case "$rel" in
+  applications/python-analyzer/src/*.py | \
+    applications/golden-speaker/src/*.py)
+    if [ -f scripts/verify-analyzer-deps.sh ]; then
+      if ! out="$(bash scripts/verify-analyzer-deps.sh 2>&1)"; then
+        violations="${violations}
+== verify-analyzer-deps.sh ==
+$out"
+      fi
+    fi
+    ;;
+esac
+
 if [ -n "$violations" ]; then
   {
     echo "agent-policy 違反があります。修正してください:"

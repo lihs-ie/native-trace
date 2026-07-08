@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { okAsync, errAsync } from "neverthrow";
 import { createBrowsePracticeMaterials } from "./index";
 import { type MaterialRepository, type MaterialPage } from "../port/material-repository";
+import { type LibraryStatsRepository } from "../port/library-stats-repository";
 import { notFound } from "../../domain/shared";
 import {
   type ActiveMaterial,
@@ -25,11 +26,18 @@ const makeMaterialRepository = (page: MaterialPage): MaterialRepository => ({
   persist: () => okAsync(undefined),
 });
 
+const makeLibraryStatsRepository = (): LibraryStatsRepository => ({
+  findStatsByMaterials: () => okAsync(new Map()),
+});
+
 describe("browsePracticeMaterials", () => {
   it("returns material list with page metadata", async () => {
     const material = makeActiveMaterial();
     const repository = makeMaterialRepository({ items: [material], total: 1 });
-    const execute = createBrowsePracticeMaterials({ materialRepository: repository });
+    const execute = createBrowsePracticeMaterials({
+      materialRepository: repository,
+      libraryStatsRepository: makeLibraryStatsRepository(),
+    });
 
     const result = await execute({ pagination: { offset: 0, limit: 10 } });
 
@@ -45,7 +53,10 @@ describe("browsePracticeMaterials", () => {
 
   it("uses default pagination when not provided", async () => {
     const repository = makeMaterialRepository({ items: [], total: 0 });
-    const execute = createBrowsePracticeMaterials({ materialRepository: repository });
+    const execute = createBrowsePracticeMaterials({
+      materialRepository: repository,
+      libraryStatsRepository: makeLibraryStatsRepository(),
+    });
 
     const result = await execute({});
 
@@ -66,7 +77,10 @@ describe("browsePracticeMaterials", () => {
       persist: () => okAsync(undefined),
     };
 
-    const execute = createBrowsePracticeMaterials({ materialRepository: repository });
+    const execute = createBrowsePracticeMaterials({
+      materialRepository: repository,
+      libraryStatsRepository: makeLibraryStatsRepository(),
+    });
     const result = await execute({ pagination: { offset: -1 } });
 
     expect(result.isErr()).toBe(true);
@@ -80,7 +94,10 @@ describe("browsePracticeMaterials", () => {
       persist: () => okAsync(undefined),
     };
 
-    const execute = createBrowsePracticeMaterials({ materialRepository: repository });
+    const execute = createBrowsePracticeMaterials({
+      materialRepository: repository,
+      libraryStatsRepository: makeLibraryStatsRepository(),
+    });
     const result = await execute({});
 
     expect(result.isErr()).toBe(true);
@@ -92,7 +109,10 @@ describe("browsePracticeMaterials", () => {
       source: { sourceType: "ted", url: null, sourceTitle: null, speakerName: null },
     });
     const repository = makeMaterialRepository({ items: [material], total: 1 });
-    const execute = createBrowsePracticeMaterials({ materialRepository: repository });
+    const execute = createBrowsePracticeMaterials({
+      materialRepository: repository,
+      libraryStatsRepository: makeLibraryStatsRepository(),
+    });
 
     const result = await execute({});
     expect(result._unsafeUnwrap().materials[0].sourceType).toBe("ted");
@@ -109,10 +129,68 @@ describe("browsePracticeMaterials", () => {
       persist: () => okAsync(undefined),
     };
 
-    const execute = createBrowsePracticeMaterials({ materialRepository: repository });
+    const execute = createBrowsePracticeMaterials({
+      materialRepository: repository,
+      libraryStatsRepository: makeLibraryStatsRepository(),
+    });
     const result = await execute({ pagination: { limit: 200 } });
 
     expect(result.isErr()).toBe(true);
     expect(repositoryCalled).toBe(false);
+  });
+
+  it("returns honest empty stats when libraryStatsRepository returns empty map", async () => {
+    const material = makeActiveMaterial();
+    const repository = makeMaterialRepository({ items: [material], total: 1 });
+    const execute = createBrowsePracticeMaterials({
+      materialRepository: repository,
+      libraryStatsRepository: makeLibraryStatsRepository(),
+    });
+
+    const result = await execute({});
+    expect(result.isOk()).toBe(true);
+    const stats = result._unsafeUnwrap().materials[0].stats;
+    expect(stats.sectionSeriesCount).toBe(0);
+    expect(stats.recordingAttemptCount).toBe(0);
+    expect(stats.bestOverallScore).toBeNull();
+    expect(stats.overallScoreHistory).toEqual([]);
+    expect(stats.lastPracticedAt).toBeNull();
+  });
+
+  it("includes real stats from libraryStatsRepository when available", async () => {
+    const material = makeActiveMaterial();
+    const repository = makeMaterialRepository({ items: [material], total: 1 });
+
+    const statsRepo: LibraryStatsRepository = {
+      findStatsByMaterials: () =>
+        okAsync(
+          new Map([
+            [
+              "01HXYZ",
+              {
+                sectionSeriesCount: 3,
+                recordingAttemptCount: 5,
+                bestOverallScore: 82,
+                overallScoreHistory: [60, 72, 82],
+                lastPracticedAt: new Date("2026-01-02T10:00:00Z"),
+              },
+            ],
+          ]),
+        ),
+    };
+
+    const execute = createBrowsePracticeMaterials({
+      materialRepository: repository,
+      libraryStatsRepository: statsRepo,
+    });
+
+    const result = await execute({});
+    expect(result.isOk()).toBe(true);
+    const stats = result._unsafeUnwrap().materials[0].stats;
+    expect(stats.sectionSeriesCount).toBe(3);
+    expect(stats.recordingAttemptCount).toBe(5);
+    expect(stats.bestOverallScore).toBe(82);
+    expect(stats.overallScoreHistory).toEqual([60, 72, 82]);
+    expect(stats.lastPracticedAt).toBe("2026-01-02T10:00:00.000Z");
   });
 });

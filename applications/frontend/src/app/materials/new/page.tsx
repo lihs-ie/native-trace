@@ -9,11 +9,12 @@ type CreateMaterialResponse = {
   material: { identifier: string };
 };
 
-type SourceType = "ted" | "youtube" | "article" | "book" | "other";
+type SourceType = "ted" | "youtube" | "speech" | "article" | "book" | "other";
 
 const SOURCE_TYPES: { value: SourceType; label: string }[] = [
   { value: "ted", label: "TED" },
   { value: "youtube", label: "YouTube" },
+  { value: "speech", label: "スピーチ" },
   { value: "article", label: "記事" },
   { value: "book", label: "書籍" },
   { value: "other", label: "その他" },
@@ -65,9 +66,7 @@ export default function NewMaterialPage() {
       });
       router.push(`/materials/${data.material.identifier}`);
     } catch (error: unknown) {
-      setErrorMessage(
-        isApiClientError(error) ? error.message : "教材の作成に失敗しました",
-      );
+      setErrorMessage(isApiClientError(error) ? error.message : "教材の作成に失敗しました");
       setSubmitting(false);
     }
   };
@@ -114,9 +113,7 @@ export default function NewMaterialPage() {
                 }}
                 placeholder="例: Stanford Commencement"
               />
-              {titleError && (
-                <div className="err-msg">タイトルを入力してください</div>
-              )}
+              {titleError && <div className="err-msg">タイトルを入力してください</div>}
             </label>
 
             <div className="field">
@@ -160,8 +157,7 @@ export default function NewMaterialPage() {
 
             <label className="field">
               <span className="field-lbl">
-                ソースURL{" "}
-                <span style={{ color: "var(--text-faint)" }}>（任意）</span>
+                ソースURL <span style={{ color: "var(--text-faint)" }}>（任意）</span>
               </span>
               <input
                 className="input"
@@ -171,12 +167,15 @@ export default function NewMaterialPage() {
                 placeholder="https://..."
               />
               <div className="help">
-                URL は任意です。不正な形式の場合は保存前に警告します。MVP では外部サイトからの自動取得は行いません。
+                URL は任意です。不正な形式の場合は保存前に警告します。MVP
+                では外部サイトからの自動取得は行いません。
               </div>
             </label>
 
             {errorMessage && (
-              <p style={{ color: "var(--sev-critical-text)", fontSize: "var(--text-sm)", margin: 0 }}>
+              <p
+                style={{ color: "var(--sev-critical-text)", fontSize: "var(--text-sm)", margin: 0 }}
+              >
                 {errorMessage}
               </p>
             )}
@@ -189,11 +188,7 @@ export default function NewMaterialPage() {
             <Link href="/" className="btn btn--ghost">
               キャンセル
             </Link>
-            <button
-              type="submit"
-              className="btn btn--primary"
-              disabled={!canSubmit}
-            >
+            <button type="submit" className="btn btn--primary" disabled={!canSubmit}>
               {submitting ? "作成中..." : "教材を作成"}
             </button>
           </div>

@@ -1,26 +1,24 @@
 import { err, ok } from "neverthrow";
 import { type Result } from "neverthrow";
-import { type DomainError, type NonEmptyList, validationFailed } from "./shared";
+import {
+  type Brand,
+  type DomainError,
+  type NonEmptyList,
+  createNonEmptyBrandedString,
+  validationFailed,
+} from "./shared";
 import { type MaterialIdentifier } from "./material";
-
-declare const __brand: unique symbol;
-type Brand<T, B> = T & { readonly [__brand]: B };
 
 export type SectionSeriesIdentifier = Brand<string, "SectionSeriesIdentifier">;
 export type SectionTitle = Brand<string, "SectionTitle">;
 export type SectionDisplayOrder = Brand<number, "SectionDisplayOrder">;
 
-export const createSectionSeriesIdentifier = (
-  value: string,
-): SectionSeriesIdentifier | null =>
-  value.trim().length > 0 ? (value as SectionSeriesIdentifier) : null;
+export const createSectionSeriesIdentifier = (value: string): SectionSeriesIdentifier | null =>
+  createNonEmptyBrandedString<SectionSeriesIdentifier>(value);
 
-export const createSectionTitle = (
-  value: string,
-): Result<SectionTitle, DomainError> => {
+export const createSectionTitle = (value: string): Result<SectionTitle, DomainError> => {
   const trimmed = value.trim();
-  if (trimmed.length === 0)
-    return err(validationFailed("title", "セクション名は空にできません"));
+  if (trimmed.length === 0) return err(validationFailed("title", "セクション名は空にできません"));
   return ok(trimmed as SectionTitle);
 };
 
@@ -28,12 +26,7 @@ export const createSectionDisplayOrder = (
   value: number,
 ): Result<SectionDisplayOrder, DomainError> => {
   if (value < 0 || !Number.isInteger(value))
-    return err(
-      validationFailed(
-        "displayOrder",
-        "表示順は0以上の整数である必要があります",
-      ),
-    );
+    return err(validationFailed("displayOrder", "表示順は0以上の整数である必要があります"));
   return ok(value as SectionDisplayOrder);
 };
 

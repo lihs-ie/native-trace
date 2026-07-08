@@ -62,7 +62,13 @@ run_backend_checks() {
   [ -z "$fourmolu_binary" ] && [ -x "$HOME/.cabal/bin/fourmolu" ] && fourmolu_binary="$HOME/.cabal/bin/fourmolu"
   if [ -n "$fourmolu_binary" ]; then
     local fourmolu_output
-    if ! fourmolu_output="$(cd "$backend_directory" && "$fourmolu_binary" --mode check "$file_path" 2>&1)"; then
+    # --ghc-opt -XImportQualifiedPost: fourmolu は .cabal の exposed-modules/other-modules に
+    # 登録済みのモジュールからのみ default-language(GHC2024)/default-extensions を抽出する。
+    # 新規 .hs はまだ cabal 未登録のため抽出に乗らず、GHC2024 由来の ImportQualifiedPost が
+    # 効かず postpositive `import X qualified` が parse error になる (FC-1)。
+    # cabal default-language = GHC2024 と整合させるためフラグで明示的に拡張を渡す。
+    # 登録済みファイルでは挙動不変 (exit-code diff 0 を全 .hs で確認済み)。
+    if ! fourmolu_output="$(cd "$backend_directory" && "$fourmolu_binary" --ghc-opt -XImportQualifiedPost --mode check "$file_path" 2>&1)"; then
       append_violation "format (fourmolu)" "$fourmolu_output"
     fi
   fi

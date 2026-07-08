@@ -1,22 +1,68 @@
 module NativeTrace.Worker.ScoringSpec (spec) where
 
-import Data.Maybe (isNothing)
+import Data.Aeson (encode)
+import Data.ByteString.Lazy.Char8 qualified as LBS8
+import Data.Map.Strict qualified as Map
+import Data.Maybe (isJust, isNothing)
 import Data.Text qualified as Text
+import NativeTrace.Worker.AaiClient (RawArticulatoryEstimate (..), callAai)
 import NativeTrace.Worker.AnalyzerClient (
   AnalyzerResult (..),
+  InsertedVowelInfo (..),
   InterWordSilence (..),
+  NBestEntry (..),
+  PhonemeAcoustic (..),
   PhonemeGop (..),
   SchwaRealization (..),
+  SyllableInfo (..),
+  WeakFormRealization (..),
  )
+import NativeTrace.Worker.Assessment (buildAssessmentResponseFromGop)
 import NativeTrace.Worker.Scoring (
-  checkAudioQuality,
+  aaiDisplayEligibilityThreshold,
+  articulatoryDisplayGuardrail,
+  attachArticulatoryEstimates,
+  audioQualityMinSnrDb,
+  buildAssessmentScores,
+  classifyGopDelta,
+  deriveAcousticEvidence,
   generateFindingsFromGop,
+  hillenbrandGaVowelFormants,
+  isLowQualityAudio,
+  scoreFromGop,
+  severityToScoreImpact,
+  tokenize,
  )
 import NativeTrace.Worker.Types (
+  AcousticEvidence (..),
+  ArticulatoryEstimate (..),
   AssessmentFinding (..),
+  AssessmentRequest (..),
+  AssessmentResponse (..),
+  AssessmentScores (..),
+  AudioMetadata (..),
+  BoundarySignal (..),
+  CefrScore (..),
+  DeltaSignal (..),
+  FindingSeverity (..),
+  GopDeltaResponse (..),
   TextRange (..),
  )
+import NativeTrace.Worker.Types qualified as Types
+import Servant (runHandler)
+import System.Environment (unsetEnv)
 import Test.Hspec
+
+-- | FindingSeverity はテスト層で Eq インスタンスがないため、
+-- パターンマッチで suggestion 判定するヘルパー。
+isSuggestion :: FindingSeverity -> Bool
+isSuggestion FindingSeveritySuggestion = True
+isSuggestion _ = False
+
+-- | FindingSeverity の Major 判定ヘルパー（ADR-017 D1 asserts 用）。
+isMajor :: FindingSeverity -> Bool
+isMajor FindingSeverityMajor = True
+isMajor _ = False
 
 -- | テスト用の AnalyzerResult フィクスチャ（test-only、本番に入らない）。
 fixtureAnalyzerResult :: AnalyzerResult
@@ -25,17 +71,62 @@ fixtureAnalyzerResult =
     { analyzedExpectedIpa = "hɛloʊ wɜrld",
       analyzedDetectedIpa = "hɛloʊ wɜld",
       analyzedPerPhonemeGop =
-        [ PhonemeGop {gopPhoneme = "h", gopValue = -5.0, gopStartMs = 0, gopEndMs = 100},
-          PhonemeGop {gopPhoneme = "ɛ", gopValue = -13.0, gopStartMs = 100, gopEndMs = 200},
-          PhonemeGop {gopPhoneme = "l", gopValue = -9.5, gopStartMs = 200, gopEndMs = 300},
-          PhonemeGop {gopPhoneme = "oʊ", gopValue = -6.0, gopStartMs = 300, gopEndMs = 500},
-          PhonemeGop {gopPhoneme = "r", gopValue = -14.0, gopStartMs = 600, gopEndMs = 700}
+        [ PhonemeGop {gopPhoneme = "h", gopValue = -5.0, gopStartMs = 0, gopEndMs = 100, gopNBest = [], gopWordPosition = Nothing},
+          PhonemeGop {gopPhoneme = "ɛ", gopValue = -13.0, gopStartMs = 100, gopEndMs = 200, gopNBest = [], gopWordPosition = Nothing},
+          PhonemeGop {gopPhoneme = "l", gopValue = -9.5, gopStartMs = 200, gopEndMs = 300, gopNBest = [], gopWordPosition = Nothing},
+          PhonemeGop {gopPhoneme = "oʊ", gopValue = -6.0, gopStartMs = 300, gopEndMs = 500, gopNBest = [], gopWordPosition = Nothing},
+          PhonemeGop {gopPhoneme = "r", gopValue = -14.0, gopStartMs = 600, gopEndMs = 700, gopNBest = [], gopWordPosition = Nothing}
         ],
       analyzedInterWordSilences =
         [ InterWordSilence {silenceStartMs = 500, silenceEndMs = 600, silenceDurationMs = 100}
         ],
       analyzedSchwaRealizations = [],
-      analyzedSpeechRatePhonemePerSecond = 8.0
+      analyzedSpeechRatePhonemePerSecond = 8.0,
+      analyzedMeanDbfs = -15.0,
+      analyzedSpeechDurationSeconds = 0.7,
+      analyzedF0Contour = Nothing,
+      analyzedReferenceF0Contour = Nothing,
+      analyzedWordStress = [],
+      analyzedRhythm = Nothing,
+      analyzedWeakFormRealizations = [],
+      analyzedSyllables = [],
+      analyzedPhonemeAcoustics = [],
+      analyzedSpeakerSex = "unknown",
+      analyzedEstimatedSnrDb = 30.0
+    }
+
+-- | NBest 付き高 FL finding を持つフィクスチャ（M-111 intelligibility テスト用）。
+fixtureHighFlAnalyzerResult :: AnalyzerResult
+fixtureHighFlAnalyzerResult =
+  fixtureAnalyzerResult
+    { analyzedPerPhonemeGop =
+        [ -- /l/ は FL=max の混同候補 [ɾ] を NBest に持つ
+          PhonemeGop
+            { gopPhoneme = "l",
+              gopValue = -13.0,
+              gopStartMs = 0,
+              gopEndMs = 100,
+              gopNBest = [NBestEntry {nBestPhoneme = "ɾ", nBestConfidence = 0.8}],
+              gopWordPosition = Nothing
+            }
+        ]
+    }
+
+-- | 低 FL finding のみを持つフィクスチャ（M-111 intelligibility テスト用）。
+fixtureLowFlAnalyzerResult :: AnalyzerResult
+fixtureLowFlAnalyzerResult =
+  fixtureAnalyzerResult
+    { analyzedPerPhonemeGop =
+        [ -- /θ/ は FL=low
+          PhonemeGop
+            { gopPhoneme = "θ",
+              gopValue = -13.0,
+              gopStartMs = 0,
+              gopEndMs = 100,
+              gopNBest = [NBestEntry {nBestPhoneme = "s", nBestConfidence = 0.7}],
+              gopWordPosition = Nothing
+            }
+        ]
     }
 
 bodyText :: Text.Text
@@ -45,45 +136,136 @@ bodyText = "Hello world"
 rangeTuples :: [AssessmentFinding] -> [(Int, Int)]
 rangeTuples = map ((\r -> (startChar r, endChar r)) . findingTextRange)
 
--- | checkAudioQuality テスト用のデフォルトパラメータ（全基準クリア）。
--- meanDbfs: -20.0 (> -35.0), durationMs: 10000 (10秒 >= 1000ms),
--- detected: 9, expected: 10 (率 0.9 > 0.25), gopValues: [-5.0] (中央値 -5.0 > -18.0)
+-- | isLowQualityAudio テスト用のデフォルトパラメータ（全基準クリア）。
 defaultQualityParams :: (Double, Int, Int, Int, [Double])
 defaultQualityParams = (-20.0, 10000, 9, 10, [-5.0])
 
+-- | SNR デフォルト値（audioQualityMinSnrDb を十分超える値）。
+defaultEstimatedSnrDb :: Double
+defaultEstimatedSnrDb = 30.0
+
 spec :: Spec
 spec = do
-  describe "checkAudioQuality" $ do
+  describe "articulatoryDisplayGuardrail (ADR-019 D4 / M-AAI-11)" $ do
+    let coords6 = (0.10, 0.20, 0.30, 0.40, 0.50, 0.60)
+    it "(a) vowel + displayEligibility 0.6 + 60ms => Just (display)" $
+      articulatoryDisplayGuardrail "iː" 0 60 0.6 coords6 `shouldSatisfy` isJust
+    it "(a') approximant /r/ + displayEligibility 0.6 + 60ms => Just" $
+      articulatoryDisplayGuardrail "r" 100 160 0.6 coords6 `shouldSatisfy` isJust
+    it "(b) displayEligibility 0.5 (< 0.55 threshold) => Nothing (suppress)" $
+      articulatoryDisplayGuardrail "iː" 0 60 0.5 coords6 `shouldSatisfy` isNothing
+    it "(c) stop/fricative phoneme => Nothing (suppress to floor)" $ do
+      articulatoryDisplayGuardrail "t" 0 60 0.9 coords6 `shouldSatisfy` isNothing
+      articulatoryDisplayGuardrail "s" 0 60 0.9 coords6 `shouldSatisfy` isNothing
+    it "(d) segment < 50ms (40ms) => Nothing (suppress)" $
+      articulatoryDisplayGuardrail "iː" 0 40 0.9 coords6 `shouldSatisfy` isNothing
+    it "displayEligibility threshold constant is 0.55 (calibratable, S-AAI-1)" $
+      aaiDisplayEligibilityThreshold `shouldBe` (0.55 :: Double)
+
+  describe "callAai soft-disable (ADR-019 / M-AAI-9)" $
+    it "returns Nothing when AAI_URL is unset (must not fail the assessment)" $ do
+      unsetEnv "AAI_URL"
+      result <- runHandler (callAai "audio-bytes" "audio/wav" [])
+      case result of
+        Right Nothing -> pure ()
+        Right (Just _) -> expectationFailure "expected Nothing when AAI_URL unset"
+        Left _ -> expectationFailure "callAai must not throwError (soft-disable)"
+
+  describe "AAI finding integration (ADR-019 / M-AAI-10 / M-AAI-17)" $ do
+    it "M-AAI-10: all findings default findingArticulatoryEstimate = Nothing (AAI off / pre-enrichment)" $
+      all (isNothing . findingArticulatoryEstimate) (generateFindingsFromGop bodyText fixtureAnalyzerResult)
+        `shouldBe` True
+    it "M-AAI-17: attaching articulatoryEstimate does NOT change findingScoreImpact (presentation-only)" $
+      case generateFindingsFromGop bodyText fixtureAnalyzerResult of
+        (finding : _) ->
+          let est = ArticulatoryEstimate 0.10 0.20 0.30 0.40 0.50 0.60 0.70
+              enriched = finding {findingArticulatoryEstimate = Just est}
+           in findingScoreImpact enriched `shouldBe` findingScoreImpact finding
+        [] -> expectationFailure "expected >=1 finding in fixture"
+
+  describe "attachArticulatoryEstimates (ADR-019 D5 / W39)" $ do
+    -- fixtureAnalyzerResult は audioRange (100,200)/(200,300)/(600,700) の 3 finding を生成する
+    -- （期待値は移設前の Application.hs ハンドラの挙動から導出）。
+    let fixtureFindings = generateFindingsFromGop bodyText fixtureAnalyzerResult
+    it "attaches a guardrail-passing estimate only to the matching finding (midpoint containment)" $ do
+      let rawEstimate =
+            RawArticulatoryEstimate
+              { raePhoneme = "ɛ",
+                raeStartMs = 100,
+                raeEndMs = 160,
+                raeTongueTipX = 0.10,
+                raeTongueTipY = 0.20,
+                raeTongueDorsumX = 0.30,
+                raeTongueDorsumY = 0.40,
+                raeLipApertureX = 0.50,
+                raeLipApertureY = 0.60,
+                raeDisplayEligibility = 0.6
+              }
+      let attached = attachArticulatoryEstimates [rawEstimate] fixtureFindings
+      -- midpoint 130ms は先頭 finding の audioRange (100,200) のみに含まれる
+      map (isJust . findingArticulatoryEstimate) attached `shouldBe` [True, False, False]
+      case attached of
+        (first : _) ->
+          findingArticulatoryEstimate first
+            `shouldBe` Just (ArticulatoryEstimate 0.10 0.20 0.30 0.40 0.50 0.60 0.6)
+        [] -> expectationFailure "expected >=1 finding in fixture"
+    it "ignores a guardrail-passing estimate that matches no finding (all stay Nothing)" $ do
+      let rawEstimate =
+            RawArticulatoryEstimate
+              { raePhoneme = "iː",
+                raeStartMs = 400,
+                raeEndMs = 460,
+                raeTongueTipX = 0.10,
+                raeTongueTipY = 0.20,
+                raeTongueDorsumX = 0.30,
+                raeTongueDorsumY = 0.40,
+                raeLipApertureX = 0.50,
+                raeLipApertureY = 0.60,
+                raeDisplayEligibility = 0.9
+              }
+      -- midpoint 430ms はどの finding の audioRange にも含まれず、phoneme "iː" も一致しない
+      let attached = attachArticulatoryEstimates [rawEstimate] fixtureFindings
+      all (isNothing . findingArticulatoryEstimate) attached `shouldBe` True
+
+  describe "isLowQualityAudio" $ do
     it "returns False (normal) when all criteria are satisfied" $ do
       let (meanDbfs, durationMs, detected, expected, gopValues) = defaultQualityParams
-      checkAudioQuality meanDbfs durationMs detected expected gopValues `shouldBe` False
+      isLowQualityAudio meanDbfs durationMs detected expected gopValues defaultEstimatedSnrDb `shouldBe` False
 
-    it "returns True (low_quality) when meanDbfs is below threshold (-35.0)" $ do
+    it "returns True (low_quality) when meanDbfs is below threshold (-36.0, speech-active RMS, ADR-015)" $ do
       let (_, durationMs, detected, expected, gopValues) = defaultQualityParams
-      checkAudioQuality (-36.0) durationMs detected expected gopValues `shouldBe` True
+      isLowQualityAudio (-37.0) durationMs detected expected gopValues defaultEstimatedSnrDb `shouldBe` True
 
     it "returns True (low_quality) when recording duration is below threshold (1000ms)" $ do
-      -- 総録音時間 500ms < 1000ms → low_quality
       let (meanDbfs, _, detected, expected, gopValues) = defaultQualityParams
-      checkAudioQuality meanDbfs 500 detected expected gopValues `shouldBe` True
+      isLowQualityAudio meanDbfs 500 detected expected gopValues defaultEstimatedSnrDb `shouldBe` True
 
     it "returns False (normal) when recording duration is sufficient despite pausey recording (10s)" $ do
-      -- 総録音時間 10000ms >= 1000ms → 短すぎ判定では弾かれない
       let (meanDbfs, _, detected, expected, gopValues) = defaultQualityParams
-      checkAudioQuality meanDbfs 10000 detected expected gopValues `shouldBe` False
+      isLowQualityAudio meanDbfs 10000 detected expected gopValues defaultEstimatedSnrDb `shouldBe` False
 
     it "returns True (low_quality) when phoneme detection rate is below threshold (0.25)" $ do
-      -- detected: 2, expected: 10 → rate 0.2 < 0.25
       let (meanDbfs, durationMs, _, _, gopValues) = defaultQualityParams
-      checkAudioQuality meanDbfs durationMs 2 10 gopValues `shouldBe` True
+      isLowQualityAudio meanDbfs durationMs 2 10 gopValues defaultEstimatedSnrDb `shouldBe` True
 
     it "returns True (low_quality) when median GOP is below threshold (-18.0)" $ do
       let (meanDbfs, durationMs, detected, expected, _) = defaultQualityParams
-      checkAudioQuality meanDbfs durationMs detected expected [-20.0, -19.0] `shouldBe` True
+      isLowQualityAudio meanDbfs durationMs detected expected [-20.0, -19.0] defaultEstimatedSnrDb `shouldBe` True
 
     it "returns True (low_quality) when gopValues list is empty" $ do
       let (meanDbfs, durationMs, detected, expected, _) = defaultQualityParams
-      checkAudioQuality meanDbfs durationMs detected expected [] `shouldBe` True
+      isLowQualityAudio meanDbfs durationMs detected expected [] defaultEstimatedSnrDb `shouldBe` True
+
+    -- ADR-032 D4補正-2 (2026-06-20): SNR gate DISABLED — 13-clip validation proved the fixed WADA
+    -- floor is not clip-portable (false-rejects 6/13 clean clips). These tests now assert the
+    -- DISABLED state: low estimatedSnrDb does NOT cause low_quality on its own.
+    it "returns False (gate disabled) when estimatedSnrDb is below old threshold (WADA floor 0.5, ADR-032 SNR gate DISABLED)" $ do
+      let (meanDbfs, durationMs, detected, expected, gopValues) = defaultQualityParams
+      isLowQualityAudio meanDbfs durationMs detected expected gopValues (-1.0) `shouldBe` False
+
+    it "returns False (gate disabled) when estimatedSnrDb is exactly at old threshold (WADA floor 0.5, ADR-032 SNR gate DISABLED)" $ do
+      let (meanDbfs, durationMs, detected, expected, gopValues) = defaultQualityParams
+      isLowQualityAudio meanDbfs durationMs detected expected gopValues audioQualityMinSnrDb `shouldBe` False
 
   describe "generateFindingsFromGop" $ do
     it "produces at least one finding for non-empty body text with low GOP phonemes" $ do
@@ -106,10 +288,1262 @@ spec = do
       let highGopResult =
             fixtureAnalyzerResult
               { analyzedPerPhonemeGop =
-                  [ PhonemeGop {gopPhoneme = "h", gopValue = -3.0, gopStartMs = 0, gopEndMs = 100},
-                    PhonemeGop {gopPhoneme = "ɛ", gopValue = -4.0, gopStartMs = 100, gopEndMs = 200}
+                  [ PhonemeGop {gopPhoneme = "h", gopValue = -3.0, gopStartMs = 0, gopEndMs = 100, gopNBest = [], gopWordPosition = Nothing},
+                    PhonemeGop {gopPhoneme = "ɛ", gopValue = -4.0, gopStartMs = 100, gopEndMs = 200, gopNBest = [], gopWordPosition = Nothing}
                   ],
                 analyzedInterWordSilences = []
               }
-      -- GOP が閾値（-8.0）を上回るため finding は生成されない（connectedSpeech も無音なし）
       length (generateFindingsFromGop bodyText highGopResult) `shouldBe` 0
+
+  describe "FL-weighted intelligibility (M-111)" $ do
+    it "high-FL error causes larger intelligibility penalty than low-FL error" $ do
+      let highFlFindings = generateFindingsFromGop bodyText fixtureHighFlAnalyzerResult
+      let lowFlFindings = generateFindingsFromGop bodyText fixtureLowFlAnalyzerResult
+      let tokens = tokenize bodyText
+      let highFlScores = buildAssessmentScores (scoreFromGop fixtureHighFlAnalyzerResult tokens) highFlFindings
+      let lowFlScores = buildAssessmentScores (scoreFromGop fixtureLowFlAnalyzerResult tokens) lowFlFindings
+      -- 高FL誤りの intelligibility は低FL誤りより低い（減点が大きい）
+      intelligibility highFlScores `shouldSatisfy` (<= intelligibility lowFlScores)
+
+  describe "CEFR band mapping (M-111)" $ do
+    it "score >= 80 maps to C1" $ do
+      let tokens = tokenize bodyText
+      -- 高GOP（良い発音）の場合は高スコア → C1 近辺
+      let goodResult =
+            fixtureAnalyzerResult
+              { analyzedPerPhonemeGop =
+                  [ PhonemeGop {gopPhoneme = "h", gopValue = -1.0, gopStartMs = 0, gopEndMs = 100, gopNBest = [], gopWordPosition = Nothing},
+                    PhonemeGop {gopPhoneme = "ɛ", gopValue = -1.5, gopStartMs = 100, gopEndMs = 200, gopNBest = [], gopWordPosition = Nothing}
+                  ]
+              }
+      let findings = generateFindingsFromGop bodyText goodResult
+      let scores = buildAssessmentScores (scoreFromGop goodResult tokens) findings
+      -- cefrSegmental band は空でないことを確認
+      cefrBand (cefrSegmental scores) `shouldSatisfy` (not . null . Text.unpack)
+
+  describe "epenthesis classification (M-115)" $ do
+    it "epenthesis finding has phenomenon == epenthesis" $ do
+      let epenthesisResult =
+            fixtureAnalyzerResult
+              { analyzedSyllables =
+                  [ NativeTrace.Worker.AnalyzerClient.SyllableInfo
+                      { syllableInfoWord = "strike",
+                        syllableInfoWordIndex = 0,
+                        syllableInfoExpectedCount = 1,
+                        syllableInfoActualCount = 2,
+                        syllableInfoInsertedVowels = []
+                      }
+                  ],
+                analyzedPerPhonemeGop = [],
+                analyzedInterWordSilences = []
+              }
+      let findings = generateFindingsFromGop "strike" epenthesisResult
+      any (\f -> findingPhenomenon f == "epenthesis") findings `shouldBe` True
+
+    it "epenthesis finding has severity == Major and scoreImpact == -5.0 (ADR-017 D1)" $ do
+      let epenthesisResult =
+            fixtureAnalyzerResult
+              { analyzedSyllables =
+                  [ NativeTrace.Worker.AnalyzerClient.SyllableInfo
+                      { syllableInfoWord = "strike",
+                        syllableInfoWordIndex = 0,
+                        syllableInfoExpectedCount = 1,
+                        syllableInfoActualCount = 2,
+                        syllableInfoInsertedVowels = []
+                      }
+                  ],
+                analyzedPerPhonemeGop = [],
+                analyzedInterWordSilences = []
+              }
+      let epenthesisFindings =
+            filter (\f -> findingPhenomenon f == "epenthesis") $
+              generateFindingsFromGop "strike" epenthesisResult
+      all (isMajor . findingSeverity) epenthesisFindings `shouldBe` True
+      all (\f -> findingScoreImpact f == -5.0) epenthesisFindings `shouldBe` True
+
+    it "epenthesis finding has findingInsertedVowel == Just vowel when insertedVowel is present (ADR-017 D1)" $ do
+      let epenthesisResult =
+            fixtureAnalyzerResult
+              { analyzedSyllables =
+                  [ NativeTrace.Worker.AnalyzerClient.SyllableInfo
+                      { syllableInfoWord = "strike",
+                        syllableInfoWordIndex = 0,
+                        syllableInfoExpectedCount = 1,
+                        syllableInfoActualCount = 2,
+                        syllableInfoInsertedVowels =
+                          [ NativeTrace.Worker.AnalyzerClient.InsertedVowelInfo
+                              { insertedVowelPositionMs = 350,
+                                insertedVowelPhoneme = "ɯ"
+                              }
+                          ]
+                      }
+                  ],
+                analyzedPerPhonemeGop = [],
+                analyzedInterWordSilences = []
+              }
+      let epenthesisFindings =
+            filter (\f -> findingPhenomenon f == "epenthesis") $
+              generateFindingsFromGop "strike" epenthesisResult
+      any (\f -> findingInsertedVowel f == Just "ɯ") epenthesisFindings `shouldBe` True
+
+    it "epenthesis finding has findingInsertedVowel == Nothing when insertedVowels is empty (ADR-017 D1)" $ do
+      let epenthesisResult =
+            fixtureAnalyzerResult
+              { analyzedSyllables =
+                  [ NativeTrace.Worker.AnalyzerClient.SyllableInfo
+                      { syllableInfoWord = "this",
+                        syllableInfoWordIndex = 0,
+                        syllableInfoExpectedCount = 1,
+                        syllableInfoActualCount = 2,
+                        syllableInfoInsertedVowels = []
+                      }
+                  ],
+                analyzedPerPhonemeGop = [],
+                analyzedInterWordSilences = []
+              }
+      let epenthesisFindings =
+            filter (\f -> findingPhenomenon f == "epenthesis") $
+              generateFindingsFromGop "this" epenthesisResult
+      all (isNothing . findingInsertedVowel) epenthesisFindings `shouldBe` True
+
+  describe "nBest matching (M-103)" $ do
+    it "finding with nBest has detectedTopCandidate set" $ do
+      let nBestResult =
+            fixtureAnalyzerResult
+              { analyzedPerPhonemeGop =
+                  [ PhonemeGop
+                      { gopPhoneme = "l",
+                        gopValue = -13.0,
+                        gopStartMs = 0,
+                        gopEndMs = 100,
+                        gopNBest = [NBestEntry {nBestPhoneme = "ɾ", nBestConfidence = 0.9}],
+                        gopWordPosition = Nothing
+                      }
+                  ],
+                analyzedInterWordSilences = []
+              }
+      let findings = generateFindingsFromGop bodyText nBestResult
+      any (\f -> findingDetectedTopCandidate f == Just "ɾ") findings `shouldBe` True
+
+    it "finding with confusion set match has matchesL1Pattern == True" $ do
+      let nBestResult =
+            fixtureAnalyzerResult
+              { analyzedPerPhonemeGop =
+                  [ PhonemeGop
+                      { gopPhoneme = "l",
+                        gopValue = -13.0,
+                        gopStartMs = 0,
+                        gopEndMs = 100,
+                        gopNBest = [NBestEntry {nBestPhoneme = "ɾ", nBestConfidence = 0.9}],
+                        gopWordPosition = Nothing
+                      }
+                  ],
+                analyzedInterWordSilences = []
+              }
+      let findings = generateFindingsFromGop bodyText nBestResult
+      any findingMatchesL1Pattern findings `shouldBe` True
+
+  -- M-102R-c / M-102R-d: connected speech 4 現象の producer 発火・severity・scoreImpact
+  describe "connected speech findings (M-102R-c, M-102R-d)" $ do
+    -- ---- linking ----
+    describe "linking producer" $ do
+      it "fires when silenceDurationMs < 50 (linking signal satisfied)" $ do
+        let linkingResult =
+              fixtureAnalyzerResult
+                { analyzedInterWordSilences =
+                    [ InterWordSilence
+                        { silenceStartMs = 200,
+                          silenceEndMs = 220,
+                          -- 20ms < linkingGapThresholdMs(50) → linking 発火
+                          silenceDurationMs = 20
+                        }
+                    ],
+                  analyzedPerPhonemeGop = [],
+                  analyzedSchwaRealizations = []
+                }
+        let findings = generateFindingsFromGop bodyText linkingResult
+        any (\f -> findingPhenomenon f == "linking") findings `shouldBe` True
+
+      it "does not fire when silenceDurationMs >= 50 (linking signal not satisfied)" $ do
+        let noLinkingResult =
+              fixtureAnalyzerResult
+                { analyzedInterWordSilences =
+                    [ InterWordSilence
+                        { silenceStartMs = 200,
+                          silenceEndMs = 350,
+                          -- 150ms >= linkingGapThresholdMs(50) → 発火しない
+                          silenceDurationMs = 150
+                        }
+                    ],
+                  analyzedPerPhonemeGop = [],
+                  analyzedSchwaRealizations = []
+                }
+        let findings = generateFindingsFromGop bodyText noLinkingResult
+        any (\f -> findingPhenomenon f == "linking") findings `shouldBe` False
+
+      it "linking finding has severity == suggestion and scoreImpact == 0.0 (ADR-004, M-102R-d)" $ do
+        let linkingResult =
+              fixtureAnalyzerResult
+                { analyzedInterWordSilences =
+                    [ InterWordSilence
+                        { silenceStartMs = 200,
+                          silenceEndMs = 220,
+                          silenceDurationMs = 20
+                        }
+                    ],
+                  analyzedPerPhonemeGop = [],
+                  analyzedSchwaRealizations = []
+                }
+        let linkingFindings =
+              filter (\f -> findingPhenomenon f == "linking") $
+                generateFindingsFromGop bodyText linkingResult
+        all (isSuggestion . findingSeverity) linkingFindings `shouldBe` True
+        all (\f -> findingScoreImpact f == 0.0) linkingFindings `shouldBe` True
+
+    -- ---- flap ----
+    describe "flap producer" $ do
+      it "fires when expected phoneme is /t/ and duration < 60ms (short duration signal)" $ do
+        let flapResult =
+              fixtureAnalyzerResult
+                { analyzedPerPhonemeGop =
+                    [ PhonemeGop
+                        { gopPhoneme = "t",
+                          gopValue = -5.0,
+                          -- 50ms duration < flapDurationThresholdMs(60) → flap 発火
+                          gopStartMs = 100,
+                          gopEndMs = 150,
+                          gopNBest = [],
+                          gopWordPosition = Nothing
+                        }
+                    ],
+                  analyzedInterWordSilences = []
+                }
+        let findings = generateFindingsFromGop bodyText flapResult
+        any (\f -> findingPhenomenon f == "flap") findings `shouldBe` True
+
+      it "fires when expected phoneme is /d/ and NBest contains ɾ (rhotic NBest signal)" $ do
+        let flapResult =
+              fixtureAnalyzerResult
+                { analyzedPerPhonemeGop =
+                    [ PhonemeGop
+                        { gopPhoneme = "d",
+                          gopValue = -5.0,
+                          -- 100ms duration >= threshold, but NBest has ɾ → flap 発火
+                          gopStartMs = 100,
+                          gopEndMs = 200,
+                          gopNBest = [NBestEntry {nBestPhoneme = "ɾ", nBestConfidence = 0.7}],
+                          gopWordPosition = Nothing
+                        }
+                    ],
+                  analyzedInterWordSilences = []
+                }
+        let findings = generateFindingsFromGop bodyText flapResult
+        any (\f -> findingPhenomenon f == "flap") findings `shouldBe` True
+
+      it "does not fire when phoneme is not /t/ or /d/ (non-flap-target phoneme)" $ do
+        let noFlapResult =
+              fixtureAnalyzerResult
+                { analyzedPerPhonemeGop =
+                    [ PhonemeGop
+                        { gopPhoneme = "s",
+                          gopValue = -5.0,
+                          gopStartMs = 100,
+                          gopEndMs = 140,
+                          gopNBest = [NBestEntry {nBestPhoneme = "ɾ", nBestConfidence = 0.7}],
+                          gopWordPosition = Nothing
+                        }
+                    ],
+                  analyzedInterWordSilences = []
+                }
+        let findings = generateFindingsFromGop bodyText noFlapResult
+        any (\f -> findingPhenomenon f == "flap") findings `shouldBe` False
+
+      it "flap finding has severity == suggestion and scoreImpact == 0.0 (ADR-004, M-102R-d)" $ do
+        let flapResult =
+              fixtureAnalyzerResult
+                { analyzedPerPhonemeGop =
+                    [ PhonemeGop
+                        { gopPhoneme = "t",
+                          gopValue = -5.0,
+                          gopStartMs = 100,
+                          gopEndMs = 150,
+                          gopNBest = [],
+                          gopWordPosition = Nothing
+                        }
+                    ],
+                  analyzedInterWordSilences = []
+                }
+        let flapFindings =
+              filter (\f -> findingPhenomenon f == "flap") $
+                generateFindingsFromGop bodyText flapResult
+        all (isSuggestion . findingSeverity) flapFindings `shouldBe` True
+        all (\f -> findingScoreImpact f == 0.0) flapFindings `shouldBe` True
+
+    -- ---- assimilation ----
+    describe "assimilation producer" $ do
+      it "fires when /n/ is followed by /m/ context and NBest top is 'm' (assimilation signal)" $ do
+        -- /n/ + next=/m/ + NBest has "m" → assimilation 発火
+        let assimilationResult =
+              fixtureAnalyzerResult
+                { analyzedPerPhonemeGop =
+                    [ PhonemeGop
+                        { gopPhoneme = "n",
+                          gopValue = -5.0,
+                          gopStartMs = 100,
+                          gopEndMs = 200,
+                          gopNBest = [NBestEntry {nBestPhoneme = "m", nBestConfidence = 0.8}],
+                          gopWordPosition = Nothing
+                        },
+                      PhonemeGop
+                        { gopPhoneme = "m",
+                          gopValue = -4.0,
+                          gopStartMs = 200,
+                          gopEndMs = 300,
+                          gopNBest = [],
+                          gopWordPosition = Nothing
+                        }
+                    ],
+                  analyzedInterWordSilences = []
+                }
+        let findings = generateFindingsFromGop bodyText assimilationResult
+        any (\f -> findingPhenomenon f == "assimilation") findings `shouldBe` True
+
+      it "fires when /n/ is followed by /k/ context and NBest has ŋ (velar assimilation)" $ do
+        let assimilationResult =
+              fixtureAnalyzerResult
+                { analyzedPerPhonemeGop =
+                    [ PhonemeGop
+                        { gopPhoneme = "n",
+                          gopValue = -5.0,
+                          gopStartMs = 100,
+                          gopEndMs = 200,
+                          gopNBest = [NBestEntry {nBestPhoneme = "ŋ", nBestConfidence = 0.75}],
+                          gopWordPosition = Nothing
+                        },
+                      PhonemeGop
+                        { gopPhoneme = "k",
+                          gopValue = -4.0,
+                          gopStartMs = 200,
+                          gopEndMs = 300,
+                          gopNBest = [],
+                          gopWordPosition = Nothing
+                        }
+                    ],
+                  analyzedInterWordSilences = []
+                }
+        let findings = generateFindingsFromGop bodyText assimilationResult
+        any (\f -> findingPhenomenon f == "assimilation") findings `shouldBe` True
+
+      it "does not fire when assimilation context is absent (no following matching phoneme)" $ do
+        -- /n/ but next is /s/ (not in assimilation context) → 発火しない
+        let noAssimilationResult =
+              fixtureAnalyzerResult
+                { analyzedPerPhonemeGop =
+                    [ PhonemeGop
+                        { gopPhoneme = "n",
+                          gopValue = -5.0,
+                          gopStartMs = 100,
+                          gopEndMs = 200,
+                          gopNBest = [NBestEntry {nBestPhoneme = "m", nBestConfidence = 0.8}],
+                          gopWordPosition = Nothing
+                        },
+                      PhonemeGop
+                        { gopPhoneme = "s",
+                          gopValue = -4.0,
+                          gopStartMs = 200,
+                          gopEndMs = 300,
+                          gopNBest = [],
+                          gopWordPosition = Nothing
+                        }
+                    ],
+                  analyzedInterWordSilences = []
+                }
+        let findings = generateFindingsFromGop bodyText noAssimilationResult
+        any (\f -> findingPhenomenon f == "assimilation") findings `shouldBe` False
+
+      it "assimilation finding has severity == suggestion and scoreImpact == 0.0 (ADR-004, M-102R-d)" $ do
+        let assimilationResult =
+              fixtureAnalyzerResult
+                { analyzedPerPhonemeGop =
+                    [ PhonemeGop
+                        { gopPhoneme = "n",
+                          gopValue = -5.0,
+                          gopStartMs = 100,
+                          gopEndMs = 200,
+                          gopNBest = [NBestEntry {nBestPhoneme = "m", nBestConfidence = 0.8}],
+                          gopWordPosition = Nothing
+                        },
+                      PhonemeGop
+                        { gopPhoneme = "m",
+                          gopValue = -4.0,
+                          gopStartMs = 200,
+                          gopEndMs = 300,
+                          gopNBest = [],
+                          gopWordPosition = Nothing
+                        }
+                    ],
+                  analyzedInterWordSilences = []
+                }
+        let assimilationFindings =
+              filter (\f -> findingPhenomenon f == "assimilation") $
+                generateFindingsFromGop bodyText assimilationResult
+        all (isSuggestion . findingSeverity) assimilationFindings `shouldBe` True
+        all (\f -> findingScoreImpact f == 0.0) assimilationFindings `shouldBe` True
+
+    -- ---- reduction ----
+    describe "reduction producer" $ do
+      it "fires when full vowel is short (<80ms) and covered by SchwaRealization (reduction signal)" $ do
+        -- /æ/ は fullVowelPhonemes に含まれる。duration=50ms < 80ms。SchwaRealization が time をカバー。
+        let reductionResult =
+              fixtureAnalyzerResult
+                { analyzedPerPhonemeGop =
+                    [ PhonemeGop
+                        { gopPhoneme = "æ",
+                          gopValue = -5.0,
+                          -- 50ms duration < reductionDurationThresholdMs(80)
+                          gopStartMs = 100,
+                          gopEndMs = 150,
+                          gopNBest = [],
+                          gopWordPosition = Nothing
+                        }
+                    ],
+                  analyzedSchwaRealizations =
+                    [ SchwaRealization
+                        { schwaPhoneme = "ə",
+                          -- カバー: 90 <= 100 かつ 160 >= 150
+                          schwaStartMs = 90,
+                          schwaEndMs = 160,
+                          schwaRealized = True
+                        }
+                    ],
+                  analyzedInterWordSilences = [],
+                  analyzedWeakFormRealizations = []
+                }
+        let findings = generateFindingsFromGop bodyText reductionResult
+        any (\f -> findingPhenomenon f == "reduction") findings `shouldBe` True
+
+      it "does not fire when phoneme is not a full vowel (non-reduction target)" $ do
+        -- /n/ は fullVowelPhonemes に含まれない → 発火しない
+        let noReductionResult =
+              fixtureAnalyzerResult
+                { analyzedPerPhonemeGop =
+                    [ PhonemeGop
+                        { gopPhoneme = "n",
+                          gopValue = -5.0,
+                          gopStartMs = 100,
+                          gopEndMs = 140,
+                          gopNBest = [],
+                          gopWordPosition = Nothing
+                        }
+                    ],
+                  analyzedSchwaRealizations =
+                    [ SchwaRealization
+                        { schwaPhoneme = "ə",
+                          schwaStartMs = 90,
+                          schwaEndMs = 160,
+                          schwaRealized = True
+                        }
+                    ],
+                  analyzedInterWordSilences = [],
+                  analyzedWeakFormRealizations = []
+                }
+        let findings = generateFindingsFromGop bodyText noReductionResult
+        any (\f -> findingPhenomenon f == "reduction") findings `shouldBe` False
+
+      it "does not fire when duration is >= 80ms even if SchwaRealization is present" $ do
+        let noReductionResult =
+              fixtureAnalyzerResult
+                { analyzedPerPhonemeGop =
+                    [ PhonemeGop
+                        { gopPhoneme = "æ",
+                          gopValue = -5.0,
+                          -- 100ms >= 80ms → 発火しない
+                          gopStartMs = 100,
+                          gopEndMs = 200,
+                          gopNBest = [],
+                          gopWordPosition = Nothing
+                        }
+                    ],
+                  analyzedSchwaRealizations =
+                    [ SchwaRealization
+                        { schwaPhoneme = "ə",
+                          schwaStartMs = 90,
+                          schwaEndMs = 210,
+                          schwaRealized = True
+                        }
+                    ],
+                  analyzedInterWordSilences = [],
+                  analyzedWeakFormRealizations = []
+                }
+        let findings = generateFindingsFromGop bodyText noReductionResult
+        any (\f -> findingPhenomenon f == "reduction") findings `shouldBe` False
+
+      it "does not fire when phoneme is in weakForm time range (weakForm exclusion)" $ do
+        let noReductionResult =
+              fixtureAnalyzerResult
+                { analyzedPerPhonemeGop =
+                    [ PhonemeGop
+                        { gopPhoneme = "æ",
+                          gopValue = -5.0,
+                          gopStartMs = 100,
+                          gopEndMs = 140,
+                          gopNBest = [],
+                          gopWordPosition = Nothing
+                        }
+                    ],
+                  analyzedSchwaRealizations =
+                    [ SchwaRealization
+                        { schwaPhoneme = "ə",
+                          schwaStartMs = 90,
+                          schwaEndMs = 160,
+                          schwaRealized = True
+                        }
+                    ],
+                  analyzedInterWordSilences = [],
+                  -- weakForm range [80, 200) が gopStartMs=100 をカバー → 除外
+                  analyzedWeakFormRealizations =
+                    [ WeakFormRealization
+                        { weakFormWord = "a",
+                          weakFormWordIndex = 0,
+                          weakFormStartMs = 80,
+                          weakFormEndMs = 200,
+                          weakFormExpectedWeak = True,
+                          weakFormRealizedWeak = False
+                        }
+                    ]
+                }
+        let findings = generateFindingsFromGop bodyText noReductionResult
+        any (\f -> findingPhenomenon f == "reduction") findings `shouldBe` False
+
+      it "reduction finding has severity == suggestion and scoreImpact == 0.0 (ADR-004, M-102R-d)" $ do
+        let reductionResult =
+              fixtureAnalyzerResult
+                { analyzedPerPhonemeGop =
+                    [ PhonemeGop
+                        { gopPhoneme = "æ",
+                          gopValue = -5.0,
+                          gopStartMs = 100,
+                          gopEndMs = 150,
+                          gopNBest = [],
+                          gopWordPosition = Nothing
+                        }
+                    ],
+                  analyzedSchwaRealizations =
+                    [ SchwaRealization
+                        { schwaPhoneme = "ə",
+                          schwaStartMs = 90,
+                          schwaEndMs = 160,
+                          schwaRealized = True
+                        }
+                    ],
+                  analyzedInterWordSilences = [],
+                  analyzedWeakFormRealizations = []
+                }
+        let reductionFindings =
+              filter (\f -> findingPhenomenon f == "reduction") $
+                generateFindingsFromGop bodyText reductionResult
+        all (isSuggestion . findingSeverity) reductionFindings `shouldBe` True
+        all (\f -> findingScoreImpact f == 0.0) reductionFindings `shouldBe` True
+
+  -- M-CRL-7 / ADR-022: GOP delta classification
+  describe "classifyGopDelta (M-CRL-7 / ADR-022)" $ do
+    describe "deltaSignal" $ do
+      it "gopDelta > 5.0 → DeltaSignalImproved (original=-15, retry=-8, delta=7.0)" $ do
+        let result = classifyGopDelta (-15) (-8)
+        gopDeltaResponseGopDelta result `shouldBe` 7.0
+        gopDeltaResponseDeltaSignal result `shouldBe` DeltaSignalImproved
+
+      it "gopDelta < -2.0 → DeltaSignalRegressed (original=-8, retry=-12, delta=-4.0)" $ do
+        let result = classifyGopDelta (-8) (-12)
+        gopDeltaResponseGopDelta result `shouldBe` (-4.0)
+        gopDeltaResponseDeltaSignal result `shouldBe` DeltaSignalRegressed
+
+      it "gopDelta in (-2.0, 5.0] → DeltaSignalUnchanged (original=-10, retry=-8, delta=2.0)" $ do
+        let result = classifyGopDelta (-10) (-8)
+        gopDeltaResponseGopDelta result `shouldBe` 2.0
+        gopDeltaResponseDeltaSignal result `shouldBe` DeltaSignalUnchanged
+
+      it "gopDelta exactly 5.0 → DeltaSignalUnchanged (strict >, not >=)" $ do
+        -- delta = retryGop - originalGop = (-5) - (-10) = 5.0
+        -- improvement threshold is strict >; exactly 5.0 must be unchanged
+        let result = classifyGopDelta (-10) (-5)
+        gopDeltaResponseGopDelta result `shouldBe` 5.0
+        gopDeltaResponseDeltaSignal result `shouldBe` DeltaSignalUnchanged
+
+      it "gopDelta exactly -2.0 → DeltaSignalUnchanged (strict <, not <=)" $ do
+        -- delta = (-12) - (-10) = -2.0
+        -- regression threshold is strict <; exactly -2.0 must be unchanged
+        let result = classifyGopDelta (-10) (-12)
+        gopDeltaResponseGopDelta result `shouldBe` (-2.0)
+        gopDeltaResponseDeltaSignal result `shouldBe` DeltaSignalUnchanged
+
+    describe "boundarySignal strict severity thresholds" $ do
+      it "gop exactly -8.0 → none severity (strict <; == is not minor)" $ do
+        -- originalGop=-10 (minor), retryGop=-8.0 (none, because not < -8)
+        -- minor→none = BoundarySignalCrossedMinor
+        let result = classifyGopDelta (-10) (-8)
+        gopDeltaResponseBoundarySignal result `shouldBe` BoundarySignalCrossedMinor
+
+      it "gop exactly -12.0 → minor severity (strict <; == is not major)" $ do
+        -- originalGop=-15 (major), retryGop=-12.0 (minor, because not < -12)
+        -- major→minor = BoundarySignalCrossedMajor
+        let result = classifyGopDelta (-15) (-12)
+        gopDeltaResponseBoundarySignal result `shouldBe` BoundarySignalCrossedMajor
+
+    describe "boundarySignal classification" $ do
+      it "major→minor (original=-15, retry=-10) → BoundarySignalCrossedMajor" $ do
+        let result = classifyGopDelta (-15) (-10)
+        gopDeltaResponseBoundarySignal result `shouldBe` BoundarySignalCrossedMajor
+
+      it "minor→none (original=-10, retry=-6) → BoundarySignalCrossedMinor" $ do
+        let result = classifyGopDelta (-10) (-6)
+        gopDeltaResponseBoundarySignal result `shouldBe` BoundarySignalCrossedMinor
+
+      it "major→major (original=-15, retry=-13) → BoundarySignalNone" $ do
+        let result = classifyGopDelta (-15) (-13)
+        gopDeltaResponseBoundarySignal result `shouldBe` BoundarySignalNone
+
+      it "major→none (original=-15, retry=-7) → BoundarySignalCrossedMajor" $ do
+        let result = classifyGopDelta (-15) (-7)
+        gopDeltaResponseBoundarySignal result `shouldBe` BoundarySignalCrossedMajor
+
+    -- M-CRL-17 / ADR-022: retrySeverity and retryConfidence
+    describe "retrySeverity and retryConfidence (M-CRL-17)" $ do
+      it "retryGop=-15 → retrySeverity=Just FindingSeverityMajor, retryConfidence=0.8" $ do
+        let result = classifyGopDelta (-20) (-15)
+        gopDeltaResponseRetrySeverity result `shouldBe` Just FindingSeverityMajor
+        gopDeltaResponseRetryConfidence result `shouldBe` 0.8
+
+      it "retryGop=-10 → retrySeverity=Just FindingSeverityMinor, retryConfidence=0.7" $ do
+        let result = classifyGopDelta (-20) (-10)
+        gopDeltaResponseRetrySeverity result `shouldBe` Just FindingSeverityMinor
+        gopDeltaResponseRetryConfidence result `shouldBe` 0.7
+
+      it "retryGop=-6 → retrySeverity=Nothing, retryConfidence=0.6" $ do
+        let result = classifyGopDelta (-20) (-6)
+        gopDeltaResponseRetrySeverity result `shouldBe` Nothing
+        gopDeltaResponseRetryConfidence result `shouldBe` 0.6
+
+      it "retryGop=-8 → Nothing (strict <; -8 is not minor)" $ do
+        let result = classifyGopDelta (-20) (-8)
+        gopDeltaResponseRetrySeverity result `shouldBe` Nothing
+
+      it "retryGop=-12 → Just FindingSeverityMinor (strict <; -12 is not major)" $ do
+        let result = classifyGopDelta (-20) (-12)
+        gopDeltaResponseRetrySeverity result `shouldBe` Just FindingSeverityMinor
+
+  -- ADR-018 音響証拠 unit tests
+  -- M-APD-10: hillenbrandGaVowelFormants ノルム map のキー検証
+  describe "hillenbrandGaVowelFormants (M-APD-10)" $ do
+    it "contains key (\"iː\", \"M\") for male /iː/ vowel" $ do
+      Map.member ("iː", "M") hillenbrandGaVowelFormants `shouldBe` True
+
+    it "contains key (\"iː\", \"F\") for female /iː/ vowel" $ do
+      Map.member ("iː", "F") hillenbrandGaVowelFormants `shouldBe` True
+
+  -- M-APD-11: deriveAcousticEvidence 方向ラベル + Lobanov ガード
+  describe "deriveAcousticEvidence (M-APD-11)" $ do
+    -- rhoticity label test: F3=2200Hz は /r/ → insufficient, /l/ → overRetroflex (dead zone なし)
+    it "F3=2200Hz at /r/ → rhoticity=insufficient; at /l/ → overRetroflex (no dead zone)" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "r",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Nothing,
+                acousticF2Hz = Nothing,
+                acousticF3Hz = Just 2200,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      -- /r/ with F3=2200 >= rhoticF3MaleHz(2000) → insufficient
+      let rResult = deriveAcousticEvidence "r" measured "M" [measured]
+      acousticRhoticity rResult `shouldBe` Just "insufficient"
+      -- /l/ with same F3=2200 < lateralF3OverretroflexHz(2500) → overRetroflex
+      let lMeasured = measured {acousticPhoneme = "l"}
+      let lResult = deriveAcousticEvidence "l" lMeasured "M" [lMeasured]
+      acousticRhoticity lResult `shouldBe` Just "overRetroflex"
+
+    -- Lobanov ガード: speakerSex="unknown" で母音 ≥3 → tongueHeight が Just
+    it "speakerSex=unknown with >=3 vowels → tongueHeight is Just (Lobanov normalisation runs)" $ do
+      -- fullVowelPhonemes に含まれる母音を 3 つ用意。F1 に分散がある値を設定。
+      let makeVowel p f1 =
+            PhonemeAcoustic
+              { acousticPhoneme = p,
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Just f1,
+                acousticF2Hz = Just 2000,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let vowel1 = makeVowel "iː" 270
+      let vowel2 = makeVowel "ɪ" 430
+      let vowel3 = makeVowel "æ" 660
+      let allVowels = [vowel1, vowel2, vowel3]
+      let result = deriveAcousticEvidence "iː" vowel1 "unknown" allVowels
+      isJust (acousticTongueHeight result) `shouldBe` True
+
+    -- Lobanov ガード: speakerSex="unknown" で母音 <3 → tongueHeight が Nothing
+    it "speakerSex=unknown with <3 vowels → tongueHeight is Nothing (false-positive guard)" $ do
+      let makeVowel p f1 =
+            PhonemeAcoustic
+              { acousticPhoneme = p,
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Just f1,
+                acousticF2Hz = Just 2000,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let vowel1 = makeVowel "iː" 270
+      let vowel2 = makeVowel "ɪ" 430
+      let twoVowels = [vowel1, vowel2]
+      let result = deriveAcousticEvidence "iː" vowel1 "unknown" twoVowels
+      acousticTongueHeight result `shouldBe` Nothing
+
+    -- M-APD-11: M/F パスは sex ノルム行を直接参照する
+    -- hillenbrand norm: iː M=(270,2290,3010), iː F=(437,2761,3372)
+    -- 計測 F1=600 は M ノルム(270)の高い側 → "tooLow"(高 F1=低舌位)
+    --                   F ノルム(437)の高い側 → "tooLow"
+    -- 計測 F2=2500 は M ノルム(2290)の高い側 → "tooFront"
+    --               F ノルム(2761)の低い側    → "tooBack" (2500 < 2761)
+    -- → M/F で tongueBackness が異なることを確認。target も各 sex ノルムに一致。
+    it "speakerSex=M vs F yields different tongueBackness (sex norm row differs) for iː F2=2500" $ do
+      let makeSingleVowel p f1 f2 =
+            PhonemeAcoustic
+              { acousticPhoneme = p,
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Just f1,
+                acousticF2Hz = Just f2,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      -- F2=3000 を使う: M norm 2290 → (3000-2290)/(2290*0.10)=710/229=3.1 → "tooFront"
+      --                  F norm 2761 → (3000-2761)/(2761*0.10)=239/276.1=0.87 → "ok"
+      let measuredHighF2 = makeSingleVowel "iː" 600 3000
+      let resultMaleHighF2 = deriveAcousticEvidence "iː" measuredHighF2 "M" [measuredHighF2]
+      let resultFemaleHighF2 = deriveAcousticEvidence "iː" measuredHighF2 "F" [measuredHighF2]
+      -- M → tooFront (F2 far above M norm 2290)
+      acousticTongueBackness resultMaleHighF2 `shouldBe` Just "tooFront"
+      -- F → ok (F2=3000 is within 1 SD of F norm 2761)
+      acousticTongueBackness resultFemaleHighF2 `shouldBe` Just "ok"
+      -- また M/F の tongueBackness が異なることを確認
+      acousticTongueBackness resultMaleHighF2 `shouldNotBe` acousticTongueBackness resultFemaleHighF2
+
+    it "speakerSex=M acousticTargetF1Hz equals hillenbrand M norm for iː" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "iː",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Just 600,
+                acousticF2Hz = Just 2500,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "iː" measured "M" [measured]
+      -- hillenbrand iː M norm: F1=270, F2=2290, F3=3010
+      acousticTargetF1Hz result `shouldBe` Just 270
+      acousticTargetF2Hz result `shouldBe` Just 2290
+
+    it "speakerSex=F acousticTargetF1Hz equals hillenbrand F norm for iː" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "iː",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Just 600,
+                acousticF2Hz = Just 2500,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "iː" measured "F" [measured]
+      -- hillenbrand iː F norm: F1=437, F2=2761, F3=3372
+      acousticTargetF1Hz result `shouldBe` Just 437
+      acousticTargetF2Hz result `shouldBe` Just 2761
+
+    -- M-APD-11: M/F パスは >=3 母音ガードを適用しない
+    it "speakerSex=M with only 1 vowel still returns Just for tongueHeight (not over-guarded)" $ do
+      let singleVowel =
+            PhonemeAcoustic
+              { acousticPhoneme = "iː",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                -- F1=600Hz は M ノルム(270)より大幅に高い → fallback SD=270*0.10=27 → (600-270)/27=12.2 → "tooLow"
+                acousticF1Hz = Just 600,
+                acousticF2Hz = Just 2500,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "iː" singleVowel "M" [singleVowel]
+      -- M/F パスは母音数によらず Just を返す (>=3 ガードは unknown のみ)
+      isJust (acousticTongueHeight result) `shouldBe` True
+
+    it "speakerSex=F with only 1 vowel still returns Just for tongueHeight (not over-guarded)" $ do
+      let singleVowel =
+            PhonemeAcoustic
+              { acousticPhoneme = "iː",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                -- F1=600Hz は F ノルム(437)より大幅に高い → fallback SD=437*0.10=43.7 → (600-437)/43.7=3.7 → "tooLow"
+                acousticF1Hz = Just 600,
+                acousticF2Hz = Just 2500,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "iː" singleVowel "F" [singleVowel]
+      isJust (acousticTongueHeight result) `shouldBe` True
+
+  -- ADR-024 M-ADVL-11 / M-ADVL-14: presentation-only scalar fields
+  describe "deriveAcousticEvidence ADR-024 scalars (M-ADVL-11)" $ do
+    -- spectralCentroidHz: input centroid は透過される
+    it "acousticSpectralCentroidHz transits the input centroid value for /s/" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "s",
+                acousticStartMs = 0,
+                acousticEndMs = 80,
+                acousticF1Hz = Nothing,
+                acousticF2Hz = Nothing,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Just 4800.0,
+                acousticDurationMs = 80
+              }
+      let result = deriveAcousticEvidence "s" measured "M" [measured]
+      Types.acousticSpectralCentroidHz result `shouldBe` Just 4800.0
+
+    it "acousticSpectralCentroidHz is Nothing when input centroid is Nothing" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "iː",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Just 270,
+                acousticF2Hz = Just 2290,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "iː" measured "M" [measured]
+      Types.acousticSpectralCentroidHz result `shouldBe` Nothing
+
+    -- tenseLengthRatio: tense 音素 "iː" + lax 母音あり → measuredDurMs / mean(lax durations)
+    it "acousticTenseLengthRatio for tense \"iː\" equals measuredDurMs / mean(lax durations)" $ do
+      -- "iː" 200ms, lax: "ɪ" 100ms + "æ" 100ms → mean=100, ratio=2.0
+      let tenseMeasured =
+            PhonemeAcoustic
+              { acousticPhoneme = "iː",
+                acousticStartMs = 0,
+                acousticEndMs = 200,
+                acousticF1Hz = Just 270,
+                acousticF2Hz = Just 2290,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 200
+              }
+      let lax1 =
+            PhonemeAcoustic
+              { acousticPhoneme = "ɪ",
+                acousticStartMs = 200,
+                acousticEndMs = 300,
+                acousticF1Hz = Just 430,
+                acousticF2Hz = Just 2070,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let lax2 =
+            PhonemeAcoustic
+              { acousticPhoneme = "æ",
+                acousticStartMs = 300,
+                acousticEndMs = 400,
+                acousticF1Hz = Just 660,
+                acousticF2Hz = Just 1720,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "iː" tenseMeasured "M" [tenseMeasured, lax1, lax2]
+      acousticTenseLengthRatio result `shouldBe` Just 2.0
+
+    it "acousticTenseLengthRatio is Nothing for non-tense phoneme \"r\"" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "r",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Nothing,
+                acousticF2Hz = Nothing,
+                acousticF3Hz = Just 2200,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "r" measured "M" [measured]
+      acousticTenseLengthRatio result `shouldBe` Nothing
+
+    -- signedF1SdDeviation / signedF2SdDeviation: sex="M", single vowel uses fallback SD
+    -- iː M norm: F1=270, F2=2290. fallbackSd = norm*0.10.
+    -- F1=600: (600-270)/(270*0.10) = 330/27.0 ≈ 12.2222 (positive → measured above norm)
+    it "acousticSignedF1SdDeviation is positive when measured F1 > norm (above norm → positive)" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "iː",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Just 600,
+                acousticF2Hz = Just 2290,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "iː" measured "M" [measured]
+      case acousticSignedF1SdDeviation result of
+        Nothing -> expectationFailure "expected Just for vowel with M norm"
+        Just deviation -> do
+          deviation `shouldSatisfy` (> 0)
+          -- (600-270)/(270*0.10) = 330/27 = 12.2222...
+          abs (deviation - (330.0 / 27.0)) `shouldSatisfy` (< 1.0e-6)
+
+    -- F2=2000 < norm 2290: (2000-2290)/(2290*0.10) = -290/229 ≈ -1.2664 (negative → measured below norm)
+    it "acousticSignedF2SdDeviation is negative when measured F2 < norm (below norm → negative)" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "iː",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Just 270,
+                acousticF2Hz = Just 2000,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "iː" measured "M" [measured]
+      case acousticSignedF2SdDeviation result of
+        Nothing -> expectationFailure "expected Just for vowel with M norm"
+        Just deviation -> do
+          deviation `shouldSatisfy` (< 0)
+          -- (2000-2290)/(2290*0.10) = -290/229
+          abs (deviation - ((-290.0) / 229.0)) `shouldSatisfy` (< 1.0e-6)
+
+    it "acousticSignedF1SdDeviation is Nothing for non-vowel (consonant \"r\")" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "r",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Nothing,
+                acousticF2Hz = Nothing,
+                acousticF3Hz = Just 2200,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "r" measured "M" [measured]
+      acousticSignedF1SdDeviation result `shouldBe` Nothing
+
+    it "acousticSignedF2SdDeviation is Nothing for non-vowel (consonant \"r\")" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "r",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Nothing,
+                acousticF2Hz = Nothing,
+                acousticF3Hz = Just 2200,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "r" measured "M" [measured]
+      acousticSignedF2SdDeviation result `shouldBe` Nothing
+
+    -- signedF3SdDeviation: vowel with F3 norm. iː M norm F3=3010.
+    -- F3=3300: (3300-3010)/(3010*0.10) = 290/301 ≈ 0.96345 (positive)
+    it "acousticSignedF3SdDeviation is positive when measured F3 > norm and is a vowel with norm" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "iː",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Just 270,
+                acousticF2Hz = Just 2290,
+                acousticF3Hz = Just 3300,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "iː" measured "M" [measured]
+      case acousticSignedF3SdDeviation result of
+        Nothing -> expectationFailure "expected Just for vowel with F3 norm"
+        Just deviation -> do
+          deviation `shouldSatisfy` (> 0)
+          -- (3300-3010)/(3010*0.10) = 290/301
+          abs (deviation - (290.0 / 301.0)) `shouldSatisfy` (< 1.0e-6)
+
+    it "acousticSignedF3SdDeviation is Nothing for consonant \"r\" (no norm row)" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "r",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Nothing,
+                acousticF2Hz = Nothing,
+                acousticF3Hz = Just 2200,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "r" measured "M" [measured]
+      acousticSignedF3SdDeviation result `shouldBe` Nothing
+
+    -- targetSpectralCentroidHz: /s/ → Just 4500, /ʃ/ → Just 3500, otherwise → Nothing
+    it "acousticTargetSpectralCentroidHz is Just 4500.0 for /s/" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "s",
+                acousticStartMs = 0,
+                acousticEndMs = 80,
+                acousticF1Hz = Nothing,
+                acousticF2Hz = Nothing,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Just 4800.0,
+                acousticDurationMs = 80
+              }
+      let result = deriveAcousticEvidence "s" measured "M" [measured]
+      acousticTargetSpectralCentroidHz result `shouldBe` Just 4500.0
+
+    it "acousticTargetSpectralCentroidHz is Just 3500.0 for /ʃ/" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "ʃ",
+                acousticStartMs = 0,
+                acousticEndMs = 80,
+                acousticF1Hz = Nothing,
+                acousticF2Hz = Nothing,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Just 3200.0,
+                acousticDurationMs = 80
+              }
+      let result = deriveAcousticEvidence "ʃ" measured "M" [measured]
+      acousticTargetSpectralCentroidHz result `shouldBe` Just 3500.0
+
+    it "acousticTargetSpectralCentroidHz is Nothing for non-sibilant phoneme \"iː\"" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "iː",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Just 270,
+                acousticF2Hz = Just 2290,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "iː" measured "M" [measured]
+      acousticTargetSpectralCentroidHz result `shouldBe` Nothing
+
+    -- targetTenseLengthRatio: tense → Just 1.4, non-tense → Nothing
+    it "acousticTargetTenseLengthRatio is Just 1.4 for tense phoneme \"iː\"" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "iː",
+                acousticStartMs = 0,
+                acousticEndMs = 150,
+                acousticF1Hz = Just 270,
+                acousticF2Hz = Just 2290,
+                acousticF3Hz = Nothing,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 150
+              }
+      let result = deriveAcousticEvidence "iː" measured "M" [measured]
+      acousticTargetTenseLengthRatio result `shouldBe` Just 1.4
+
+    it "acousticTargetTenseLengthRatio is Nothing for non-tense phoneme \"r\"" $ do
+      let measured =
+            PhonemeAcoustic
+              { acousticPhoneme = "r",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Nothing,
+                acousticF2Hz = Nothing,
+                acousticF3Hz = Just 2200,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let result = deriveAcousticEvidence "r" measured "M" [measured]
+      acousticTargetTenseLengthRatio result `shouldBe` Nothing
+
+  -- M-APD-17: scoreImpact 不変 — acousticEvidence の有無で findingScoreImpact が変わらないこと
+  describe "scoreImpact invariant (M-APD-17)" $ do
+    it "severityToScoreImpact FindingSeverityMajor == -5.0 (unchanged)" $ do
+      severityToScoreImpact FindingSeverityMajor `shouldBe` (-5.0)
+
+    it "severityToScoreImpact FindingSeverityMinor == -2.0 (unchanged)" $ do
+      severityToScoreImpact FindingSeverityMinor `shouldBe` (-2.0)
+
+    it "major GOP finding has same scoreImpact with or without acoustic match" $ do
+      -- GOP -15 (major) で PhonemeAcoustic 有無を切り替える
+      let majorGop =
+            PhonemeGop
+              { gopPhoneme = "r",
+                gopValue = -15.0,
+                gopStartMs = 0,
+                gopEndMs = 100,
+                gopNBest = [],
+                gopWordPosition = Nothing
+              }
+      let matchingAcoustic =
+            PhonemeAcoustic
+              { acousticPhoneme = "r",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Nothing,
+                acousticF2Hz = Nothing,
+                acousticF3Hz = Just 2200,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      -- with acoustic match
+      let withAcousticResult =
+            fixtureAnalyzerResult
+              { analyzedPerPhonemeGop = [majorGop],
+                analyzedPhonemeAcoustics = [matchingAcoustic],
+                analyzedInterWordSilences = []
+              }
+      -- without acoustic match
+      let withoutAcousticResult =
+            fixtureAnalyzerResult
+              { analyzedPerPhonemeGop = [majorGop],
+                analyzedPhonemeAcoustics = [],
+                analyzedInterWordSilences = []
+              }
+      let withFindings = generateFindingsFromGop bodyText withAcousticResult
+      let withoutFindings = generateFindingsFromGop bodyText withoutAcousticResult
+      -- scoreImpact は等しいこと
+      map findingScoreImpact withFindings `shouldBe` map findingScoreImpact withoutFindings
+
+    it "minor GOP finding has same scoreImpact with or without acoustic match" $ do
+      let minorGop =
+            PhonemeGop
+              { gopPhoneme = "r",
+                gopValue = -10.0,
+                gopStartMs = 0,
+                gopEndMs = 100,
+                gopNBest = [],
+                gopWordPosition = Nothing
+              }
+      let matchingAcoustic =
+            PhonemeAcoustic
+              { acousticPhoneme = "r",
+                acousticStartMs = 0,
+                acousticEndMs = 100,
+                acousticF1Hz = Nothing,
+                acousticF2Hz = Nothing,
+                acousticF3Hz = Just 2200,
+                acousticSpectralCentroidHz = Nothing,
+                acousticDurationMs = 100
+              }
+      let withAcousticResult =
+            fixtureAnalyzerResult
+              { analyzedPerPhonemeGop = [minorGop],
+                analyzedPhonemeAcoustics = [matchingAcoustic],
+                analyzedInterWordSilences = []
+              }
+      let withoutAcousticResult =
+            fixtureAnalyzerResult
+              { analyzedPerPhonemeGop = [minorGop],
+                analyzedPhonemeAcoustics = [],
+                analyzedInterWordSilences = []
+              }
+      let withFindings = generateFindingsFromGop bodyText withAcousticResult
+      let withoutFindings = generateFindingsFromGop bodyText withoutAcousticResult
+      map findingScoreImpact withFindings `shouldBe` map findingScoreImpact withoutFindings
+
+  -- ADR-024 M-ADVL-10: AcousticEvidence ToJSON wire-key contract
+  -- Tests that encode/toJSON emits the 7 ADR-024 wire keys so that a field-name
+  -- typo in the ToJSON instance cannot silently break the Zod contract while
+  -- cabal test stays green.
+  describe "AcousticEvidence ToJSON wire keys (M-ADVL-10 / ADR-024 contract)" $ do
+    let evidence =
+          AcousticEvidence
+            { acousticTongueHeight = Just "ok",
+              acousticTongueBackness = Just "tooFront",
+              acousticRhoticity = Nothing,
+              acousticSibilantPlace = Nothing,
+              acousticVowelLength = Nothing,
+              acousticMeasuredF1Hz = Just 270.0,
+              acousticMeasuredF2Hz = Just 2290.0,
+              acousticMeasuredF3Hz = Nothing,
+              acousticTargetF1Hz = Just 270.0,
+              acousticTargetF2Hz = Just 2290.0,
+              acousticTargetF3Hz = Nothing,
+              acousticSpectralCentroidHz = Just 3600.0,
+              acousticTenseLengthRatio = Just 1.5,
+              acousticSignedF1SdDeviation = Just 1.4,
+              acousticSignedF2SdDeviation = Just (-1.1),
+              acousticSignedF3SdDeviation = Just (-0.8),
+              acousticTargetSpectralCentroidHz = Just 4500.0,
+              acousticTargetTenseLengthRatio = Just 1.4
+            }
+        encoded = LBS8.unpack (encode evidence)
+    it "emits wire key \"spectralCentroidHz\"" $
+      encoded `shouldContain` "spectralCentroidHz"
+    it "emits wire key \"tenseLengthRatio\"" $
+      encoded `shouldContain` "tenseLengthRatio"
+    it "emits wire key \"signedF1SdDeviation\"" $
+      encoded `shouldContain` "signedF1SdDeviation"
+    it "emits wire key \"signedF2SdDeviation\"" $
+      encoded `shouldContain` "signedF2SdDeviation"
+    it "emits wire key \"signedF3SdDeviation\"" $
+      encoded `shouldContain` "signedF3SdDeviation"
+    it "emits wire key \"targetSpectralCentroidHz\"" $
+      encoded `shouldContain` "targetSpectralCentroidHz"
+    it "emits wire key \"targetTenseLengthRatio\"" $
+      encoded `shouldContain` "targetTenseLengthRatio"
+    it "emits value 3600 for \"spectralCentroidHz\" (value mapping lock)" $
+      encoded `shouldContain` "\"spectralCentroidHz\":3600"
+
+  -- M-CRL-16 / ADR-022: buildAssessmentResponseFromGop diagnosticPerPhonemeGop on low_quality
+  describe "buildAssessmentResponseFromGop low_quality gate (M-CRL-16 / ADR-022 D17)" $ do
+    let lowQualityAudio =
+          AudioMetadata
+            { audioMimeType = "audio/webm",
+              audioByteLength = 1000,
+              -- audioDurationMilliseconds is not the quality trigger (meanDbfs drives it)
+              audioDurationMilliseconds = 700
+            }
+        lowQualityRequest =
+          AssessmentRequest
+            { analysisJob = "job-001",
+              analysisRun = "run-001",
+              recordingAttempt = "attempt-001",
+              requestSection = "section-001",
+              sectionBodyText = "hello world",
+              expectedLanguage = "en",
+              targetAccent = "GA",
+              requestedMetrics = [],
+              assessmentSchemaVersion = "1",
+              tokenizerVersion = "v1",
+              requestAudio = lowQualityAudio
+            }
+        -- meanDbfs = -40.0 is below audioQualityMinMeanDbfs (-36.0) → triggers low_quality
+        lowQualityAnalyzerResult =
+          fixtureAnalyzerResult
+            { analyzedMeanDbfs = -40.0,
+              analyzedPerPhonemeGop =
+                [ PhonemeGop {gopPhoneme = "h", gopValue = -5.0, gopStartMs = 0, gopEndMs = 100, gopNBest = [], gopWordPosition = Nothing},
+                  PhonemeGop {gopPhoneme = "ɛ", gopValue = -13.0, gopStartMs = 100, gopEndMs = 200, gopNBest = [], gopWordPosition = Nothing}
+                ]
+            }
+        result = buildAssessmentResponseFromGop lowQualityRequest lowQualityAnalyzerResult
+
+    it "responseDiagnosticPerPhonemeGop is non-empty on low_quality path" $
+      length (responseDiagnosticPerPhonemeGop result) `shouldSatisfy` (> 0)
+
+    it "responsePerPhonemeGop is [] on low_quality path (M-CRL-16 gate not loosened)" $
+      length (responsePerPhonemeGop result) `shouldBe` 0

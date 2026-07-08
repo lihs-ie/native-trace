@@ -15,9 +15,7 @@ export const register = async (): Promise<void> => {
 
   // dynamic import で Node.js モジュール (better-sqlite3 等) を Edge bundle から隔離する
   const { getContainer, createAssessmentTick } = await import("./registry");
-  const { createAnalysisJobRunner } = await import(
-    "./infrastructure/runner/analysis-job-runner"
-  );
+  const { createAnalysisJobRunner } = await import("./infrastructure/runner/analysis-job-runner");
 
   const container = getContainer();
   const tick = createAssessmentTick(container);
@@ -33,10 +31,14 @@ export const register = async (): Promise<void> => {
       warn: (message, context) =>
         console.warn(JSON.stringify({ level: "warn", message, ...context })),
       error: (message, error, context) => {
+        // DomainError は Error インスタンスでない plain object のため、String(error) だと
+        // "[object Object]" に潰れて真因が失われる。object はフィールドをそのまま残す。
         const sanitizedError =
           error instanceof Error
             ? { name: error.name, message: error.message }
-            : { message: String(error) };
+            : typeof error === "object" && error !== null
+              ? (error as Record<string, unknown>)
+              : { message: String(error) };
         console.error(
           JSON.stringify({ level: "error", message, error: sanitizedError, ...context }),
         );

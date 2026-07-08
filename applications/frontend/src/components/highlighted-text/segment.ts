@@ -67,19 +67,3 @@ export const buildSegments = (bodyText: string, highlights: HighlightRange[]): S
 
   return segments;
 };
-
-/**
- * severity から CSS クラス名のサフィックスを返す
- */
-export const severityToColorClass = (severity: string): string => {
-  switch (severity) {
-    case "critical":
-      return "critical";
-    case "major":
-      return "major";
-    case "minor":
-      return "minor";
-    default:
-      return "info";
-  }
-};

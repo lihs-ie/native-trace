@@ -1,16 +1,10 @@
 // NonEmptyList
 export type NonEmptyList<T> = readonly [T, ...T[]];
 
-export const createNonEmptyList = <T>(
-  items: readonly T[],
-): NonEmptyList<T> | null => {
+export const createNonEmptyList = <T>(items: readonly T[]): NonEmptyList<T> | null => {
   if (items.length === 0) return null;
   return items as NonEmptyList<T>;
 };
-
-export const nonEmptyListHead = <T>(list: NonEmptyList<T>): T => list[0];
-export const nonEmptyListToArray = <T>(list: NonEmptyList<T>): readonly T[] =>
-  list;
 
 // Result / DomainError（neverthrow の Result を使う）
 export type { Result, ResultAsync } from "neverthrow";
@@ -67,19 +61,13 @@ export type DomainError =
   | AssessmentSchemaInvalidError;
 
 // 共通ヘルパー
-export const validationFailed = (
-  field: string,
-  reason: string,
-): ValidationFailedError => ({
+export const validationFailed = (field: string, reason: string): ValidationFailedError => ({
   type: "validationFailed",
   field,
   reason,
 });
 
-export const notFound = (
-  resource: string,
-  identifier: string,
-): NotFoundError => ({
+export const notFound = (resource: string, identifier: string): NotFoundError => ({
   type: "notFound",
   resource,
   identifier,
@@ -98,7 +86,11 @@ export const invalidStateTransition = (
 
 // Branded type ヘルパー
 declare const __brand: unique symbol;
-type Brand<T, B> = T & { readonly [__brand]: B };
+export type Brand<T, B> = T & { readonly [__brand]: B };
+
+/** 非空文字列ブランド型の共通ファクトリ（trim 後の長さのみを検証する）。 */
+export const createNonEmptyBrandedString = <T extends string>(value: string): T | null =>
+  value.trim().length > 0 ? (value as T) : null;
 
 // Pagination
 export type Offset = Brand<number, "Offset">;
@@ -121,3 +113,6 @@ export const defaultPagination = (): Pagination => ({
   offset: 0 as Offset,
   limit: 20 as Limit,
 });
+
+// 時間換算ヘルパー
+export const hoursToMilliseconds = (hours: number): number => hours * 60 * 60 * 1000;

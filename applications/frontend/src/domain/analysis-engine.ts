@@ -1,11 +1,7 @@
-declare const __brand: unique symbol;
-type Brand<T, B> = T & { readonly [__brand]: B };
+import { type Brand } from "./shared";
 
 export type AnalysisEngineIdentifier = Brand<string, "AnalysisEngineIdentifier">;
-export type AnalysisEngineDisplayName = Brand<
-  string,
-  "AnalysisEngineDisplayName"
->;
+export type AnalysisEngineDisplayName = Brand<string, "AnalysisEngineDisplayName">;
 export type AnalysisEngineConfiguration = Readonly<Record<string, unknown>>;
 
 export type CloudAnalysisEngine = Readonly<{

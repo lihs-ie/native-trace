@@ -1,5 +1,3 @@
-export type LogLevel = "debug" | "info" | "warn" | "error";
-
 export type Logger = Readonly<{
   debug: (message: string, context?: Record<string, unknown>) => void;
   info: (message: string, context?: Record<string, unknown>) => void;

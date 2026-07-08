@@ -9,6 +9,7 @@
 
 import { type AnalysisEngine } from "../domain/analysis-engine";
 import { type FindingCategory, type FindingSeverity } from "../domain/assessment-result";
+import { createNonEmptyBrandedString } from "../domain/shared";
 
 // ---- ブランド型（ACL 境界で使うバージョン文字列）----
 
@@ -22,13 +23,13 @@ export type PromptVersion = AclBrand<string, "PromptVersion">;
 export type Instant = AclBrand<string, "Instant">;
 
 export const createAssessmentSchemaVersion = (value: string): AssessmentSchemaVersion | null =>
-  value.trim().length > 0 ? (value as AssessmentSchemaVersion) : null;
+  createNonEmptyBrandedString<AssessmentSchemaVersion>(value);
 
 export const createScoringRubricVersion = (value: string): ScoringRubricVersion | null =>
-  value.trim().length > 0 ? (value as ScoringRubricVersion) : null;
+  createNonEmptyBrandedString<ScoringRubricVersion>(value);
 
 export const createPromptVersion = (value: string): PromptVersion | null =>
-  value.trim().length > 0 ? (value as PromptVersion) : null;
+  createNonEmptyBrandedString<PromptVersion>(value);
 
 export const createInstant = (date: Date): Instant => date.toISOString() as Instant;
 
@@ -82,6 +83,119 @@ export type ScoreDraftSet = Readonly<{
   pronunciation: number;
   connectedSpeech: number;
   prosody: number;
+  /** C3-b: FL重み付き明瞭性スコア 0-100 */
+  intelligibility: number | null;
+  /** C3-b: CEFR全体的音韻統制 */
+  cefrOverall: Readonly<{ score: number; band: string }> | null;
+  /** C3-b: CEFR分節 */
+  cefrSegmental: Readonly<{ score: number; band: string }> | null;
+  /** C3-b: CEFR韻律 */
+  cefrProsodic: Readonly<{ score: number; band: string }> | null;
+}>;
+
+// ---- NBest ----
+
+export type NBestCandidateDraft = Readonly<{
+  phoneme: string;
+  confidence: number;
+}>;
+
+// ---- focusSounds ----
+
+export type FocusSoundDraft = Readonly<{
+  pair: string;
+  phenomenon: string | null;
+  functionalLoad: string;
+  occurrences: number;
+  priority: string;
+  reasonJa: string;
+  catalogId: string | null;
+}>;
+
+// ---- prosody ----
+
+export type ProsodyDraft = Readonly<{
+  f0Contour: Readonly<{ timesMs: ReadonlyArray<number>; valuesHz: ReadonlyArray<number> }> | null;
+  /** M-F0REF-c: お手本 F0 輪郭（f0Contour と同形。analyzer が返さない場合は null） */
+  referenceF0Contour: Readonly<{
+    timesMs: ReadonlyArray<number>;
+    valuesHz: ReadonlyArray<number>;
+  }> | null;
+  wordStress: ReadonlyArray<
+    Readonly<{ word: string; wordIndex: number; expectedStress: number; predictedStress: number }>
+  > | null;
+  rhythmNpvi: number | null;
+  referenceNpvi: number | null;
+  weakFormRate: number | null;
+}>;
+
+// ---- perPhonemeGop ----
+
+export type PerPhonemeGopDraft = Readonly<{
+  word: string;
+  phoneme: string;
+  gop: number;
+  heat: number;
+}>;
+
+/**
+ * M-CRL-16 (ADR-022 D17): diagnosticPerPhonemeGop エントリ Draft 型。
+ * worker AssessmentResponse.diagnosticPerPhonemeGop に対応。
+ * normal / low_quality の両分岐で常時 populate される。
+ * D5 (S-CRL-1): startMs/endMs は最近傍境界選択用（Non-goal のため optional 扱い）。
+ */
+export type DiagnosticPerPhonemeGopDraft = Readonly<{
+  phoneme: string;
+  gop: number;
+  startMs: number;
+  endMs: number;
+}>;
+
+// ---- AcousticEvidence ----
+
+/**
+ * M-APD-15 (ADR-018): 音響音声学的証拠の Draft 型。
+ * AcousticEvidenceDto (lib/api-types) と同形。UseCase 層自己完結のためここに定義。
+ * worker の acousticEvidence JSON フィールドをそのまま通す（偏差判定・方向ラベル導出は worker 側）。
+ */
+export type AcousticEvidenceDraft = Readonly<{
+  tongueHeight: "tooHigh" | "tooLow" | "ok" | null;
+  tongueBackness: "tooFront" | "tooBack" | "ok" | null;
+  rhoticity: "insufficient" | "overRetroflex" | "ok" | null;
+  sibilantPlace: "tooPalatal" | "tooAlveolar" | "ok" | null;
+  vowelLength: "tooShort" | "ok" | null;
+  measuredF1Hz: number | null;
+  measuredF2Hz: number | null;
+  measuredF3Hz: number | null;
+  targetF1Hz: number | null;
+  targetF2Hz: number | null;
+  targetF3Hz: number | null;
+  /** M-ADVL-13 (ADR-024): 数値スカラー 7 本。AcousticEvidenceDto と同形に保つ。*/
+  spectralCentroidHz: number | null;
+  tenseLengthRatio: number | null;
+  signedF1SdDeviation: number | null;
+  signedF2SdDeviation: number | null;
+  signedF3SdDeviation: number | null;
+  targetSpectralCentroidHz: number | null;
+  targetTenseLengthRatio: number | null;
+}>;
+
+// ---- ArticulatoryEstimate ----
+
+/**
+ * M-AAI-12 (ADR-019): EMA 調音推定座標 + 表示適格性スコアの Draft 型。
+ * ArticulatoryEstimateDto (lib/api-types) と同形。UseCase 層自己完結のためここに定義。
+ * 座標は発話内 z-score 正規化後 [-1,1] クランプ済み（生 mm ではない）。
+ * displayEligibility = validFrameRatio × voicingRatio × durationAdequacy ([0,1])。
+ */
+export type ArticulatoryEstimateDraft = Readonly<{
+  tongueTipX: number;
+  tongueTipY: number;
+  tongueDorsumX: number;
+  tongueDorsumY: number;
+  lipApertureX: number;
+  lipApertureY: number;
+  displayEligibility: number;
 }>;
 
 // ---- Finding / Segment ----
@@ -89,6 +203,13 @@ export type ScoreDraftSet = Readonly<{
 export type PronunciationEvidenceDraft = Readonly<{
   text: string | null;
   ipa: string | null;
+}>;
+
+/** C4-b: 3層フィードバック文 */
+export type FeedbackLayersDraft = Readonly<{
+  whatJa: string;
+  whyJa: string;
+  howJa: string;
 }>;
 
 export type AssessmentFindingDraft = Readonly<{
@@ -104,6 +225,34 @@ export type AssessmentFindingDraft = Readonly<{
   messageEn: string | null;
   scoreImpact: number;
   confidence: number;
+  /** C3-a: NBest最有力候補 IPA */
+  detectedTopCandidate: string | null;
+  /** C3-a: 上位3件候補 */
+  nBest: ReadonlyArray<NBestCandidateDraft> | null;
+  /** C3-a: L1パターン一致フラグ */
+  matchesL1Pattern: boolean;
+  /** C3-a: functionalLoadランク */
+  functionalLoad: string | null;
+  /** C3-a: カタログID */
+  catalogId: string | null;
+  /** C3-a: connected speech対象語ペア */
+  wordPair: Readonly<{ first: string; second: string }> | null;
+  /** C3-a: connected speech期待発音IPA */
+  expectedPronunciation: string | null;
+  /** C3-a: epenthesis挿入母音 */
+  insertedVowel: string | null;
+  /** D4 (ADR-017): epenthesis挿入母音の時刻位置（ミリ秒）*/
+  insertionPositionMs: number | null;
+  /** M-104: 3層フィードバック文 (ACL/usecase で生成) */
+  feedbackLayers: FeedbackLayersDraft | null;
+  /** C4-b: 却下フラグ (この Wave では false 固定、次 Wave で永続化) */
+  dismissed: boolean;
+  /** M-104R-b: 語内位置ラベル ("initial"|"medial"|"final"|null) */
+  wordPositionLabel: string | null;
+  /** M-APD-15 (ADR-018): 音響音声学的証拠。worker が導出した方向ラベル + 実測/目標フォルマント。null は未取得。*/
+  acousticEvidence: AcousticEvidenceDraft | null;
+  /** M-AAI-12 (ADR-019): EMA 調音推定座標。null は AAI 不在/ガードレール未達 = floor のみ描画。*/
+  articulatoryEstimate: ArticulatoryEstimateDraft | null;
 }>;
 
 export type AssessmentSegmentDraft = Readonly<{
@@ -154,4 +303,18 @@ export type AssessmentResultDraft = Readonly<{
   rawResponse: StoredRawEngineResponse;
   metadata: AssessmentEngineMetadataDraft;
   tokenizerVersion: string;
+  /** C3-c: 全音素GOPヒートマップ */
+  perPhonemeGop: ReadonlyArray<PerPhonemeGopDraft> | null;
+  /** C3-c: focusSoundsリスト */
+  focusSounds: ReadonlyArray<FocusSoundDraft> | null;
+  /** C3-c: 韻律生データ */
+  prosody: ProsodyDraft | null;
+  /** C3-c: エンジンサマリー文 (M-107b) */
+  engineSummaryMessageJa: string | null;
+  /**
+   * M-CRL-16 (ADR-022 D17): diagnosticPerPhonemeGop — normal / low_quality の両分岐で常時 populate。
+   * heatmap perPhonemeGop（low_quality で null）とは別フィールド。
+   * route がこれを読んで低品質録音の retryGop を導出する（in-memory pass-through、永続化なし）。
+   */
+  diagnosticPerPhonemeGop: ReadonlyArray<DiagnosticPerPhonemeGopDraft>;
 }>;

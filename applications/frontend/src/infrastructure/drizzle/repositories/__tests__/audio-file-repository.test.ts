@@ -61,10 +61,12 @@ describe("DrizzleAudioFileRepository", () => {
     db = drizzle(sqlite, { schema }) as DrizzleDatabase;
 
     const now = new Date().toISOString();
-    sqlite.prepare(
-      `INSERT INTO recording_attempts (identifier, section, status, input_kind, created_at, updated_at)
+    sqlite
+      .prepare(
+        `INSERT INTO recording_attempts (identifier, section, status, input_kind, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run("REC001", "SEC001", "ready", "browser_recording", now, now);
+      )
+      .run("REC001", "SEC001", "ready", "browser_recording", now, now);
   });
 
   afterEach(() => {

@@ -34,8 +34,24 @@ jobs:
         env:
           BASE_REF: origin/${{ github.base_ref }}
         run: bash scripts/verify-no-stub-placeholder.sh
+      - name: Committed baseline carries live pin (no HEAD-placeholder / no untracked re-pin)
+        env:
+          BASE_REF: origin/${{ github.base_ref }}
+        run: bash scripts/verify-committed-baseline.sh
+      - name: Haskell cabal warnings hardened (-Werror=missing-fields)
+        run: bash scripts/verify-haskell-warnings.sh
+      - name: Servant route/handler parity (Api.hs <-> Application.hs)
+        run: bash scripts/verify-servant-route-handler-parity.sh
+      - name: Worker HTTP client explicit responseTimeout (*Client.hs)
+        run: bash scripts/verify-worker-http-client-timeout.sh
+      - name: Analyzer/golden-speaker src imports present in Dockerfile pip list
+        run: bash scripts/verify-analyzer-deps.sh
       - name: Allowlist not expired
         run: bash scripts/verify-allowlist-expiry.sh
+      - name: No harness import in production src (ADR-031 D7)
+        run: bash scripts/verify-no-harness-import-in-prod.sh
+      - name: verify cc-by-nc exclusion
+        run: bash scripts/verify-cc-by-nc-exclusion.sh
       - name: Upload policy evidence
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v4
@@ -46,22 +62,35 @@ jobs:
           if-no-files-found: ignore
 
   integration_smoke:
+    # GATE BEHAVIOR CHANGE (ADR-031 D5/M-FCH-8):
+    # v1 declare-only echo → actual pnpm test:fullcycle gop-delta invocation.
+    # Cold-stack cost: docker compose up --build + cold analyzer (start_period:180s) +
+    # pnpm build + next start. Total: ~5–10 min on GHA (warm: ~2–3 min).
+    # Mitigation: GHA layer cache for docker + HF model cache volume (follow-up).
+    # For now this job runs unconditionally. label-gated nightly CI is a future slice.
     needs: [policy]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Smoke (v1 declare-only)
-        run: |
-          echo "integration_smoke: v1 では smoke は wiring_manifest.yml に宣言のみ。" | tee smoke.log
-          echo "宣言された smoke コマンド:" | tee -a smoke.log
-          grep -nE '^[[:space:]]*smoke:' wiring_manifest.yml | tee -a smoke.log || echo "(なし)" | tee -a smoke.log
-          echo "follow-up で実行を有効化する。" | tee -a smoke.log
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Install pnpm
+        run: corepack enable && corepack prepare --activate
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: applications/frontend
+      - name: Run full-cycle smoke (gop-delta)
+        # canonical invocation: root pnpm delegates to @native-trace/frontend via --filter
+        run: pnpm test:fullcycle gop-delta
       - name: Upload smoke evidence
         if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v4
         with:
           name: smoke-evidence
-          path: smoke.log
+          path: |
+            .agent-evidence/**
+          if-no-files-found: ignore
 
   # --- opt-in AI review (merge gate の required には含めない / 助言的) ---
   codex_review:
@@ -110,7 +139,7 @@ jobs:
           {
             echo "## PR Gate Summary"
             echo "- policy (決定論ゲート, required): ${{ needs.policy.result }}"
-            echo "- integration_smoke: ${{ needs.integration_smoke.result }} (v1 declare-only)"
+            echo "- integration_smoke: ${{ needs.integration_smoke.result }} (pnpm test:fullcycle gop-delta — active invoke)"
             echo "- AI review は opt-in (ENABLE_CODEX_REVIEW / ENABLE_CLAUDE_REVIEW)。merge gate の required ではない。"
             echo "- evidence artifacts uploaded"
           } >> "$GITHUB_STEP_SUMMARY"

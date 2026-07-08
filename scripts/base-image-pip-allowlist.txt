@@ -1,0 +1,16 @@
+# scripts/base-image-pip-allowlist.txt — verify-analyzer-deps.sh の「Dockerfile の明示 pip 行に
+# 無くても許容する distribution」リスト。base image / stdlib 隣接 / 明示 pin 済 transitive のみ。
+# 1 行 = 1 distribution（正規化前の綴り、# 行はコメント）。各行に許容理由を必ず添える。
+#
+# 方針: 無期限 allowlist は作らない。ここに載せて良いのは「Dockerfile の pip 行に書かれていなくても
+#   image に確実に存在する」ことが構造的に保証される distribution のみ。version bump で消える可能性が
+#   ある純粋な transitive 依存は、明示 pip 行に昇格させて Dockerfile に書くのが原則。
+#   迷ったら allowlist ではなく Dockerfile 側に書くこと（silent-skip の再発を避ける）。
+
+# golden-speaker: numpy / praat-parselmouth は rvc-python==0.1.5（明示 pip 行 + pyproject に pin）の
+#   transitive dependency として供給される。pyproject にも numpy<=1.23.5 / 設計コメントで明記され、
+#   Dockerfile コメント（"rvc-python は ... praat-parselmouth ... を引く"）でも declared。
+#   rvc-python のバージョンは == で固定されているため transitive set は安定する。
+#   golden-speaker 自前コードが直接 import するため import 検出には出るが、明示 pip 行には書かない。
+numpy            # golden-speaker: rvc-python==0.1.5 の pinned transitive（pyproject numpy<=1.23.5）
+praat-parselmouth # golden-speaker: rvc-python==0.1.5 の pinned transitive（GPL 隔離・ADR-012）

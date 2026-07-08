@@ -16,5 +16,9 @@ export type AnalysisJobRepository = Readonly<{
   search: (criteria: AnalysisJobSearchCriteria) => ResultAsync<AnalysisJobPage, DomainError>;
   persist: (job: AnalysisJob) => ResultAsync<void, DomainError>;
   // DB lease 取得: 1 件だけ条件付き UPDATE して LeasedAnalysisJob を返す
-  acquireLease: (leaseOwner: string, leaseDurationMs: number, now: Date) => ResultAsync<LeasedAnalysisJob | null, DomainError>;
+  acquireLease: (
+    leaseOwner: string,
+    leaseDurationMs: number,
+    now: Date,
+  ) => ResultAsync<LeasedAnalysisJob | null, DomainError>;
 }>;

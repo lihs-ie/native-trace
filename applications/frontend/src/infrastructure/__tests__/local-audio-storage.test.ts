@@ -3,10 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { createLocalAudioStorage } from "../local-audio-storage";
-import {
-  createAudioFileIdentifier,
-  createStorageKey,
-} from "../../domain/audio-file";
+import { createAudioFileIdentifier, createStorageKey } from "../../domain/audio-file";
 
 describe("LocalAudioStorage", () => {
   let tmpDir: string;

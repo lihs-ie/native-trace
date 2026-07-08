@@ -8,6 +8,62 @@
       "when": 1781102844773,
       "tag": "0000_bouncy_giant_girl",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1781271024639,
+      "tag": "0001_daffy_dragon_lord",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1781324150204,
+      "tag": "0002_ambitious_tarantula",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1781333576980,
+      "tag": "0003_tiresome_nightmare",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1781333986452,
+      "tag": "0004_salty_mantis",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1781338369251,
+      "tag": "0005_melted_vargas",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1781361923944,
+      "tag": "0006_cheerful_maestro",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1781398377330,
+      "tag": "0007_tidy_logan",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1781819087435,
+      "tag": "0008_chilly_the_stranger",
+      "breakpoints": true
     }
   ]
 }

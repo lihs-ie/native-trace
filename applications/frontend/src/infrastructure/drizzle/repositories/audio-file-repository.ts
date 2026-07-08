@@ -11,8 +11,9 @@ import {
   createAudioFileIdentifier,
 } from "../../../domain/audio-file";
 import { type RecordingAttemptIdentifier } from "../../../domain/recording-attempt";
-import { type DomainError } from "../../../domain/shared";
+import { notFound } from "../../../domain/shared";
 import { okAsync, errAsync } from "neverthrow";
+import { tryPersistence, tryPersistenceResult } from "./try-persistence";
 
 type AudioFileRow = typeof audioFiles.$inferSelect;
 
@@ -117,78 +118,56 @@ const audioFileToRow = (audioFile: AudioFile): AudioFileRow => {
   };
 };
 
-export const createDrizzleAudioFileRepository = (
-  db: DrizzleDatabase,
-): AudioFileRepository => ({
+export const createDrizzleAudioFileRepository = (db: DrizzleDatabase): AudioFileRepository => ({
   find: (identifier: AudioFileIdentifier) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = db
-          .select()
-          .from(audioFiles)
-          .where(eq(audioFiles.identifier, String(identifier)))
-          .get();
+    return tryPersistenceResult(() => {
+      const row = db
+        .select()
+        .from(audioFiles)
+        .where(eq(audioFiles.identifier, String(identifier)))
+        .get();
 
-        if (!row || row.status !== "stored") {
-          return errAsync({
-            type: "notFound",
-            resource: "StoredAudioFile",
-            identifier: String(identifier),
-          } as DomainError);
-        }
-
-        return okAsync(rowToStoredAudioFile(row));
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
+      if (!row || row.status !== "stored") {
+        return errAsync(notFound("StoredAudioFile", String(identifier)));
       }
+
+      return okAsync(rowToStoredAudioFile(row));
     });
   },
 
   findByRecordingAttempt: (recordingAttempt: RecordingAttemptIdentifier) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = db
-          .select()
-          .from(audioFiles)
-          .where(eq(audioFiles.recordingAttempt, String(recordingAttempt)))
-          .get();
+    return tryPersistenceResult(() => {
+      const row = db
+        .select()
+        .from(audioFiles)
+        .where(eq(audioFiles.recordingAttempt, String(recordingAttempt)))
+        .get();
 
-        if (!row || row.status !== "stored") {
-          return errAsync({
-            type: "notFound",
-            resource: "StoredAudioFile",
-            identifier: String(recordingAttempt),
-          } as DomainError);
-        }
-
-        return okAsync(rowToStoredAudioFile(row));
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
+      if (!row || row.status !== "stored") {
+        return errAsync(notFound("StoredAudioFile", String(recordingAttempt)));
       }
+
+      return okAsync(rowToStoredAudioFile(row));
     });
   },
 
   persist: (audioFile: AudioFile) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = audioFileToRow(audioFile);
-        db.insert(audioFiles)
-          .values(row)
-          .onConflictDoUpdate({
-            target: audioFiles.identifier,
-            set: {
-              status: row.status,
-              physicalDeletedAt: row.physicalDeletedAt,
-              deleteFailureReason: row.deleteFailureReason,
-              updatedAt: row.updatedAt,
-              deletedAt: row.deletedAt,
-            },
-          })
-          .run();
-        return okAsync(undefined);
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
-      }
+    return tryPersistence(() => {
+      const row = audioFileToRow(audioFile);
+      db.insert(audioFiles)
+        .values(row)
+        .onConflictDoUpdate({
+          target: audioFiles.identifier,
+          set: {
+            status: row.status,
+            physicalDeletedAt: row.physicalDeletedAt,
+            deleteFailureReason: row.deleteFailureReason,
+            updatedAt: row.updatedAt,
+            deletedAt: row.deletedAt,
+          },
+        })
+        .run();
+      return undefined;
     });
   },
 });

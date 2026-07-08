@@ -8,6 +8,7 @@ import { ok, err, type Result } from "neverthrow";
 import {
   type AssessmentResultDraft,
   type AssessmentEngineMetadataDraft,
+  type DiagnosticPerPhonemeGopDraft,
   RawEngineResponseProvider,
   createAssessmentSchemaVersion,
   createScoringRubricVersion,
@@ -70,6 +71,16 @@ export const mapOssWorkerResponse = (
     );
   }
 
+  // 低品質音声の graceful 扱い: worker が status="low_quality" を返す、または発話がほぼ検出されず
+  // segments が空のとき、schema hard fail にせず low_quality_audio エンジン失敗として返す。
+  // run-assessment-job が reason==="low_quality_audio" を errorCode に写像し、UI が再録音導線を出す。
+  // nonRetryable: 同じ音声を再解析しても結果は変わらないためリトライで run を滞留させない。
+  if (parsed.data.status === "low_quality" || parsed.data.segments.length === 0) {
+    return err(
+      assessmentEngineFailed(String(input.engine.type), "low_quality_audio", "nonRetryable"),
+    );
+  }
+
   return mapSuccessResponse({
     response: parsed.data,
     rawResponse,
@@ -121,6 +132,10 @@ const mapSuccessResponse = (
       pronunciation: response.scores.pronunciation,
       connectedSpeech: response.scores.connectedSpeech,
       prosody: response.scores.prosody,
+      intelligibility: response.scores.intelligibility,
+      cefrOverall: response.scores.cefrOverall,
+      cefrSegmental: response.scores.cefrSegmental,
+      cefrProsodic: response.scores.cefrProsodic,
     },
     findings: response.findings.map((finding) => ({
       phenomenon: finding.phenomenon,
@@ -140,6 +155,44 @@ const mapSuccessResponse = (
       messageEn: finding.messageEn,
       scoreImpact: finding.scoreImpact,
       confidence: finding.confidence,
+      detectedTopCandidate: finding.detectedTopCandidate,
+      nBest: finding.nBest,
+      matchesL1Pattern: finding.matchesL1Pattern,
+      functionalLoad: finding.functionalLoad,
+      catalogId: finding.catalogId,
+      wordPair: finding.wordPair,
+      expectedPronunciation: finding.expectedPronunciation,
+      insertedVowel: finding.insertedVowel,
+      insertionPositionMs: finding.insertionPositionMs ?? null,
+      feedbackLayers: null,
+      dismissed: false,
+      wordPositionLabel: finding.wordPositionLabel,
+      acousticEvidence:
+        finding.acousticEvidence != null
+          ? {
+              tongueHeight: finding.acousticEvidence.tongueHeight ?? null,
+              tongueBackness: finding.acousticEvidence.tongueBackness ?? null,
+              rhoticity: finding.acousticEvidence.rhoticity ?? null,
+              sibilantPlace: finding.acousticEvidence.sibilantPlace ?? null,
+              vowelLength: finding.acousticEvidence.vowelLength ?? null,
+              measuredF1Hz: finding.acousticEvidence.measuredF1Hz ?? null,
+              measuredF2Hz: finding.acousticEvidence.measuredF2Hz ?? null,
+              measuredF3Hz: finding.acousticEvidence.measuredF3Hz ?? null,
+              targetF1Hz: finding.acousticEvidence.targetF1Hz ?? null,
+              targetF2Hz: finding.acousticEvidence.targetF2Hz ?? null,
+              targetF3Hz: finding.acousticEvidence.targetF3Hz ?? null,
+              // M-ADVL-13 (ADR-024): 数値スカラー 7 本を明示展開（zod strip 対策 ADR-017 再発防止）
+              spectralCentroidHz: finding.acousticEvidence.spectralCentroidHz ?? null,
+              tenseLengthRatio: finding.acousticEvidence.tenseLengthRatio ?? null,
+              signedF1SdDeviation: finding.acousticEvidence.signedF1SdDeviation ?? null,
+              signedF2SdDeviation: finding.acousticEvidence.signedF2SdDeviation ?? null,
+              signedF3SdDeviation: finding.acousticEvidence.signedF3SdDeviation ?? null,
+              targetSpectralCentroidHz: finding.acousticEvidence.targetSpectralCentroidHz ?? null,
+              targetTenseLengthRatio: finding.acousticEvidence.targetTenseLengthRatio ?? null,
+            }
+          : null,
+      // M-AAI-13 (ADR-019): articulatoryEstimate を mapper で転写。欠落時は null（ADR-017 再発防止）。
+      articulatoryEstimate: finding.articulatoryEstimate ?? null,
     })),
     segments: response.segments.map((segment) => ({
       textRange: {
@@ -160,6 +213,28 @@ const mapSuccessResponse = (
     rawResponse,
     metadata,
     tokenizerVersion: response.tokenizerVersion,
+    perPhonemeGop: response.perPhonemeGop,
+    focusSounds: response.focusSounds,
+    prosody: response.prosody
+      ? {
+          f0Contour: response.prosody.f0Contour,
+          referenceF0Contour: response.prosody.referenceF0Contour,
+          wordStress: response.prosody.wordStress,
+          rhythmNpvi: response.prosody.rhythmNpvi,
+          referenceNpvi: response.prosody.referenceNpvi,
+          weakFormRate: response.prosody.weakFormRate,
+        }
+      : null,
+    engineSummaryMessageJa: response.engineSummaryMessageJa,
+    // M-CRL-16 (ADR-022 D17): diagnosticPerPhonemeGop は schema で [] にデフォルト化済み。
+    diagnosticPerPhonemeGop: (response.diagnosticPerPhonemeGop ?? []).map(
+      (entry): DiagnosticPerPhonemeGopDraft => ({
+        phoneme: entry.phoneme,
+        gop: entry.gop,
+        startMs: entry.startMs,
+        endMs: entry.endMs,
+      }),
+    ),
   };
 
   return ok(draft);

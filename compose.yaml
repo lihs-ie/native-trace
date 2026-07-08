@@ -9,6 +9,23 @@ services:
     environment:
       WORKER_PORT: "8787"
       ANALYZER_URL: "http://analyzer:8788"
+      # analyzer 呼び出しタイムアウト秒数（M-AT-1 / oss-worker-analyze-timeout spec）
+      # analyze は wav2vec2+parselmouth+Kokoro で正当に ~20s かかり実録音で 30s 超になるため 120s に設定する
+      ANALYZER_TIMEOUT_SECONDS: "120"
+      # シャドーイング ラグ計測のスロー再生推奨閾値（ms, M-SHL-6 / ADR-013）
+      SHADOWING_LAG_THRESHOLD_MS: "500"
+      # golden サービス URL（profiles: [golden] 有効時のみ golden が起動、M-GRV-4 / M-GRV-9）
+      GOLDEN_SPEAKER_URL: "http://golden:8789"
+      # golden 呼び出しタイムアウト秒数（incident 2026-06-14-worker-http-client-default-30s-timeout）
+      # golden RVC は CPU 推論（F0 変換 + retrieval index、初回 HF DL）で 30s 超になるため、
+      # http-client の default 30s ではなく明示する（ANALYZER_TIMEOUT_SECONDS と同じ timeout class）
+      GOLDEN_SPEAKER_TIMEOUT_SECONDS: "120"
+      # aai サービス URL（profiles: [aai] 有効時のみ aai が起動、ADR-019 / M-AAI-1）
+      # worker は aai を depends_on しない（golden M-GRV-9 と同型）
+      AAI_URL: "http://aai:8790"
+      # aai 呼び出しタイムアウト秒数（articulatory/articulatory CPU 推論 + HF DL で 30s 超になりうる）
+      # golden と同値 120s（incident 2026-06-14-worker-http-client-default-30s-timeout 整合）
+      AAI_TIMEOUT_SECONDS: "120"
     depends_on:
       analyzer:
         condition: service_healthy
@@ -23,10 +40,16 @@ services:
       context: applications/python-analyzer
       dockerfile: Dockerfile
     container_name: native-trace-analyzer
+    # v2 配線:
+    #   - POST /v1/analyze は wav2vec2 GOP + NBest + parselmouth 韻律(F0/語強勢/nPVI/弱形) + 音節/epenthesis を返す
+    #   - POST /v1/tts は Kokoro-82M で General American お手本音声(audio/wav)を生成 (REQ-124)
+    #   - frontend (pnpm dev / 別コンテナ) は ANALYZER_URL=http://localhost:8788 で /v1/tts に到達する
     ports:
       - "8788:8788"
     environment:
       ANALYZER_PORT: "8788"
+      # Kokoro-82M / wav2vec2 のモデルは HF_HOME (hf-cache volume) にキャッシュする
+      HF_HOME: "/root/.cache/huggingface"
     volumes:
       - hf-cache:/root/.cache/huggingface
     healthcheck:
@@ -34,7 +57,74 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
+      # parselmouth + Kokoro-82M + wav2vec2 のロードで初回起動が重いため余裕をとる
+      start_period: 180s
+
+  # golden speaker サービス（ADR-012 / M-GRV-1 / M-GRV-4）
+  # profiles: [golden] で有効化 → docker compose --profile golden up golden
+  # 未起動でも worker / analyzer は正常動作する（M-GRV-9）
+  # worker は GOLDEN_SPEAKER_URL を持つが golden 起動を depends_on しない（M-GRV-9）
+  golden:
+    build:
+      context: applications/golden-speaker
+      dockerfile: Dockerfile
+    container_name: native-trace-golden
+    profiles:
+      - golden
+    ports:
+      - "8789:8789"
+    environment:
+      GOLDEN_PORT: "8789"
+      # HF_HOME (hf-cache-golden volume) にモデルをキャッシュ（イメージ非焼込, M-GRV-10）
+      HF_HOME: "/root/.cache/huggingface"
+      # F0 連続性品質ゲート閾値（0.0–1.0, unvoiced 許容割合 — M-GRV-3）
+      GOLDEN_QUALITY_THRESHOLD: "0.5"
+      # 変換先 VCTK 話者 id（汎用ネイティブ声 — 「自分の声」でない, M-GRV-7）
+      # Nekochu/RVC-VCTK_Voice-sample に実在する女性話者（F/p231/rmvpe/Fp231rmvpe.pth）
+      GOLDEN_TARGET_VOICE: "p231"
+      # pitch shift 半音数（正=高く, 負=低く）。p231（女性）への変換で男性学習者は 12 半音が目安。
+      GOLDEN_F0_UP_KEY: "12"
+    volumes:
+      # RVC/ContentVec/rmvpe モデル重みを volume で供給（Docker 非焼込 — M-GRV-10）
+      - hf-cache-golden:/root/.cache/huggingface
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8789/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
       start_period: 60s
+
+  # aai サービス（ADR-019 / M-AAI-1）
+  # profiles: [aai] で有効化 → docker compose --profile aai up aai
+  # 未起動でも worker / analyzer / golden は正常動作する（M-AAI-1 / golden M-GRV-9 と同型）
+  # worker は AAI_URL を持つが aai 起動を depends_on しない（M-AAI-1）
+  aai:
+    build:
+      context: applications/aai
+      dockerfile: Dockerfile
+    container_name: native-trace-aai
+    profiles:
+      - aai
+    ports:
+      - "8790:8790"
+    environment:
+      AAI_PORT: "8790"
+      # HF_HOME (hf-cache-aai volume) にモデルをキャッシュ（イメージ非焼込, M-GRV-10 前例と同型）
+      HF_HOME: "/root/.cache/huggingface"
+    volumes:
+      # articulatory/articulatory EMA checkpoint を volume で供給（Docker 非焼込 — M-GRV-10）
+      - hf-cache-aai:/root/.cache/huggingface
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8790/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      # articulatory モデルロード + HF DL で初回起動が重いため余裕をとる（golden と同型）
+      start_period: 120s
 
 volumes:
   hf-cache:
+  # golden サービス用 HF キャッシュ volume（RVC モデル重みの永続化 — M-GRV-10）
+  hf-cache-golden:
+  # aai サービス用 HF キャッシュ volume（EMA checkpoint の永続化 — M-GRV-10 前例と同型）
+  hf-cache-aai:

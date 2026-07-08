@@ -19,9 +19,7 @@ describe("createSectionBodyText", () => {
   });
 
   it("英字が十分にある本文は成功する", () => {
-    const result = createSectionBodyText(
-      "Hello, my name is John. Nice to meet you.",
-    );
+    const result = createSectionBodyText("Hello, my name is John. Nice to meet you.");
     expect(result.isOk()).toBe(true);
   });
 
@@ -52,9 +50,7 @@ describe("createSectionBodyText", () => {
 
   it("改行・タブは制御文字として禁止されない", () => {
     // \n \t は許可
-    const result = createSectionBodyText(
-      "Hello\nWorld\tThis is a test sentence.",
-    );
+    const result = createSectionBodyText("Hello\nWorld\tThis is a test sentence.");
     expect(result.isOk()).toBe(true);
   });
 
@@ -99,9 +95,7 @@ describe("createSection", () => {
     const now = new Date("2026-01-01T00:00:00Z");
     const identifier = createSectionIdentifier("01HTEST000000000003");
     const seriesIdentifier = createSectionSeriesIdentifier("01HTEST000000000002");
-    const bodyText = createSectionBodyText(
-      "Hello, this is a test sentence for English practice.",
-    );
+    const bodyText = createSectionBodyText("Hello, this is a test sentence for English practice.");
     const version = createSectionVersion(1);
 
     if (!identifier || !seriesIdentifier || bodyText.isErr() || version.isErr()) {

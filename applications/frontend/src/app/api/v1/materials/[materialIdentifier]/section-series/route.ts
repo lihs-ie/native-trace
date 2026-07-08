@@ -7,6 +7,7 @@ import { z } from "zod";
 import { getContainer } from "../../../../../../registry";
 import { successResponse } from "../../../_shared/response";
 import { domainErrorToResponse } from "../../../_shared/errors";
+import { zodErrorToValidationFailed } from "../../../_shared/validation";
 
 type RouteContext = { params: Promise<{ materialIdentifier: string }> };
 
@@ -32,11 +33,7 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
 
   const parseResult = postBodySchema.safeParse(body);
   if (!parseResult.success) {
-    return domainErrorToResponse({
-      type: "validationFailed",
-      field: "body",
-      reason: parseResult.error.errors.map((e) => e.message).join(", "),
-    });
+    return domainErrorToResponse(zodErrorToValidationFailed(parseResult.error, "body"));
   }
 
   const container = getContainer();

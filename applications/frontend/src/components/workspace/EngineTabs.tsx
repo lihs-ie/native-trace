@@ -1,6 +1,7 @@
 "use client";
 
 import type { EngineResultDto } from "@/lib/api-types";
+import { engineColorVariable, engineDisplayName } from "@/lib/engine-display";
 
 type EngineTabsProps = {
   engines: EngineResultDto[];
@@ -9,21 +10,10 @@ type EngineTabsProps = {
   onAddEngine?: () => void;
 };
 
-const engineDotVar = (engineKind: string): string => {
-  switch (engineKind) {
-    case "cloud":
-      return "var(--engine-openai)";
-    case "oss_worker":
-      return "var(--engine-rust)";
-    default:
-      return "var(--text-faint)";
-  }
-};
-
 const missingEngineName = (engines: EngineResultDto[]): string => {
   const hasCloud = engines.some((engine) => engine.engineKind === "cloud");
-  if (!hasCloud) return "OpenAI API";
-  return "OSS Worker";
+  if (!hasCloud) return engineDisplayName("cloud");
+  return engineDisplayName("oss_worker");
 };
 
 export const EngineTabs = ({
@@ -44,7 +34,10 @@ export const EngineTabs = ({
             type="button"
             onClick={() => onSelectEngine(engine.result)}
           >
-            <span className="eng-dot" style={{ background: engineDotVar(engine.engineKind) }} />
+            <span
+              className="eng-dot"
+              style={{ background: engineColorVariable(engine.engineKind, "var(--text-faint)") }}
+            />
             {engine.engineName}
             <span className="et-score">{engine.scores.overall}</span>
           </button>

@@ -55,15 +55,19 @@ describe("DrizzleSectionRepository", () => {
     db = drizzle(sqlite, { schema }) as DrizzleDatabase;
 
     const now = new Date().toISOString();
-    sqlite.prepare(
-      `INSERT INTO materials (identifier, title, source_json, created_at, updated_at, deleted_at)
+    sqlite
+      .prepare(
+        `INSERT INTO materials (identifier, title, source_json, created_at, updated_at, deleted_at)
        VALUES (?, ?, NULL, ?, ?, NULL)`,
-    ).run("MAT001", "テスト教材", now, now);
+      )
+      .run("MAT001", "テスト教材", now, now);
 
-    sqlite.prepare(
-      `INSERT INTO section_series (identifier, material, title, display_order, created_at, updated_at, deleted_at)
+    sqlite
+      .prepare(
+        `INSERT INTO section_series (identifier, material, title, display_order, created_at, updated_at, deleted_at)
        VALUES (?, ?, ?, ?, ?, ?, NULL)`,
-    ).run("SS001", "MAT001", "シリーズ1", 0, now, now);
+      )
+      .run("SS001", "MAT001", "シリーズ1", 0, now, now);
   });
 
   afterEach(() => {
@@ -79,7 +83,13 @@ describe("DrizzleSectionRepository", () => {
       "Hello, this is an English test section for pronunciation practice.",
     )._unsafeUnwrap();
 
-    const { section } = createSection({ identifier, sectionSeries, version, bodyText, now: new Date() });
+    const { section } = createSection({
+      identifier,
+      sectionSeries,
+      version,
+      bodyText,
+      now: new Date(),
+    });
     await repository.persist(section);
 
     const found = await repository.find(identifier);

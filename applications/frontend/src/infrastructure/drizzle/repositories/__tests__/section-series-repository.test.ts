@@ -45,10 +45,14 @@ describe("DrizzleSectionSeriesRepository", () => {
     db = drizzle(sqlite, { schema }) as DrizzleDatabase;
 
     // 親テーブルに材料を挿入
-    sqlite.prepare(`
+    sqlite
+      .prepare(
+        `
       INSERT INTO materials (identifier, title, source_json, created_at, updated_at, deleted_at)
       VALUES (?, ?, NULL, ?, ?, NULL)
-    `).run("MAT001", "テスト教材", new Date().toISOString(), new Date().toISOString());
+    `,
+      )
+      .run("MAT001", "テスト教材", new Date().toISOString(), new Date().toISOString());
   });
 
   afterEach(() => {

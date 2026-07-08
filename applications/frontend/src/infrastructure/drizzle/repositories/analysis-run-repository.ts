@@ -14,8 +14,9 @@ import {
 } from "../../../domain/analysis-run";
 import { type RecordingAttemptIdentifier } from "../../../domain/recording-attempt";
 import { type AnalysisRunSearchCriteria } from "../../../domain/criteria";
-import { type DomainError } from "../../../domain/shared";
+import { notFound } from "../../../domain/shared";
 import { okAsync, errAsync } from "neverthrow";
+import { tryPersistence, tryPersistenceResult } from "./try-persistence";
 
 type AnalysisRunRow = typeof analysisRuns.$inferSelect;
 
@@ -27,16 +28,17 @@ const rowToAnalysisRun = (row: AnalysisRunRow): AnalysisRun => {
     identifier,
     recordingAttempt: row.recordingAttempt as RecordingAttemptIdentifier,
     mode: row.mode as AnalysisMode,
+    status: row.status as AnalysisRunStatus,
     createdAt: new Date(row.createdAt),
   };
 };
 
-const analysisRunToRow = (analysisRun: AnalysisRun, status: AnalysisRunStatus = "queued"): AnalysisRunRow => {
+const analysisRunToRow = (analysisRun: AnalysisRun): AnalysisRunRow => {
   return {
     identifier: String(analysisRun.identifier),
     recordingAttempt: String(analysisRun.recordingAttempt),
     mode: analysisRun.mode,
-    status,
+    status: analysisRun.status,
     startedAt: null,
     completedAt: null,
     canceledAt: null,
@@ -46,112 +48,90 @@ const analysisRunToRow = (analysisRun: AnalysisRun, status: AnalysisRunStatus = 
   };
 };
 
-export const createDrizzleAnalysisRunRepository = (
-  db: DrizzleDatabase,
-): AnalysisRunRepository => ({
+export const createDrizzleAnalysisRunRepository = (db: DrizzleDatabase): AnalysisRunRepository => ({
   find: (identifier: AnalysisRunIdentifier) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = db
-          .select()
-          .from(analysisRuns)
-          .where(eq(analysisRuns.identifier, String(identifier)))
-          .get();
+    return tryPersistenceResult(() => {
+      const row = db
+        .select()
+        .from(analysisRuns)
+        .where(eq(analysisRuns.identifier, String(identifier)))
+        .get();
 
-        if (!row || row.deletedAt) {
-          return errAsync({
-            type: "notFound",
-            resource: "AnalysisRun",
-            identifier: String(identifier),
-          } as DomainError);
-        }
-
-        return okAsync(rowToAnalysisRun(row));
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
+      if (!row || row.deletedAt) {
+        return errAsync(notFound("AnalysisRun", String(identifier)));
       }
+
+      return okAsync(rowToAnalysisRun(row));
     });
   },
 
   search: (criteria: AnalysisRunSearchCriteria) => {
-    return okAsync(null).andThen(() => {
-      try {
-        if (criteria.type === "runsByRecordingAttempt") {
-          const rows = db
-            .select()
-            .from(analysisRuns)
-            .where(eq(analysisRuns.recordingAttempt, String(criteria.recordingAttempt)))
-            .orderBy(desc(analysisRuns.createdAt))
-            .offset(criteria.pagination.offset)
-            .limit(criteria.pagination.limit)
-            .all()
-            .filter((r) => !r.deletedAt);
-
-          const countRows = db
-            .select()
-            .from(analysisRuns)
-            .where(eq(analysisRuns.recordingAttempt, String(criteria.recordingAttempt)))
-            .all()
-            .filter((r) => !r.deletedAt);
-
-          return okAsync({
-            items: rows.map(rowToAnalysisRun),
-            total: countRows.length,
-          } as AnalysisRunPage);
-        }
-
-        // runsForHistory
+    return tryPersistence(() => {
+      if (criteria.type === "runsByRecordingAttempt") {
         const rows = db
           .select()
           .from(analysisRuns)
+          .where(eq(analysisRuns.recordingAttempt, String(criteria.recordingAttempt)))
           .orderBy(desc(analysisRuns.createdAt))
           .offset(criteria.pagination.offset)
           .limit(criteria.pagination.limit)
           .all()
           .filter((r) => !r.deletedAt);
 
-        return okAsync({
+        const countRows = db
+          .select()
+          .from(analysisRuns)
+          .where(eq(analysisRuns.recordingAttempt, String(criteria.recordingAttempt)))
+          .all()
+          .filter((r) => !r.deletedAt);
+
+        return {
           items: rows.map(rowToAnalysisRun),
-          total: rows.length,
-        } as AnalysisRunPage);
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
+          total: countRows.length,
+        } as AnalysisRunPage;
       }
+
+      // runsForHistory
+      const rows = db
+        .select()
+        .from(analysisRuns)
+        .orderBy(desc(analysisRuns.createdAt))
+        .offset(criteria.pagination.offset)
+        .limit(criteria.pagination.limit)
+        .all()
+        .filter((r) => !r.deletedAt);
+
+      return {
+        items: rows.map(rowToAnalysisRun),
+        total: rows.length,
+      } as AnalysisRunPage;
     });
   },
 
   persist: (analysisRun: AnalysisRun) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const row = analysisRunToRow(analysisRun);
-        db.insert(analysisRuns)
-          .values(row)
-          .onConflictDoUpdate({
-            target: analysisRuns.identifier,
-            set: {
-              updatedAt: row.updatedAt,
-            },
-          })
-          .run();
-        return okAsync(undefined);
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
-      }
+    return tryPersistence(() => {
+      const row = analysisRunToRow(analysisRun);
+      db.insert(analysisRuns)
+        .values(row)
+        .onConflictDoUpdate({
+          target: analysisRuns.identifier,
+          set: {
+            updatedAt: row.updatedAt,
+          },
+        })
+        .run();
+      return undefined;
     });
   },
 
   updateStatus: (identifier: AnalysisRunIdentifier, status: AnalysisRunStatus) => {
-    return okAsync(null).andThen(() => {
-      try {
-        const now = new Date().toISOString();
-        db.update(analysisRuns)
-          .set({ status, updatedAt: now })
-          .where(eq(analysisRuns.identifier, String(identifier)))
-          .run();
-        return okAsync(undefined);
-      } catch (e) {
-        return errAsync({ type: "persistenceFailed", reason: String(e) } as DomainError);
-      }
+    return tryPersistence(() => {
+      const now = new Date().toISOString();
+      db.update(analysisRuns)
+        .set({ status, updatedAt: now })
+        .where(eq(analysisRuns.identifier, String(identifier)))
+        .run();
+      return undefined;
     });
   },
 });

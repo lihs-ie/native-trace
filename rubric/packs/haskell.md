@@ -8,8 +8,36 @@ cabal `exposed-modules` と app の結線が最頻の未配線点。`Api.hs`→`
 - handler が `throwError err501` / `notImplemented` / `undefined` の placeholder を残していない。
 - 新規 export 関数が本番呼び出し箇所から実参照される (`grep -rn '<fn>' src --include='*.hs'`)。
 - server 起動 smoke と該当 endpoint が例外なく流れる。
+- cabal の `common warnings` (各 `ghc-options`) に `-Werror=missing-fields` がある。無いとレコードに
+  フィールドを追加して builder で設定し忘れた partial record construction が `-Wmissing-fields` の
+  warning 止まりで build/test 緑を通過し、ToJSON 等の強制評価で runtime thunk crash (worker HTTP 000)
+  になる。`scripts/verify-haskell-warnings.sh` が機械検査する (incident 2026-06-13)。
+- **Servant route ↔ handler parity**: `Api.hs` の `type WorkerApi =` の route 数 (HTTP method
+  combinator `Get`/`Post`/...) と `Application.hs` の `server = ... :<|> ...` の handler 数が一致する。
+  route を足して handler 未結線のまま離脱していないか。`scripts/verify-servant-route-handler-parity.sh`
+  が build を待たず静的に機械検査する (FC-2)。終了メッセージの「次に handler を足す」を配線証拠にしない。
+- **Worker HTTP client responseTimeout 明示**: `Worker/*Client.hs` で `newManager tlsManagerSettings` +
+  `httpLbs` を使い外部サービス (analyzer / golden) を呼ぶ箇所は、必ず Request に `responseTimeout`
+  (`responseTimeoutMicro (timeoutSeconds * 1000000)`) を明示し、`timeoutSeconds` を env から読む
+  (`XXX_TIMEOUT_SECONDS`, 未設定/不正時 default を返す `resolve...TimeoutSeconds`)。未設定だと
+  http-client の default 30s に依存し、重い ML/推論サービス (analyze ~40s / golden RVC 30s 超) で
+  ResponseTimeout が「解析失敗」に化ける (incident 2026-06-14)。`scripts/verify-worker-http-client-timeout.sh`
+  が静的に機械検査する。env は `compose.yaml` の worker environment に追加されているか。
+- **Timeout ladder 単調性**: 二段以上のタイムアウトは外側 ≥ 内側で単調にする。
+  frontend `OSS_WORKER_TIMEOUT_MS` (現 150000) ≥ worker `XXX_TIMEOUT_SECONDS`×1000 (現 120000) ≥
+  下流サービスの実 p95 レイテンシ。内側が外側を上回ると、内側が完走する直前に外側が諦めて
+  正常応答を失敗に化けさせる (incident 2026-06-14 の二段タイムアウト)。worker→service client を
+  追加・変更したら ladder が単調かをこの順で確認する。
 
 ## 推奨証拠
 - `cabal build all` + `cabal test`。
 - hlint の no-prod-doubles ルール (`*.Mock`/`*.Fake` module の restrict)。
 - 文字列 parser / OIDC callback parser に `Test.QuickCheck` / fuzz target。
+
+## 補足: 新規 .hs の postpositive `import X qualified`
+- fourmolu は `.cabal` の `exposed-modules`/`other-modules` に**登録済みの module からのみ**
+  `default-language` (GHC2024) / `default-extensions` を抽出する。新規 .hs はまだ cabal 未登録のため
+  GHC2024 由来の `ImportQualifiedPost` が効かず postpositive `import X qualified` で parse error になる。
+- これは per-edit fitness hook の fourmolu 呼び出しに `--ghc-opt -XImportQualifiedPost` を渡して
+  解決済み (`scripts/fitness/hook.sh`)。**新規ファイルに pragma を都度書く必要はなく、cabal の
+  default-language = GHC2024 と整合している** (FC-1: 根本単一点修正、既存 .hs への FP ゼロを確認済み)。

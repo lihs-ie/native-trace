@@ -7,6 +7,7 @@ import { z } from "zod";
 import { getContainer } from "../../../../registry";
 import { paginatedResponse } from "../_shared/response";
 import { domainErrorToResponse } from "../_shared/errors";
+import { zodErrorToValidationFailed } from "../_shared/validation";
 
 const querySchema = z.object({
   material: z.string().min(1).optional(),
@@ -26,11 +27,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   });
 
   if (!queryResult.success) {
-    return domainErrorToResponse({
-      type: "validationFailed",
-      field: "query",
-      reason: queryResult.error.errors.map((e) => e.message).join(", "),
-    });
+    return domainErrorToResponse(zodErrorToValidationFailed(queryResult.error, "query"));
   }
 
   const container = getContainer();
@@ -74,6 +71,8 @@ export async function GET(request: NextRequest): Promise<Response> {
           assessmentResults: ar.assessmentResults.map((r) => ({
             identifier: r.identifier,
             overallScore: r.overallScore,
+            findingsCount: r.findingsCount,
+            engineKind: r.engineKind,
             createdAt: r.createdAt,
           })),
         })),

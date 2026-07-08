@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   createNonEmptyList,
-  nonEmptyListHead,
   createOffset,
   createLimit,
   defaultPagination,
@@ -9,10 +8,7 @@ import {
   notFound,
   invalidStateTransition,
 } from "../shared";
-import {
-  createScore0To100,
-  createConfidence0To1,
-} from "../assessment-result";
+import { createScore0To100, createConfidence0To1 } from "../assessment-result";
 
 describe("createNonEmptyList", () => {
   it("空配列からはnullを返す", () => {
@@ -34,7 +30,7 @@ describe("createNonEmptyList", () => {
 describe("nonEmptyListHead", () => {
   it("先頭要素を返す", () => {
     const list = createNonEmptyList([10, 20, 30]);
-    expect(nonEmptyListHead(list!)).toBe(10);
+    expect(list![0]).toBe(10);
   });
 });
 

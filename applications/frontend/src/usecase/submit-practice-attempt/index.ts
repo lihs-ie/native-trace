@@ -1,4 +1,4 @@
-import { type ResultAsync, errAsync, okAsync } from "neverthrow";
+import { type ResultAsync, errAsync } from "neverthrow";
 import { z } from "zod";
 import { type DomainError, type NonEmptyList, validationFailed } from "../../domain/shared";
 import { createSectionIdentifier } from "../../domain/section";
@@ -37,6 +37,8 @@ import { type TransactionManager } from "../port/transaction-manager";
 import { type EntropyProvider } from "../port/entropy-provider";
 import { type Clock } from "../port/clock";
 import { type Logger } from "../port/logger";
+import { parseInput } from "../shared/validation";
+import { traverseSequentially } from "../shared/traverse";
 
 // ---- Constants ----
 
@@ -52,7 +54,7 @@ const SUPPORTED_MIME_TYPES = [
 
 // ---- Input ----
 
-const browserInfoInputSchema = z.object({
+const browserEnvironmentInputSchema = z.object({
   browserName: z.string().min(1),
   deviceType: z.enum(["pc", "mobile"]),
   recordingApiType: z.string().min(1),
@@ -67,7 +69,7 @@ const audioSourceInputSchema = z.discriminatedUnion("type", [
     durationMilliseconds: z.number().int().positive(),
     startedAt: z.date(),
     endedAt: z.date(),
-    browserInfo: browserInfoInputSchema,
+    browserEnvironment: browserEnvironmentInputSchema,
   }),
   z.object({
     type: z.literal("uploaded_file"),
@@ -84,8 +86,6 @@ const submitPracticeAttemptSchema = z.object({
   analysisMode: z.enum(["cloud_only", "oss_worker_only", "comparison"]),
 });
 
-export type BrowserInfoInput = z.infer<typeof browserInfoInputSchema>;
-export type AudioSourceInput = z.infer<typeof audioSourceInputSchema>;
 export type SubmitPracticeAttemptInput = z.infer<typeof submitPracticeAttemptSchema>;
 
 // ---- Output ----
@@ -138,20 +138,19 @@ export const createSubmitPracticeAttempt =
   (dependencies: SubmitPracticeAttemptDependencies) =>
   (input: SubmitPracticeAttemptInput): ResultAsync<SubmitPracticeAttemptOutput, DomainError> => {
     // 1. Zod 検証
-    const parsed = submitPracticeAttemptSchema.safeParse(input);
-    if (!parsed.success) {
-      return errAsync(
-        validationFailed("input", parsed.error.errors.map((e) => e.message).join(", ")),
-      );
+    const parsedInput = parseInput(submitPracticeAttemptSchema, input);
+    if (parsedInput.isErr()) {
+      return errAsync(parsedInput.error);
     }
+    const parsed = parsedInput.value;
 
-    const sectionIdentifier = createSectionIdentifier(parsed.data.section);
+    const sectionIdentifier = createSectionIdentifier(parsed.section);
     if (!sectionIdentifier) {
       return errAsync(validationFailed("section", "不正なセクションIDです"));
     }
 
     // 2. audioSource 検証（最大10分 / 最大100MB / 対応MIME）
-    const { audioSource, analysisMode } = parsed.data;
+    const { audioSource, analysisMode } = parsed;
 
     if (audioSource.durationMilliseconds > MAX_AUDIO_DURATION_MS) {
       return errAsync(validationFailed("audioSource", "音声は最大10分までです"));
@@ -200,11 +199,11 @@ export const createSubmitPracticeAttempt =
               type: "browser_recording",
               startedAt: audioSource.startedAt,
               endedAt: audioSource.endedAt,
-              browserInfo: {
-                browserName: audioSource.browserInfo.browserName,
-                deviceType: audioSource.browserInfo.deviceType,
-                recordingApiType: audioSource.browserInfo.recordingApiType,
-                userAgent: audioSource.browserInfo.userAgent,
+              browserEnvironment: {
+                browserName: audioSource.browserEnvironment.browserName,
+                deviceType: audioSource.browserEnvironment.deviceType,
+                recordingApiType: audioSource.browserEnvironment.recordingApiType,
+                userAgent: audioSource.browserEnvironment.userAgent,
               },
             };
           } else {
@@ -300,19 +299,15 @@ export const createSubmitPracticeAttempt =
                 );
               }
 
-              // 順次 persist
-              const persistJobs = (index: number): ResultAsync<void, DomainError> => {
-                if (index >= jobCreations.length) return okAsync(undefined);
-                return dependencies.analysisJobRepository
-                  .persist(jobCreations[index].analysisJob)
-                  .andThen(() => persistJobs(index + 1));
-              };
-
               return dependencies.recordingAttemptRepository
                 .persist(readyAttempt)
                 .andThen(() => dependencies.audioFileRepository.persist(storedAudioFile))
                 .andThen(() => dependencies.analysisRunRepository.persist(analysisRun))
-                .andThen(() => persistJobs(0))
+                .andThen(() =>
+                  traverseSequentially(jobCreations, (jobCreation) =>
+                    dependencies.analysisJobRepository.persist(jobCreation.analysisJob),
+                  ),
+                )
                 .map(() => {
                   dependencies.logger.info("submitPracticeAttempt: created", {
                     recordingAttemptIdentifier: recordingAttemptIdentifier as string,

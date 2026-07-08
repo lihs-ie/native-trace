@@ -14,7 +14,8 @@ common warnings
     ghc-options:
         -Wall -Wcompat -Widentities -Wincomplete-record-updates
         -Wincomplete-uni-patterns -Wmissing-export-lists
-        -Wredundant-constraints
+        -Wredundant-constraints -Werror=missing-fields
+        -Werror=unused-local-binds -Werror=unused-matches
 
     default-language: GHC2024
     default-extensions: OverloadedStrings
@@ -27,6 +28,10 @@ library
         NativeTrace.Worker.Api
         NativeTrace.Worker.Application
         NativeTrace.Worker.Assessment
+        NativeTrace.Worker.Catalog
+        NativeTrace.Worker.AaiClient
+        NativeTrace.Worker.GoldenSpeakerClient
+        NativeTrace.Worker.HttpSupport
         NativeTrace.Worker.Scoring
         NativeTrace.Worker.Types
 
@@ -34,9 +39,9 @@ library
         , aeson                >=2.2
         , base                 >=4.20 && <5
         , bytestring           >=0.11
+        , containers           >=0.6
         , http-client          >=0.7
         , http-client-tls      >=0.3
-        , http-conduit         >=2.3
         , http-types           >=0.12
         , servant              >=0.20
         , servant-multipart    >=0.12
@@ -61,15 +66,19 @@ test-suite native-trace-worker-test
     hs-source-dirs:     test
     other-modules:
         NativeTrace.Worker.ApplicationSpec
+        NativeTrace.Worker.GoldenSpeakerSpec
         NativeTrace.Worker.ScoringSpec
+        NativeTrace.Worker.ShadowingLagSpec
 
     build-tool-depends: hspec-discover:hspec-discover
     build-depends:
         , aeson                >=2.2
         , base
         , bytestring           >=0.11
+        , containers           >=0.6
         , hspec                >=2.11
         , hspec-wai            >=0.11
         , http-types           >=0.12
         , native-trace-worker
+        , servant-server       >=0.20
         , text                 >=2.1

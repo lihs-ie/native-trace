@@ -6,6 +6,7 @@ module NativeTrace.Worker.Types (
   AssessmentStatus (..),
   AssessmentResponse (..),
   AssessmentScores (..),
+  CefrScore (..),
   AssessmentSummary (..),
   AssessmentFinding (..),
   FindingCategory (..),
@@ -14,9 +15,29 @@ module NativeTrace.Worker.Types (
   TextRange (..),
   AudioRange (..),
   PronunciationEvidence (..),
+  WordPair (..),
+  NBestOutputEntry (..),
+  PhonemeHeatEntry (..),
+  FocusSound (..),
+  ProsodyOutput (..),
+  WordStressOutput (..),
   WorkerResponseMetadata (..),
   WorkerError (..),
   WorkerErrorBody (..),
+  PerSegmentLagEntry (..),
+  ShadowingLagDto (..),
+  GoldenSpeakerConversionDto (..),
+  -- Acoustic evidence (M-APD-9/10/11 / ADR-018)
+  AcousticEvidence (..),
+  -- Articulatory estimate (M-AAI-8 / ADR-019)
+  ArticulatoryEstimate (..),
+  -- GOP delta classification (M-CRL-7 / ADR-022)
+  GopDeltaRequest (..),
+  DeltaSignal (..),
+  BoundarySignal (..),
+  GopDeltaResponse (..),
+  -- Diagnostic per-phoneme GOP (M-CRL-16 / ADR-022)
+  DiagnosticPhonemeGopEntry (..),
 )
 where
 
@@ -110,13 +131,34 @@ instance FromJSON AssessmentRequest where
 
 -- ---- Assessment Response ----
 
+-- | CEFR スコアと帯域（C3-b）。
+data CefrScore = CefrScore
+  { cefrScoreValue :: Int,
+    cefrBand :: Text
+  }
+
+instance ToJSON CefrScore where
+  toJSON cs =
+    object
+      [ "score" .= cefrScoreValue cs,
+        "band" .= cefrBand cs
+      ]
+
 data AssessmentScores = AssessmentScores
   { overall :: Int,
     accuracy :: Int,
     nativeLikeness :: Int,
     pronunciation :: Int,
     connectedSpeech :: Int,
-    prosody :: Int
+    prosody :: Int,
+    -- | FL 重み付き明瞭性スコア（C3-b）。
+    intelligibility :: Int,
+    -- | CEFR 全体的音韻統制（C3-b）。
+    cefrOverall :: CefrScore,
+    -- | CEFR 分節（C3-b）。
+    cefrSegmental :: CefrScore,
+    -- | CEFR 韻律（C3-b）。
+    cefrProsodic :: CefrScore
   }
 
 instance ToJSON AssessmentScores where
@@ -127,7 +169,11 @@ instance ToJSON AssessmentScores where
         "nativeLikeness" .= nativeLikeness scores,
         "pronunciation" .= pronunciation scores,
         "connectedSpeech" .= connectedSpeech scores,
-        "prosody" .= prosody scores
+        "prosody" .= prosody scores,
+        "intelligibility" .= intelligibility scores,
+        "cefrOverall" .= cefrOverall scores,
+        "cefrSegmental" .= cefrSegmental scores,
+        "cefrProsodic" .= cefrProsodic scores
       ]
 
 data AssessmentSummary = AssessmentSummary
@@ -178,6 +224,32 @@ instance ToJSON PronunciationEvidence where
         "ipa" .= evidenceIpa evidence
       ]
 
+-- | Connected speech 対象語ペア（C3-a）。
+data WordPair = WordPair
+  { wordPairFirst :: Text,
+    wordPairSecond :: Text
+  }
+
+instance ToJSON WordPair where
+  toJSON wp =
+    object
+      [ "first" .= wordPairFirst wp,
+        "second" .= wordPairSecond wp
+      ]
+
+-- | NBest 出力エントリ（C3-a）。
+data NBestOutputEntry = NBestOutputEntry
+  { nBestOutputPhoneme :: Text,
+    nBestOutputConfidence :: Double
+  }
+
+instance ToJSON NBestOutputEntry where
+  toJSON e =
+    object
+      [ "phoneme" .= nBestOutputPhoneme e,
+        "confidence" .= nBestOutputConfidence e
+      ]
+
 data FindingCategory
   = FindingCategoryAccuracy
   | FindingCategoryPronunciation
@@ -197,12 +269,92 @@ data FindingSeverity
   | FindingSeverityMajor
   | FindingSeverityMinor
   | FindingSeveritySuggestion
+  deriving (Show, Eq)
 
 instance ToJSON FindingSeverity where
   toJSON FindingSeverityCritical = "critical"
   toJSON FindingSeverityMajor = "major"
   toJSON FindingSeverityMinor = "minor"
   toJSON FindingSeveritySuggestion = "suggestion"
+
+-- | 音響証拠（M-APD-9/10/11 / ADR-018）。GOP finding に付随する formant / rhoticity 等の診断情報。
+data AcousticEvidence = AcousticEvidence
+  { acousticTongueHeight :: Maybe Text,
+    acousticTongueBackness :: Maybe Text,
+    acousticRhoticity :: Maybe Text,
+    acousticSibilantPlace :: Maybe Text,
+    acousticVowelLength :: Maybe Text,
+    acousticMeasuredF1Hz :: Maybe Double,
+    acousticMeasuredF2Hz :: Maybe Double,
+    acousticMeasuredF3Hz :: Maybe Double,
+    acousticTargetF1Hz :: Maybe Double,
+    acousticTargetF2Hz :: Maybe Double,
+    acousticTargetF3Hz :: Maybe Double,
+    -- ADR-024 M-ADVL-10: presentation-only scalars (scoreImpact 不変, ADR-004/ADR-018 D7)
+    acousticSpectralCentroidHz :: Maybe Double,
+    acousticTenseLengthRatio :: Maybe Double,
+    acousticSignedF1SdDeviation :: Maybe Double,
+    acousticSignedF2SdDeviation :: Maybe Double,
+    acousticSignedF3SdDeviation :: Maybe Double,
+    acousticTargetSpectralCentroidHz :: Maybe Double,
+    acousticTargetTenseLengthRatio :: Maybe Double
+  }
+  deriving (Show, Eq)
+
+-- S-APD-4 (D9 拡張点): targetF1Hz/targetF2Hz とノルム行の差分 (re-record delta) を将来的に
+-- "formantDeltaF1Hz"/"formantDeltaF2Hz" として追加することで、再録音後にフォーマントがノルムへ
+-- どれだけ近づいたかを定量化できる。現 MVP では acousticEvidence のフィールドとして reserved。
+instance ToJSON AcousticEvidence where
+  toJSON evidence =
+    object
+      [ "tongueHeight" .= acousticTongueHeight evidence,
+        "tongueBackness" .= acousticTongueBackness evidence,
+        "rhoticity" .= acousticRhoticity evidence,
+        "sibilantPlace" .= acousticSibilantPlace evidence,
+        "vowelLength" .= acousticVowelLength evidence,
+        "measuredF1Hz" .= acousticMeasuredF1Hz evidence,
+        "measuredF2Hz" .= acousticMeasuredF2Hz evidence,
+        "measuredF3Hz" .= acousticMeasuredF3Hz evidence,
+        "targetF1Hz" .= acousticTargetF1Hz evidence,
+        "targetF2Hz" .= acousticTargetF2Hz evidence,
+        "targetF3Hz" .= acousticTargetF3Hz evidence,
+        "spectralCentroidHz" .= acousticSpectralCentroidHz evidence,
+        "tenseLengthRatio" .= acousticTenseLengthRatio evidence,
+        "signedF1SdDeviation" .= acousticSignedF1SdDeviation evidence,
+        "signedF2SdDeviation" .= acousticSignedF2SdDeviation evidence,
+        "signedF3SdDeviation" .= acousticSignedF3SdDeviation evidence,
+        "targetSpectralCentroidHz" .= acousticTargetSpectralCentroidHz evidence,
+        "targetTenseLengthRatio" .= acousticTargetTenseLengthRatio evidence
+      ]
+
+-- | 調音推定値（M-AAI-8 / ADR-019）。AAI service から得た per-phoneme EMA 座標。
+-- 6 wire 座標はすべて発話内 z-score 正規化 → [-1,1] クランプ済み（D3-b）。
+-- D4 ガードレール（displayEligibility ≥ 0.55 / 音素クラス / セグメント長）を全て満たしたときのみ
+-- AssessmentFinding に Just で乗る。1 つでも欠ければ Nothing（suppress→floor）。
+data ArticulatoryEstimate = ArticulatoryEstimate
+  { aeTongueTipX :: Double,
+    aeTongueTipY :: Double,
+    aeTongueDorsumX :: Double,
+    aeTongueDorsumY :: Double,
+    aeLipApertureX :: Double,
+    aeLipApertureY :: Double,
+    aeDisplayEligibility :: Double
+  }
+  deriving (Show, Eq)
+
+-- S-AAI-4 拡張点: 将来 re-record 後の「EMA が目標調音へ動いたか」delta 表示を追加する場合は
+-- "tongueTipDeltaX" / "tongueTipDeltaY" 等をこの ToJSON に追記する（艾 present MVP では reserved）。
+instance ToJSON ArticulatoryEstimate where
+  toJSON estimate =
+    object
+      [ "tongueTipX" .= aeTongueTipX estimate,
+        "tongueTipY" .= aeTongueTipY estimate,
+        "tongueDorsumX" .= aeTongueDorsumX estimate,
+        "tongueDorsumY" .= aeTongueDorsumY estimate,
+        "lipApertureX" .= aeLipApertureX estimate,
+        "lipApertureY" .= aeLipApertureY estimate,
+        "displayEligibility" .= aeDisplayEligibility estimate
+      ]
 
 data AssessmentFinding = AssessmentFinding
   { findingCategory :: FindingCategory,
@@ -216,10 +368,35 @@ data AssessmentFinding = AssessmentFinding
     findingMessageEn :: Maybe Text,
     findingScoreImpact :: Double,
     findingConfidence :: Double,
-    -- | 発音現象の種別（substitution / omission / insertion / connectedSpeech）。
+    -- | 発音現象の種別（11値: substitution/omission/insertion/connectedSpeech/
+    -- weakForm/linking/flap/assimilation/reduction/epenthesis/lexicalStress）。
     findingPhenomenon :: Text,
     -- | GOP 値（Goodness of Pronunciation）。null 許容。
-    findingGop :: Maybe Double
+    findingGop :: Maybe Double,
+    -- | NBest 最有力候補 IPA（C3-a, M-103）。
+    findingDetectedTopCandidate :: Maybe Text,
+    -- | NBest 上位3候補（C3-a, M-103）。
+    findingNBest :: Maybe [NBestOutputEntry],
+    -- | 混同セット一致フラグ（C3-a, M-103）。
+    findingMatchesL1Pattern :: Bool,
+    -- | Functional Load ランク（C3-a, M-112）。
+    findingFunctionalLoad :: Maybe Text,
+    -- | カタログ ID（C3-a, M-101）。
+    findingCatalogId :: Maybe Text,
+    -- | Connected speech 対象語ペア（C3-a, M-109）。
+    findingWordPair :: Maybe WordPair,
+    -- | Connected speech 期待発音 IPA（C3-a, M-109）。
+    findingExpectedPronunciation :: Maybe Text,
+    -- | Epenthesis 挿入母音 IPA（C3-a, M-115）。
+    findingInsertedVowel :: Maybe Text,
+    -- | Epenthesis 挿入位置 ms（C3-a, M-115）。
+    findingInsertionPositionMs :: Maybe Int,
+    -- | 音素の単語内位置ラベル（M-104R）。値は "initial" | "medial" | "final" | null。
+    findingWordPositionLabel :: Maybe Text,
+    -- | 音響証拠（M-APD-9/10/11 / ADR-018）。GOP finding のみ付与、それ以外は Nothing。
+    findingAcousticEvidence :: Maybe AcousticEvidence,
+    -- | 調音推定値（M-AAI-8 / ADR-019）。D4 ガードレール全通過時のみ Just、失敗時 Nothing（floor）。
+    findingArticulatoryEstimate :: Maybe ArticulatoryEstimate
   }
 
 instance ToJSON AssessmentFinding where
@@ -236,7 +413,116 @@ instance ToJSON AssessmentFinding where
         "scoreImpact" .= findingScoreImpact finding,
         "confidence" .= findingConfidence finding,
         "phenomenon" .= findingPhenomenon finding,
-        "gop" .= findingGop finding
+        "gop" .= findingGop finding,
+        "detectedTopCandidate" .= findingDetectedTopCandidate finding,
+        "nBest" .= findingNBest finding,
+        "matchesL1Pattern" .= findingMatchesL1Pattern finding,
+        "functionalLoad" .= findingFunctionalLoad finding,
+        "catalogId" .= findingCatalogId finding,
+        "wordPair" .= findingWordPair finding,
+        "expectedPronunciation" .= findingExpectedPronunciation finding,
+        "insertedVowel" .= findingInsertedVowel finding,
+        "insertionPositionMs" .= findingInsertionPositionMs finding,
+        "wordPositionLabel" .= findingWordPositionLabel finding,
+        "acousticEvidence" .= findingAcousticEvidence finding,
+        "articulatoryEstimate" .= findingArticulatoryEstimate finding
+      ]
+
+-- | 全音素 GOP ヒートマップエントリ（C3-c, M-107c）。
+data PhonemeHeatEntry = PhonemeHeatEntry
+  { heatWord :: Text,
+    heatPhoneme :: Text,
+    heatGop :: Double,
+    -- | ヒートレベル: 0（良好）〜4（最悪）。
+    heatLevel :: Int
+  }
+
+instance ToJSON PhonemeHeatEntry where
+  toJSON e =
+    object
+      [ "word" .= heatWord e,
+        "phoneme" .= heatPhoneme e,
+        "gop" .= heatGop e,
+        "heat" .= heatLevel e
+      ]
+
+-- | Focus sound エントリ（C3-c, M-112）。
+data FocusSound = FocusSound
+  { focusPair :: Text,
+    focusPhenomenon :: Maybe Text,
+    focusFunctionalLoad :: Text,
+    focusOccurrences :: Int,
+    focusPriority :: Text,
+    focusReasonJa :: Text,
+    focusCatalogId :: Maybe Text
+  }
+
+instance ToJSON FocusSound where
+  toJSON fs =
+    object
+      [ "pair" .= focusPair fs,
+        "phenomenon" .= focusPhenomenon fs,
+        "functionalLoad" .= focusFunctionalLoad fs,
+        "occurrences" .= focusOccurrences fs,
+        "priority" .= focusPriority fs,
+        "reasonJa" .= focusReasonJa fs,
+        "catalogId" .= focusCatalogId fs
+      ]
+
+-- | 語強勢出力エントリ（C3-c prosody 内）。
+data WordStressOutput = WordStressOutput
+  { wordStressOutputWord :: Text,
+    wordStressOutputWordIndex :: Int,
+    wordStressOutputExpected :: Int,
+    wordStressOutputPredicted :: Int
+  }
+
+instance ToJSON WordStressOutput where
+  toJSON ws =
+    object
+      [ "word" .= wordStressOutputWord ws,
+        "wordIndex" .= wordStressOutputWordIndex ws,
+        "expectedStress" .= wordStressOutputExpected ws,
+        "predictedStress" .= wordStressOutputPredicted ws
+      ]
+
+-- | 韻律生データ出力（C3-c, M-114）。
+data ProsodyOutput = ProsodyOutput
+  { prosodyF0TimesMs :: [Int],
+    prosodyF0ValuesHz :: [Double],
+    -- | お手本 F0 輪郭の時刻列（M-F0REF-b）。空なら reference 未生成（JSON は null）。
+    prosodyReferenceF0TimesMs :: [Int],
+    -- | お手本 F0 輪郭の基本周波数列（M-F0REF-b）。
+    prosodyReferenceF0ValuesHz :: [Double],
+    prosodyWordStress :: [WordStressOutput],
+    prosodyRhythmNpvi :: Double,
+    prosodyReferenceNpvi :: Double,
+    -- | 弱形実現率（0-1）。
+    prosodyWeakFormRate :: Double
+  }
+
+instance ToJSON ProsodyOutput where
+  toJSON po =
+    object
+      [ "f0Contour"
+          .= object
+            [ "timesMs" .= prosodyF0TimesMs po,
+              "valuesHz" .= prosodyF0ValuesHz po
+            ],
+        "referenceF0Contour"
+          .= if null (prosodyReferenceF0TimesMs po)
+            then Nothing
+            else
+              Just
+                ( object
+                    [ "timesMs" .= prosodyReferenceF0TimesMs po,
+                      "valuesHz" .= prosodyReferenceF0ValuesHz po
+                    ]
+                ),
+        "wordStress" .= prosodyWordStress po,
+        "rhythmNpvi" .= prosodyRhythmNpvi po,
+        "referenceNpvi" .= prosodyReferenceNpvi po,
+        "weakFormRate" .= prosodyWeakFormRate po
       ]
 
 data AssessmentSegment = AssessmentSegment
@@ -289,7 +575,15 @@ data AssessmentResponse = AssessmentResponse
     responseSummary :: AssessmentSummary,
     responseFindings :: [AssessmentFinding],
     responseSegments :: [AssessmentSegment],
-    responseMetadata :: WorkerResponseMetadata
+    responseMetadata :: WorkerResponseMetadata,
+    -- | 全音素 GOP ヒートマップ系列（C3-c, M-107c）。
+    responsePerPhonemeGop :: [PhonemeHeatEntry],
+    -- | Focus sounds リスト（C3-c, M-112）。
+    responseFocusSounds :: [FocusSound],
+    -- | 韻律生データ（C3-c, M-114）。Nothing の場合は analyzer が未対応。
+    responseProsody :: Maybe ProsodyOutput,
+    -- | 診断用全音素 GOP 系列（M-CRL-16 / ADR-022 D17）。low_quality 分岐でも常時 populate する。
+    responseDiagnosticPerPhonemeGop :: [DiagnosticPhonemeGopEntry]
   }
 
 instance ToJSON AssessmentResponse where
@@ -302,7 +596,11 @@ instance ToJSON AssessmentResponse where
         "summary" .= responseSummary response,
         "findings" .= responseFindings response,
         "segments" .= responseSegments response,
-        "metadata" .= responseMetadata response
+        "metadata" .= responseMetadata response,
+        "perPhonemeGop" .= responsePerPhonemeGop response,
+        "focusSounds" .= responseFocusSounds response,
+        "prosody" .= responseProsody response,
+        "diagnosticPerPhonemeGop" .= responseDiagnosticPerPhonemeGop response
       ]
 
 -- ---- Error Response ----
@@ -327,3 +625,173 @@ newtype WorkerError = WorkerError
 
 instance ToJSON WorkerError where
   toJSON err = object ["error" .= workerError err]
+
+-- ---- Shadowing Lag (M-SHL-3 / ADR-013) ----
+
+-- | perSegmentLag の 1 要素。analyzer の per_segment_lag 配列の各エントリに対応。
+data PerSegmentLagEntry = PerSegmentLagEntry
+  { perSegmentLagPhoneme :: Text,
+    perSegmentLagMilliseconds :: Double
+  }
+  deriving (Show, Eq)
+
+instance ToJSON PerSegmentLagEntry where
+  toJSON entry =
+    object
+      [ "phoneme" .= perSegmentLagPhoneme entry,
+        "lagMilliseconds" .= perSegmentLagMilliseconds entry
+      ]
+
+instance FromJSON PerSegmentLagEntry where
+  parseJSON = withObject "PerSegmentLagEntry" $ \o -> do
+    phoneme <- o .: "phoneme"
+    lagMs <- o .: "lagMilliseconds"
+    pure
+      PerSegmentLagEntry
+        { perSegmentLagPhoneme = phoneme,
+          perSegmentLagMilliseconds = lagMs
+        }
+
+-- | worker が frontend に返す shadowing ラグ計測 DTO（M-SHL-3 / ADR-013）。
+-- analyzer の全フィールド + recommendSlowPlayback + thresholdMilliseconds を追加する。
+-- 閾値は SHADOWING_LAG_THRESHOLD_MS 環境変数から読み、domain literal を埋め込まない（M-SHL-6）。
+data ShadowingLagDto = ShadowingLagDto
+  { shadowingLagMilliseconds :: Double,
+    shadowingPerSegmentLag :: [PerSegmentLagEntry],
+    shadowingSpeechRateRatio :: Maybe Double,
+    shadowingPauseCountLearner :: Maybe Int,
+    shadowingPauseCountReference :: Maybe Int,
+    -- | lagMilliseconds > thresholdMilliseconds のとき True（M-SHL-6）。
+    shadowingRecommendSlowPlayback :: Bool,
+    -- | 閾値（ms）。SHADOWING_LAG_THRESHOLD_MS から読む。frontend 表示用に含める（ADR-013）。
+    shadowingThresholdMilliseconds :: Int
+  }
+  deriving (Show, Eq)
+
+instance ToJSON ShadowingLagDto where
+  toJSON dto =
+    object
+      [ "lagMilliseconds" .= shadowingLagMilliseconds dto,
+        "perSegmentLag" .= shadowingPerSegmentLag dto,
+        "speechRateRatio" .= shadowingSpeechRateRatio dto,
+        "pauseCountLearner" .= shadowingPauseCountLearner dto,
+        "pauseCountReference" .= shadowingPauseCountReference dto,
+        "recommendSlowPlayback" .= shadowingRecommendSlowPlayback dto,
+        "thresholdMilliseconds" .= shadowingThresholdMilliseconds dto
+      ]
+
+-- ---- Golden Speaker Conversion (M-GRV-6 / ADR-012) ----
+
+-- | worker が frontend に返す golden speaker 変換 DTO（M-GRV-6 / ADR-012）。
+-- golden サービスの GoldenConversionResponse をそのまま透過する（worker は proxy）。
+-- targetVoice は golden サービスが使用したボイスモデル識別子。
+data GoldenSpeakerConversionDto = GoldenSpeakerConversionDto
+  { goldenAudioBase64 :: Maybe Text,
+    goldenQualityGatePassed :: Bool,
+    goldenWithholdReason :: Maybe Text,
+    goldenTargetVoice :: Text
+  }
+  deriving (Show, Eq)
+
+instance ToJSON GoldenSpeakerConversionDto where
+  toJSON dto =
+    object
+      [ "audioBase64" .= goldenAudioBase64 dto,
+        "qualityGatePassed" .= goldenQualityGatePassed dto,
+        "withholdReason" .= goldenWithholdReason dto,
+        "targetVoice" .= goldenTargetVoice dto
+      ]
+
+instance FromJSON GoldenSpeakerConversionDto where
+  parseJSON = withObject "GoldenSpeakerConversionDto" $ \o ->
+    GoldenSpeakerConversionDto
+      <$> o .:? "audioBase64"
+      <*> o .: "qualityGatePassed"
+      <*> o .:? "withholdReason"
+      <*> o .: "targetVoice"
+
+-- ---- GOP Delta Classification (M-CRL-7 / ADR-022) ----
+
+-- | POST /v1/gop-delta リクエスト。
+-- originalGop: 元の所見の GOP 値（worker 内部スケール、負の浮動小数）。
+-- retryGop: 再録音の GOP 値（worker 内部スケール、負の浮動小数）。
+data GopDeltaRequest = GopDeltaRequest
+  { gopDeltaRequestOriginalGop :: Double,
+    gopDeltaRequestRetryGop :: Double
+  }
+  deriving (Show, Eq)
+
+instance FromJSON GopDeltaRequest where
+  parseJSON = withObject "GopDeltaRequest" $ \o ->
+    GopDeltaRequest
+      <$> o .: "originalGop"
+      <*> o .: "retryGop"
+
+-- | delta の改善方向。calibratable 閾値（+5/-2）で分類。
+data DeltaSignal
+  = DeltaSignalImproved
+  | DeltaSignalUnchanged
+  | DeltaSignalRegressed
+  deriving (Show, Eq)
+
+instance ToJSON DeltaSignal where
+  toJSON DeltaSignalImproved = "improved"
+  toJSON DeltaSignalUnchanged = "unchanged"
+  toJSON DeltaSignalRegressed = "regressed"
+
+-- | severity 境界の横断有無。major/minor 境界（strict <）を使う。
+data BoundarySignal
+  = BoundarySignalCrossedMajor
+  | BoundarySignalCrossedMinor
+  | BoundarySignalNone
+  deriving (Show, Eq)
+
+instance ToJSON BoundarySignal where
+  toJSON BoundarySignalCrossedMajor = "crossedMajor"
+  toJSON BoundarySignalCrossedMinor = "crossedMinor"
+  toJSON BoundarySignalNone = "none"
+
+-- | POST /v1/gop-delta レスポンス。
+-- M-CRL-11 (ADR-022 D14): retrySeverity / retryConfidence を追加。
+-- retrySeverity wire enum は {critical,major,minor,suggestion,none} の 5 値。
+-- Nothing → "none" に変換する。
+data GopDeltaResponse = GopDeltaResponse
+  { gopDeltaResponseGopDelta :: Double,
+    gopDeltaResponseDeltaSignal :: DeltaSignal,
+    gopDeltaResponseBoundarySignal :: BoundarySignal,
+    -- | retry GOP から再採点した severity。None の場合は "none" を wire する。
+    gopDeltaResponseRetrySeverity :: Maybe FindingSeverity,
+    -- | retry GOP から再採点した confidence (calibratable)。
+    gopDeltaResponseRetryConfidence :: Double
+  }
+  deriving (Show, Eq)
+
+instance ToJSON GopDeltaResponse where
+  toJSON response =
+    object
+      [ "gopDelta" .= gopDeltaResponseGopDelta response,
+        "deltaSignal" .= gopDeltaResponseDeltaSignal response,
+        "boundarySignal" .= gopDeltaResponseBoundarySignal response,
+        "retrySeverity" .= maybe (toJSON ("none" :: Text)) toJSON (gopDeltaResponseRetrySeverity response),
+        "retryConfidence" .= gopDeltaResponseRetryConfidence response
+      ]
+
+-- | 診断用の全音素 GOP エントリ（M-CRL-16 / ADR-022 D17）。
+-- heatmap (PhonemeHeatEntry) とは別で、low_quality 分岐でも常時 populate する。
+-- wire keys: phoneme / gop / startMs / endMs。
+data DiagnosticPhonemeGopEntry = DiagnosticPhonemeGopEntry
+  { diagPhoneme :: Text,
+    diagGop :: Double,
+    diagStartMs :: Int,
+    diagEndMs :: Int
+  }
+  deriving (Show, Eq)
+
+instance ToJSON DiagnosticPhonemeGopEntry where
+  toJSON entry =
+    object
+      [ "phoneme" .= diagPhoneme entry,
+        "gop" .= diagGop entry,
+        "startMs" .= diagStartMs entry,
+        "endMs" .= diagEndMs entry
+      ]

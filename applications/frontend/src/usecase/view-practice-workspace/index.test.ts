@@ -15,10 +15,7 @@ import {
   type RecordingAttemptIdentifier,
   type RecordingDuration,
 } from "../../domain/recording-attempt";
-import {
-  type AnalysisRun,
-  type AnalysisRunIdentifier,
-} from "../../domain/analysis-run";
+import { type AnalysisRun, type AnalysisRunIdentifier } from "../../domain/analysis-run";
 import {
   type AudioFileIdentifier,
   type StorageKey,
@@ -52,6 +49,7 @@ const makeAnalysisRun = (): AnalysisRun => ({
   identifier: "01RUN" as AnalysisRunIdentifier,
   recordingAttempt: "01ATTEMPT" as RecordingAttemptIdentifier,
   mode: "cloud_only",
+  status: "succeeded",
   createdAt: new Date("2026-01-01T00:00:00Z"),
 });
 
@@ -87,6 +85,12 @@ const makeDependencies = (
     find: () => errAsync(notFound("assessmentResult", "x")),
     search: () => okAsync({ items: [] }),
     persist: () => okAsync(undefined),
+  },
+  findingDismissalRepository: {
+    record: () => okAsync(undefined),
+    restore: () => okAsync(undefined),
+    findActiveDismissedIdentifiers: () => okAsync(new Set<string>()),
+    findActiveDismissedIdentifiersByResults: () => okAsync(new Map<string, ReadonlySet<string>>()),
   },
   audioFileRepository: {
     find: () =>
@@ -186,10 +190,16 @@ describe("viewPracticeWorkspace", () => {
           pronunciation: 80 as never,
           connectedSpeech: 80 as never,
           prosody: 80 as never,
+          intelligibility: null,
+          cefrOverall: null,
+          cefrSegmental: null,
+          cefrProsodic: null,
         },
         summary: { overallCommentJa: "よい", overallCommentEn: null },
         findings: [],
-        segments: [{ textRange: { startOffset: 0, endOffset: 5 }, audioRange: null, word: "Hello" }] as never,
+        segments: [
+          { textRange: { startOffset: 0, endOffset: 5 }, audioRange: null, word: "Hello" },
+        ] as never,
         metadata: {
           engineName: "cloud",
           engineVersion: "1.0",
@@ -206,6 +216,10 @@ describe("viewPracticeWorkspace", () => {
           modelName: null,
         },
         createdAt: new Date("2026-01-01T00:00:00Z"),
+        perPhonemeGop: null,
+        focusSounds: null,
+        prosody: null,
+        engineSummaryMessageJa: null,
       },
       {
         identifier: "02RESULT" as never,
@@ -217,10 +231,16 @@ describe("viewPracticeWorkspace", () => {
           pronunciation: 75 as never,
           connectedSpeech: 75 as never,
           prosody: 75 as never,
+          intelligibility: null,
+          cefrOverall: null,
+          cefrSegmental: null,
+          cefrProsodic: null,
         },
         summary: { overallCommentJa: "良好", overallCommentEn: null },
         findings: [],
-        segments: [{ textRange: { startOffset: 0, endOffset: 5 }, audioRange: null, word: "Hello" }] as never,
+        segments: [
+          { textRange: { startOffset: 0, endOffset: 5 }, audioRange: null, word: "Hello" },
+        ] as never,
         metadata: {
           engineName: "oss",
           engineVersion: "1.0",
@@ -237,6 +257,10 @@ describe("viewPracticeWorkspace", () => {
           modelName: null,
         },
         createdAt: new Date("2026-01-01T00:00:00Z"),
+        perPhonemeGop: null,
+        focusSounds: null,
+        prosody: null,
+        engineSummaryMessageJa: null,
       },
     ];
 
@@ -288,5 +312,118 @@ describe("viewPracticeWorkspace", () => {
     const engineIds = output.highlightRangesByEngine.map((h) => h.analysisEngine);
     expect(engineIds).toContain("engine-cloud-1");
     expect(engineIds).toContain("engine-oss-1");
+  });
+
+  it("却下済み finding は dismissed:true で返る（M-108 / ORPHAN-3 の観測）", async () => {
+    const dismissedFinding = {
+      identifier: "FIND_DISMISS" as never,
+      phenomenon: "substitution",
+      gop: -13,
+      severity: "critical" as const,
+      category: "accuracy" as const,
+      textRange: { startOffset: 0, endOffset: 5 },
+      audioRange: null,
+      expected: { text: "world", ipa: "/wɝld/" },
+      detected: { text: "warudo", ipa: "/wɝɾɯdo/" },
+      messageJa: "①…②…③…",
+      messageEn: null,
+      scoreImpact: -6,
+      confidence: 0.91 as never,
+      detectedTopCandidate: "[ɾ]",
+      nBest: [{ phoneme: "[ɾ]", confidence: 0.64 }],
+      matchesL1Pattern: true,
+      functionalLoad: "max",
+      catalogId: "l-r-substitution",
+      wordPair: null,
+      expectedPronunciation: null,
+      insertedVowel: "[o]",
+      feedbackLayers: { whatJa: "観測", whyJa: "原因", howJa: "修正" },
+      dismissed: false,
+    };
+    const resultWithFinding = {
+      identifier: "RESULT_D" as never,
+      analysisJob: "JOB_D" as never,
+      scores: {
+        overall: 71 as never,
+        accuracy: 60 as never,
+        nativeLikeness: 71 as never,
+        pronunciation: 70 as never,
+        connectedSpeech: 70 as never,
+        prosody: 47 as never,
+        intelligibility: 86,
+        cefrOverall: { score: 64, band: "B2" },
+        cefrSegmental: null,
+        cefrProsodic: null,
+      },
+      summary: { overallCommentJa: "x", overallCommentEn: null },
+      findings: [dismissedFinding],
+      segments: [
+        { textRange: { startOffset: 0, endOffset: 5 }, audioRange: null, word: "world" },
+      ] as never,
+      metadata: {
+        engineName: "oss",
+        engineVersion: "1.0",
+        modelName: null,
+        promptVersion: null,
+        schemaVersion: "1",
+      },
+      tokenizerVersion: "v1" as never,
+      raw: { data: {} },
+      engineSnapshot: {
+        type: "oss_worker" as const,
+        identifier: "engine-oss-1",
+        displayName: "OSS Worker",
+        modelName: null,
+      },
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+      perPhonemeGop: null,
+      focusSounds: null,
+      prosody: null,
+      engineSummaryMessageJa: null,
+    };
+
+    const deps = makeDependencies({
+      analysisJobRepository: {
+        find: () => errAsync(notFound("analysisJob", "x")),
+        search: () =>
+          okAsync({
+            items: [
+              {
+                type: "succeeded" as const,
+                identifier: "JOB_D" as never,
+                analysisRun: "01RUN" as never,
+                engine: "oss_worker" as const,
+                engineConfigJson: "{}",
+                completedAt: new Date("2026-01-01T00:00:00Z"),
+                queuedAt: new Date("2026-01-01T00:00:00Z"),
+                createdAt: new Date("2026-01-01T00:00:00Z"),
+              },
+            ],
+          }),
+        persist: () => okAsync(undefined),
+        acquireLease: () => okAsync(null),
+      },
+      assessmentResultRepository: {
+        find: () => errAsync(notFound("assessmentResult", "x")),
+        search: () => okAsync({ items: [resultWithFinding] as never }),
+        persist: () => okAsync(undefined),
+      },
+      // 当該 finding を却下集合として返す → view が dismissed:true を組み立てる
+      findingDismissalRepository: {
+        record: () => okAsync(undefined),
+        restore: () => okAsync(undefined),
+        findActiveDismissedIdentifiers: () => okAsync(new Set<string>(["FIND_DISMISS"])),
+        findActiveDismissedIdentifiersByResults: () =>
+          okAsync(new Map<string, ReadonlySet<string>>([["RESULT_D", new Set(["FIND_DISMISS"])]])),
+      },
+    });
+    const execute = createViewPracticeWorkspace(deps);
+
+    const output = (await execute({ section: "01SECTION" }))._unsafeUnwrap();
+    const finding = output.resultsByEngine[0].findings[0];
+    expect(finding.finding).toBe("FIND_DISMISS");
+    expect(finding.dismissed).toBe(true);
+    // 却下されていない別 finding は false（対照）
+    expect(output.resultsByEngine[0].scores.intelligibility).toBe(86);
   });
 });

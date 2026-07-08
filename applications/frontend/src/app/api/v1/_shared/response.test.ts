@@ -9,7 +9,10 @@ describe("successResponse", () => {
   it("data と meta.requestIdentifier を含む envelope を返す", async () => {
     const response = successResponse({ foo: "bar" });
     expect(response.status).toBe(200);
-    const body = await response.json() as { data: { foo: string }; meta: { requestIdentifier: string } };
+    const body = (await response.json()) as {
+      data: { foo: string };
+      meta: { requestIdentifier: string };
+    };
     expect(body.data.foo).toBe("bar");
     expect(body.meta.requestIdentifier).toMatch(/^req_/);
   });
@@ -24,7 +27,7 @@ describe("paginatedResponse", () => {
   it("data / page / meta を含む envelope を返す", async () => {
     const response = paginatedResponse([{ id: "1" }], { offset: 0, limit: 20, total: 1 });
     expect(response.status).toBe(200);
-    const body = await response.json() as {
+    const body = (await response.json()) as {
       data: Array<{ id: string }>;
       page: { type: string; offset: number; limit: number; total: number };
       meta: { requestIdentifier: string };
