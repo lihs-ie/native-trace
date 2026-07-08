@@ -40,7 +40,11 @@ import {
   createResponseLabel,
   recordHvptTrial,
 } from "../../domain/training";
-import { type AssessmentResult, type AssessmentFinding } from "../../domain/assessment-result";
+import {
+  type AssessmentResult,
+  type AssessmentFinding,
+  SEVERITY_ORDER,
+} from "../../domain/assessment-result";
 import { type TrainingSessionRepository } from "../port/training-session-repository";
 import { type HvptTrialRepository } from "../port/hvpt-trial-repository";
 import { type AssessmentResultRepository } from "../port/assessment-result-repository";
@@ -177,17 +181,10 @@ const evaluateTargetPhonemes = (
     };
   }
 
-  // severity 重篤度順: critical > major > minor > suggestion
-  const severityOrder: Record<string, number> = {
-    critical: 4,
-    major: 3,
-    minor: 2,
-    suggestion: 1,
-  };
-
+  // severity 重篤度順: critical > major > minor > suggestion（domain/assessment-result.ts の SEVERITY_ORDER）
   const worstFinding = targetFindings.reduce((worst, finding) => {
-    const worstOrder = severityOrder[worst.severity] ?? 0;
-    const currentOrder = severityOrder[finding.severity] ?? 0;
+    const worstOrder = SEVERITY_ORDER[worst.severity] ?? 0;
+    const currentOrder = SEVERITY_ORDER[finding.severity] ?? 0;
     return currentOrder > worstOrder ? finding : worst;
   });
 
@@ -224,16 +221,11 @@ const determineVerdict = (
     };
   }
 
-  const severityOrder: Record<string, number> = {
-    critical: 4,
-    major: 3,
-    minor: 2,
-    suggestion: 1,
-  };
-  const maxSuccessSeverityOrder = severityOrder[scoringConfig.maxSeverityForSuccess] ?? 1;
+  // severity 重篤度順: critical > major > minor > suggestion（domain/assessment-result.ts の SEVERITY_ORDER）
+  const maxSuccessSeverityOrder = SEVERITY_ORDER[scoringConfig.maxSeverityForSuccess] ?? 1;
 
   const worstSeverityOrder = targetFindings.reduce((maxOrder, finding) => {
-    const order = severityOrder[finding.severity] ?? 0;
+    const order = SEVERITY_ORDER[finding.severity] ?? 0;
     return order > maxOrder ? order : maxOrder;
   }, 0);
 

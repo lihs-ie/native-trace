@@ -109,3 +109,6 @@ export const defaultPagination = (): Pagination => ({
   offset: 0 as Offset,
   limit: 20 as Limit,
 });
+
+// 時間換算ヘルパー
+export const hoursToMilliseconds = (hours: number): number => hours * 60 * 60 * 1000;

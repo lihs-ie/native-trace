@@ -12,6 +12,7 @@ import {
   failAnalysisJob,
   retryAnalysisJob,
   cancelAnalysisJob,
+  DEFAULT_ANALYSIS_JOB_MAX_ATTEMPTS,
   type AnalysisJobIdentifier,
   type RunningAnalysisJob,
   type AnalysisJobSucceeded,
@@ -63,12 +64,22 @@ import {
 
 const ASSESSMENT_SCHEMA_VERSION = "1";
 
+/**
+ * DEFAULT_LLM_NARRATIVE_MAX_CONCURRENCY / DEFAULT_LLM_NARRATIVE_MAX_FINDINGS
+ * — dependencies.llmNarrativeMaxConcurrency / llmNarrativeMaxFindings が
+ * 省略された場合のデフォルト値。
+ * infrastructure/config/index.ts の llmNarrativeMaxConcurrency / llmNarrativeMaxFindings の
+ * デフォルト値（zod .default(3) / .default(8)）と手動同期すること。
+ */
+const DEFAULT_LLM_NARRATIVE_MAX_CONCURRENCY = 3;
+const DEFAULT_LLM_NARRATIVE_MAX_FINDINGS = 8;
+
 // ---- Input ----
 
 const runAssessmentJobSchema = z.object({
   leaseOwner: z.string().min(1, "leaseOwnerは空にできません"),
   leaseDurationSeconds: z.number().int().positive().default(60),
-  maxAttempts: z.number().int().positive().default(3),
+  maxAttempts: z.number().int().positive().default(DEFAULT_ANALYSIS_JOB_MAX_ATTEMPTS),
 });
 
 // z.input: default 適用前の境界入力型。leaseDurationSeconds / maxAttempts は任意。
@@ -602,9 +613,11 @@ export const createRunAssessmentJob =
                                             return precomputed;
                                           }
                                           const llmNarrativeMaxConcurrency =
-                                            dependencies.llmNarrativeMaxConcurrency ?? 3;
+                                            dependencies.llmNarrativeMaxConcurrency ??
+                                            DEFAULT_LLM_NARRATIVE_MAX_CONCURRENCY;
                                           const llmNarrativeMaxFindings =
-                                            dependencies.llmNarrativeMaxFindings ?? 8;
+                                            dependencies.llmNarrativeMaxFindings ??
+                                            DEFAULT_LLM_NARRATIVE_MAX_FINDINGS;
 
                                           // ADR-023 D2 (M-TMO-3): severity/functionalLoad rank maps
                                           // severity: critical=4 > major=3 > minor=2 > suggestion=1; unknown=0

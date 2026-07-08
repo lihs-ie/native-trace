@@ -43,6 +43,11 @@ import { type AnalyzerStimulusClient, type StimulusRecord } from "../port/analyz
 import { type EntropyProvider } from "../port/entropy-provider";
 import { type Clock } from "../port/clock";
 
+// ---- Constants ----
+
+/** analyzer /v1/stimuli から取得する刺激候補数の上限。 */
+const HVPT_STIMULUS_FETCH_LIMIT = 20;
+
 // ---- Input ----
 
 export type StartHvptSessionInput = Readonly<{
@@ -193,7 +198,7 @@ export const createStartHvptSession =
 
             // 3. analyzer /v1/stimuli から実刺激を取得する（偽刺激禁止）
             return dependencies.analyzerStimulusClient
-              .fetchStimuli(String(capturedContrast), undefined, 20)
+              .fetchStimuli(String(capturedContrast), undefined, HVPT_STIMULUS_FETCH_LIMIT)
               .andThen((stimuliRecords) => {
                 if (stimuliRecords.length === 0) {
                   return errAsync(

@@ -1,10 +1,6 @@
 import { err, ok } from "neverthrow";
 import { type Result } from "neverthrow";
-import {
-  type DomainError,
-  type NonEmptyList,
-  invalidStateTransition,
-} from "./shared";
+import { type DomainError, type NonEmptyList, invalidStateTransition } from "./shared";
 import { type AnalysisRunIdentifier } from "./analysis-run";
 
 declare const __brand: unique symbol;
@@ -13,17 +9,19 @@ type Brand<T, B> = T & { readonly [__brand]: B };
 export type AnalysisJobIdentifier = Brand<string, "AnalysisJobIdentifier">;
 export type AnalysisLeaseToken = Brand<string, "AnalysisLeaseToken">;
 
-export const createAnalysisJobIdentifier = (
-  value: string,
-): AnalysisJobIdentifier | null =>
+export const createAnalysisJobIdentifier = (value: string): AnalysisJobIdentifier | null =>
   value.trim().length > 0 ? (value as AnalysisJobIdentifier) : null;
 
-export const createAnalysisLeaseToken = (
-  value: string,
-): AnalysisLeaseToken | null =>
+export const createAnalysisLeaseToken = (value: string): AnalysisLeaseToken | null =>
   value.trim().length > 0 ? (value as AnalysisLeaseToken) : null;
 
 export type EngineType = "cloud" | "oss_worker";
+
+/** retryAnalysisJob の再試行までの待機時間（ミリ秒）。 */
+export const ANALYSIS_JOB_RETRY_DELAY_MILLISECONDS = 30_000;
+
+/** AnalysisJob の既定最大試行回数（呼び出し側で指定がない場合のデフォルト）。 */
+export const DEFAULT_ANALYSIS_JOB_MAX_ATTEMPTS = 3;
 
 export type QueuedAnalysisJob = Readonly<{
   type: "queued";
@@ -172,7 +170,7 @@ export const createAnalysisJob = (
     engineConfigJson: input.engineConfigJson,
     priority: input.priority ?? 0,
     attemptCount: 0,
-    maxAttempts: input.maxAttempts ?? 3,
+    maxAttempts: input.maxAttempts ?? DEFAULT_ANALYSIS_JOB_MAX_ATTEMPTS,
     nextRunAt: input.now,
     queuedAt: input.now,
     createdAt: input.now,
@@ -214,10 +212,7 @@ export type StartAnalysisJobOutput = Readonly<{
   events: NonEmptyList<AnalysisJobStarted>;
 }>;
 
-export const startAnalysisJob = (
-  job: LeasedAnalysisJob,
-  now: Date,
-): StartAnalysisJobOutput => {
+export const startAnalysisJob = (job: LeasedAnalysisJob, now: Date): StartAnalysisJobOutput => {
   const running: RunningAnalysisJob = {
     ...job,
     type: "running",
@@ -225,9 +220,7 @@ export const startAnalysisJob = (
   };
   return {
     analysisJob: running,
-    events: [
-      { type: "analysisJobStarted", analysisJob: running, occurredAt: now },
-    ],
+    events: [{ type: "analysisJobStarted", analysisJob: running, occurredAt: now }],
   };
 };
 
@@ -287,9 +280,7 @@ export const failAnalysisJob = (
   };
   return {
     analysisJob: failed,
-    events: [
-      { type: "analysisJobFailed", analysisJob: failed, occurredAt: now },
-    ],
+    events: [{ type: "analysisJobFailed", analysisJob: failed, occurredAt: now }],
   };
 };
 
@@ -335,13 +326,7 @@ export const retryAnalysisJob = (
   now: Date,
 ): Result<RetryAnalysisJobOutput, DomainError> => {
   if (failureKind !== "retryable") {
-    return err(
-      invalidStateTransition(
-        job.type,
-        "queued",
-        "retryable 失敗のみ再試行できます",
-      ),
-    );
+    return err(invalidStateTransition(job.type, "queued", "retryable 失敗のみ再試行できます"));
   }
   if (job.attemptCount >= job.maxAttempts) {
     return err(
@@ -361,14 +346,12 @@ export const retryAnalysisJob = (
     priority: job.priority,
     attemptCount: job.attemptCount,
     maxAttempts: job.maxAttempts,
-    nextRunAt: new Date(now.getTime() + 30000), // 30 秒後に再試行
+    nextRunAt: new Date(now.getTime() + ANALYSIS_JOB_RETRY_DELAY_MILLISECONDS), // 30 秒後に再試行
     queuedAt: now,
     createdAt: job.createdAt,
   };
   return ok({
     analysisJob: queued,
-    events: [
-      { type: "analysisJobQueued", analysisJob: queued, occurredAt: now },
-    ],
+    events: [{ type: "analysisJobQueued", analysisJob: queued, occurredAt: now }],
   });
 };

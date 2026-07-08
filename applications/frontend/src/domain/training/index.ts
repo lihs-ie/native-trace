@@ -17,6 +17,7 @@ import {
   type NonEmptyList,
   createNonEmptyList,
   validationFailed,
+  hoursToMilliseconds,
 } from "../shared";
 import {
   type AssessmentResultIdentifier,
@@ -229,18 +230,21 @@ export type FocusObservation = Readonly<{
 // ---- FunctionalLoadRank 正規化 ----
 
 /**
- * normalizeFunctionalLoadRank — FLランクを0〜1の数値に正規化する（max=1.0, high=0.75, mid=0.5, low=0.25）
- * ドメインに literal を埋め込まず、この変換関数だけが rank→数値の対応を持つ。
+ * FUNCTIONAL_LOAD_RANK_SCORES — FLランク→0〜1の数値対応（max=1.0, high=0.75, mid=0.5, low=0.25）。
+ * ドメインに literal を埋め込まず、normalizeFunctionalLoadRank だけがこの対応表を参照する。
  */
-export const normalizeFunctionalLoadRank = (rank: FunctionalLoadRank): number => {
-  const rankToScore: Record<FunctionalLoadRank, number> = {
-    max: 1.0,
-    high: 0.75,
-    mid: 0.5,
-    low: 0.25,
-  };
-  return rankToScore[rank];
+const FUNCTIONAL_LOAD_RANK_SCORES: Record<FunctionalLoadRank, number> = {
+  max: 1.0,
+  high: 0.75,
+  mid: 0.5,
+  low: 0.25,
 };
+
+/**
+ * normalizeFunctionalLoadRank — FLランクを0〜1の数値に正規化する（max=1.0, high=0.75, mid=0.5, low=0.25）
+ */
+export const normalizeFunctionalLoadRank = (rank: FunctionalLoadRank): number =>
+  FUNCTIONAL_LOAD_RANK_SCORES[rank];
 
 // ---- ドメインサービス関数 ----
 
@@ -987,8 +991,8 @@ export const applySpacingTransition = (
   config: SpacingSchedulerConfig,
   now: Date,
 ): SpacingSchedule => {
-  const intervalMilliseconds = config.spacingIntervalHours * 60 * 60 * 1000;
-  const gateRetryMilliseconds = config.gateRetryIntervalHours * 60 * 60 * 1000;
+  const intervalMilliseconds = hoursToMilliseconds(config.spacingIntervalHours);
+  const gateRetryMilliseconds = hoursToMilliseconds(config.gateRetryIntervalHours);
 
   // セッション結果がある（accuracy != null）場合は遷移を評価
   if (accuracy !== null) {

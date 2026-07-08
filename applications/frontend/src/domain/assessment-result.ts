@@ -1,7 +1,7 @@
 import { err, ok } from "neverthrow";
 import { type Result } from "neverthrow";
 import { type DomainError, type NonEmptyList, validationFailed } from "./shared";
-import { type AnalysisJobIdentifier } from "./analysis-job";
+import { type AnalysisJobIdentifier, type EngineType } from "./analysis-job";
 
 declare const __brand: unique symbol;
 type Brand<T, B> = T & { readonly [__brand]: B };
@@ -73,6 +73,14 @@ export const FindingSeverity = {
   SUGGESTION: "suggestion",
 } as const;
 export type FindingSeverity = (typeof FindingSeverity)[keyof typeof FindingSeverity];
+
+/** severity 重篤度順（数値が大きいほど重篤）。critical > major > minor > suggestion。 */
+export const SEVERITY_ORDER: Record<FindingSeverity, number> = {
+  critical: 4,
+  major: 3,
+  minor: 2,
+  suggestion: 1,
+};
 
 export type TextRange = Readonly<{
   startOffset: number;
@@ -235,7 +243,7 @@ export type AssessmentEngineMetadata = Readonly<{
 }>;
 
 export type AnalysisEngineSnapshot = Readonly<{
-  type: "cloud" | "oss_worker";
+  type: EngineType;
   identifier: string;
   displayName: string;
   modelName: string | null;

@@ -29,8 +29,11 @@ import { deriveCefrSubscalesFromScores } from "../shared/cefr-subscale-derivatio
  */
 export type DiagnosticStage = "stageI" | "stageII";
 
+/** Stage II（ネイティブ性重視）へ切り替わる overall スコアの閾値。 */
+const STAGE_II_OVERALL_THRESHOLD = 75;
+
 const deriveStage = (overallScore: number): DiagnosticStage =>
-  overallScore >= 75 ? "stageII" : "stageI";
+  overallScore >= STAGE_II_OVERALL_THRESHOLD ? "stageII" : "stageI";
 
 // ---- Output ----
 

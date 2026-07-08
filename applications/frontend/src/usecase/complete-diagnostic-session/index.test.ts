@@ -3,6 +3,7 @@ import { okAsync, errAsync } from "neverthrow";
 import {
   createCompleteDiagnosticSession,
   projectFindingsToCatalogFocusSounds,
+  PHENOMENON_TO_CATALOG_ENTRY,
   type CompleteDiagnosticSessionDependencies,
   type GopNormalizationRange,
   type FindingProjectionInput,
@@ -15,6 +16,7 @@ import {
 import { getDiagnosticPromptSet } from "../../infrastructure/training/diagnostic-prompt-fixture";
 import type { AssessmentResult } from "../../domain/assessment-result";
 import { notFound } from "../../domain/shared";
+import { getAllCatalogEntries } from "../../domain/error-catalog";
 
 /**
  * M-DG-3/4: completeDiagnosticSession usecase contract test
@@ -588,5 +590,22 @@ describe("projectFindingsToCatalogFocusSounds (M-DG-4)", () => {
     for (const sound of result) {
       expect(Number(sound.occurrenceFrequency)).toBeLessThanOrEqual(1.0);
     }
+  });
+});
+
+describe("PHENOMENON_TO_CATALOG_ENTRY catalog id integrity", () => {
+  it("マップの全 value が getAllCatalogEntries() の id に存在する（カタログ改名の検知網）", () => {
+    // "insertion" は japanese-l1-catalog.json に対応エントリを意図的に持たないプレースホルダー値
+    // （上の「phenomenon=insertion は epenthesis カタログに混入しない (D3 ADR-017)」テストが
+    // この非対応を担保している）。カタログ改名検知の対象から除外する。
+    const INTENTIONALLY_UNMAPPED_PHENOMENA = new Set(["insertion"]);
+
+    const catalogIds = new Set(getAllCatalogEntries().map((entry) => entry.id));
+    const unresolvedEntries = Object.entries(PHENOMENON_TO_CATALOG_ENTRY).filter(
+      ([phenomenon, catalogId]) =>
+        !INTENTIONALLY_UNMAPPED_PHENOMENA.has(phenomenon) && !catalogIds.has(catalogId),
+    );
+
+    expect(unresolvedEntries).toEqual([]);
   });
 });

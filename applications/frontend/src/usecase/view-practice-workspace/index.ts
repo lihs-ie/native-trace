@@ -3,6 +3,7 @@ import { z } from "zod";
 import { type DomainError, validationFailed, createNonEmptyList } from "../../domain/shared";
 import { createSectionIdentifier } from "../../domain/section";
 import { deriveAnalysisRunStatus } from "../../domain/analysis-run";
+import { type EngineType } from "../../domain/analysis-job";
 import { type SectionRepository } from "../port/section-repository";
 import { type RecordingAttemptRepository } from "../port/recording-attempt-repository";
 import { type AnalysisRunRepository } from "../port/analysis-run-repository";
@@ -68,7 +69,7 @@ export type HighlightRangeOutput = Readonly<{
 
 export type EngineHighlightRangesOutput = Readonly<{
   analysisEngine: string;
-  engineKind: "cloud" | "oss_worker";
+  engineKind: EngineType;
   result: string;
   highlights: ReadonlyArray<HighlightRangeOutput>;
 }>;
@@ -149,7 +150,7 @@ export type ProsodyOutput = Readonly<{
 
 export type EngineResultOutput = Readonly<{
   result: string;
-  engineKind: "cloud" | "oss_worker";
+  engineKind: EngineType;
   engineName: string;
   modelName: string | null;
   scores: Readonly<{

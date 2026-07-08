@@ -50,6 +50,40 @@ import { type AssessmentResultRepository } from "../port/assessment-result-repos
 import { type EntropyProvider } from "../port/entropy-provider";
 import { type Clock } from "../port/clock";
 
+// ---- Constants ----
+
+/**
+ * SEVERITY_MASTERY_ESTIMATE — GOP 未提供時に severity から mastery を推定するための対応表。
+ * UNKNOWN_SEVERITY_MASTERY — 未知の severity 文字列に対するフォールバック値。
+ */
+const SEVERITY_MASTERY_ESTIMATE: Record<string, number> = {
+  critical: 0.1,
+  major: 0.3,
+  minor: 0.6,
+  suggestion: 0.8,
+};
+const UNKNOWN_SEVERITY_MASTERY = 0.5;
+
+/**
+ * PHENOMENON_TO_CATALOG_ENTRY — phenomenon → catalogId 直接マップ
+ * （omission, epenthesis, lexicalStress, weakForm 等）。
+ *
+ * 注意（insertion）: "insertion" は意図的に japanese-l1-catalog.json に対応エントリを持たない
+ * プレースホルダー値。projectFindingsToCatalogFocusSounds 側で catalog.find が見つからず
+ * 静かに drop される（D3 ADR-017: insertion phenomenon は epenthesis カタログに混入しない、
+ * という既存テストが this behavior を担保している）。export するのはテストで
+ * 「map の値が catalog id として解決可能」を assert するため（カタログ改名の検知網）。
+ */
+export const PHENOMENON_TO_CATALOG_ENTRY: Record<string, string> = {
+  omission: "final-consonant-omission",
+  epenthesis: "epenthesis",
+  insertion: "insertion",
+  lexicalStress: "lexical-stress-error",
+  weakForm: "weak-form-realization",
+  reduction: "rhythm-npvi",
+  linking: "connected-speech-linking",
+};
+
 // ---- Input ----
 
 /**
@@ -172,13 +206,7 @@ const estimateMasteryFromGopAndSeverity = (
     return normalizeGopToMastery(gopAverage, gopNormalizationRange);
   }
   // GOP 未提供: severity から推定
-  const severityToMastery: Record<string, number> = {
-    critical: 0.1,
-    major: 0.3,
-    minor: 0.6,
-    suggestion: 0.8,
-  };
-  return severityToMastery[severity] ?? 0.5;
+  return SEVERITY_MASTERY_ESTIMATE[severity] ?? UNKNOWN_SEVERITY_MASTERY;
 };
 
 // canonicalizePhoneme は domain/error-catalog/phoneme-canonicalization から import（ADR-020 D0）。
@@ -231,16 +259,7 @@ const resolveCatalogIdFromIpaAndPhenomenon = (finding: FindingProjectionInput): 
 
   // 3. phenomenon 直接マップ（omission, epenthesis, lexicalStress, weakForm 等）
   if (finding.phenomenon) {
-    const phenomenonDirectMap: Record<string, string> = {
-      omission: "final-consonant-omission",
-      epenthesis: "epenthesis",
-      insertion: "insertion",
-      lexicalStress: "lexical-stress-error",
-      weakForm: "weak-form-realization",
-      reduction: "rhythm-npvi",
-      linking: "connected-speech-linking",
-    };
-    const directMapped = phenomenonDirectMap[finding.phenomenon];
+    const directMapped = PHENOMENON_TO_CATALOG_ENTRY[finding.phenomenon];
     if (directMapped) return directMapped;
   }
 
