@@ -75,7 +75,7 @@ version =
 assessPronunciation :: MultipartData Mem -> Handler AssessmentResponse
 assessPronunciation multipart = do
   metadataBytes <- lookupMetadataBytes multipart
-  request <- parseMetadata metadataBytes
+  request <- decodeMetadataJson metadataBytes
   (audioBytes, audioContentType) <- lookupAudioBytes multipart
   case validatePronunciationRequest request audioBytes (Just audioContentType) of
     Left err -> throwError (toServantError err)
@@ -147,7 +147,7 @@ assessPronunciation multipart = do
 shadowingLag :: MultipartData Mem -> Handler ShadowingLagDto
 shadowingLag multipart = do
   metadataBytes <- lookupMetadataBytes multipart
-  meta <- parseShadowingMeta metadataBytes
+  meta <- decodeMetadataJson metadataBytes
   referenceAudio <- lookupNamedFile "reference_audio" multipart
   learnerAudio <- lookupNamedFile "learner_audio" multipart
   result <-
@@ -197,10 +197,11 @@ instance FromJSON ShadowingMeta where
       <*> object .: "mimeType"
       <*> object .: "durationMilliseconds"
 
-parseShadowingMeta :: ByteString -> Handler ShadowingMeta
-parseShadowingMeta bytes =
+-- | metadata JSON を decode する。失敗時は 400（invalid_metadata_json）を返す。
+decodeMetadataJson :: (FromJSON a) => ByteString -> Handler a
+decodeMetadataJson bytes =
   case eitherDecodeStrict bytes of
-    Right meta -> pure meta
+    Right value -> pure value
     Left decodeError ->
       throwError
         ( badRequest
@@ -253,34 +254,8 @@ lookupAudioBytes multipart =
     Left _ ->
       throwError (badRequest "missing_audio_part" "The 'audio' part is required.")
 
-parseMetadata :: ByteString -> Handler AssessmentRequest
-parseMetadata bytes =
-  case eitherDecodeStrict bytes of
-    Right request -> pure request
-    Left decodeError ->
-      throwError
-        ( badRequest
-            "invalid_metadata_json"
-            ("Failed to parse metadata JSON: " <> Text.pack decodeError)
-        )
-
 toServantError :: AssessmentError -> ServerError
-toServantError err =
-  let code = Assessment.errorCode err
-      message = Assessment.errorMessage err
-      body =
-        WorkerError
-          { workerError =
-              WorkerErrorBody
-                { errorCode = code,
-                  errorMessage = message,
-                  errorRetryable = False
-                }
-          }
-   in err400
-        { errBody = encode body,
-          errHeaders = [(hContentType, "application/json; charset=utf-8")]
-        }
+toServantError err = badRequest (Assessment.errorCode err) (Assessment.errorMessage err)
 
 badRequest :: Text -> Text -> ServerError
 badRequest code message =
