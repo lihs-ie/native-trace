@@ -16,6 +16,7 @@ import {
 } from "../../../usecase/port/shadowing-lag-client";
 import { type DomainError } from "../../../domain/shared";
 import { assessmentEngineFailed, classifyFetchError } from "../shared/errors";
+import { fetchJsonWithTimeout } from "../shared/fetch-json";
 import { mapShadowingLagResponse } from "./shadowing-response-mapper";
 
 export type OssWorkerShadowingLagAdaptorDependencies = Readonly<{
@@ -58,27 +59,12 @@ export const createOssWorkerShadowingLagAdaptor = (
     const metadataBlob = new Blob([metadataJson], { type: "application/json; charset=utf-8" });
     formData.append("metadata", metadataBlob);
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), dependencies.timeoutMilliseconds);
-
     return fromPromise(
-      globalThis
-        .fetch(url, { method: "POST", body: formData, signal: controller.signal })
-        .then(async (response) => {
-          clearTimeout(timeoutId);
-          const status = response.status;
-          let rawBody: unknown;
-          try {
-            rawBody = await (response.json() as Promise<unknown>);
-          } catch {
-            rawBody = null;
-          }
-          return { status, rawBody };
-        })
-        .catch((error: unknown) => {
-          clearTimeout(timeoutId);
-          throw error;
-        }),
+      fetchJsonWithTimeout(
+        url,
+        { method: "POST", body: formData },
+        dependencies.timeoutMilliseconds,
+      ),
       (fetchError): DomainError =>
         assessmentEngineFailed(
           "oss_worker_shadowing",
