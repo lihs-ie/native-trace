@@ -89,21 +89,6 @@ export type RecordingAttemptDto = {
   createdAt: string;
 };
 
-export type AnalysisRunDto = {
-  identifier: string;
-  recordingAttempt: string;
-  status: string;
-  createdAt: string;
-};
-
-export type AnalysisJobDto = {
-  identifier: string;
-  analysisRun: string;
-  engine: string;
-  status: string;
-  attemptCount: number;
-};
-
 export type TextRangeDto = {
   startChar: number;
   endChar: number;
@@ -143,38 +128,6 @@ export type ScoresDto = {
   pronunciation: number;
   connectedSpeech: number;
   prosody: number;
-};
-
-export type FindingDto = {
-  identifier: string;
-  phenomenon: FindingPhenomenon | null;
-  gop: number | null;
-  category: string;
-  severity: string;
-  textRange: TextRangeDto;
-  audioRange: AudioRangeDto | null;
-  expected: { text: string; ipa: string | null } | null;
-  detected: { text: string; ipa: string | null } | null;
-  messageJa: string | null;
-  messageEn: string | null;
-  scoreImpact: number | null;
-  confidence: number | null;
-};
-
-export type AssessmentResultDto = {
-  identifier: string;
-  analysisJob: string;
-  engine: string;
-  scores: ScoresDto;
-  summary: { messageJa: string | null; messageEn: string | null } | null;
-  findings: FindingDto[];
-  engineSnapshot: { kind: string; displayName: string } | null;
-  createdAt: string;
-};
-
-export type ResultsByEngineDto = {
-  engine: string;
-  result: AssessmentResultDto | null;
 };
 
 export type SectionTokenDto = {
@@ -378,21 +331,8 @@ export type WorkspaceDto = {
   highlightRangesByEngine: HighlightsByEngineDto[];
 };
 
-export type PaginationDto = {
-  type: string;
-  offset: number;
-  limit: number;
-  total: number;
-};
-
 export type ApiResponse<T> = {
   data: T;
-  meta: { requestIdentifier: string };
-};
-
-export type ApiListResponse<T> = {
-  data: T[];
-  page: PaginationDto;
   meta: { requestIdentifier: string };
 };
 
@@ -408,14 +348,7 @@ export type ApiError = {
 // 解析モード
 export type AnalysisMode = "cloudOnly" | "ossWorkerOnly" | "comparison";
 
-export const ANALYSIS_MODE_LABELS: Record<AnalysisMode, string> = {
-  cloudOnly: "Cloud only",
-  ossWorkerOnly: "OSS Worker only",
-  comparison: "Comparison (both)",
-};
-
 // カテゴリ・重大度のラベルと色
-export type Severity = "critical" | "major" | "minor" | "info";
 export type FindingCategory =
   | "accuracy"
   | "pronunciation"
@@ -440,21 +373,6 @@ export type FindingPhenomenon =
   | "reduction"
   | "epenthesis"
   | "lexicalStress";
-
-export const SEVERITY_LABELS: Record<string, string> = {
-  critical: "Critical",
-  major: "Major",
-  minor: "Minor",
-  info: "Info",
-};
-
-export const CATEGORY_LABELS: Record<string, string> = {
-  accuracy: "Accuracy",
-  pronunciation: "Pronunciation",
-  connectedSpeech: "Connected Speech",
-  prosody: "Prosody",
-  nativeLikeness: "Native-likeness",
-};
 
 // ---- Progress DTOs (Training Context — M-PG-3) ----
 
@@ -482,11 +400,6 @@ export type ProgressDto = {
   snapshots: ProgressSnapshotDto[];
   now: ProgressSnapshotDto | null;
   prev: ProgressSnapshotDto | null;
-};
-
-export const ENGINE_LABELS: Record<string, string> = {
-  cloud: "OpenAI",
-  oss_worker: "OSS Worker",
 };
 
 // ---- History DTOs ----

@@ -20,8 +20,8 @@ import { materials, sectionSeries, sections } from "../drizzle/schema";
 
 // ---- 産出ドリル用 Material / SectionSeries の固定識別子 ----
 
-export const DRILL_MATERIAL_ID = "DRILL_MATERIAL_SINGLETON";
-export const DRILL_SECTION_SERIES_ID = "DRILL_SECTION_SERIES_SINGLETON";
+const DRILL_MATERIAL_ID = "DRILL_MATERIAL_SINGLETON";
+const DRILL_SECTION_SERIES_ID = "DRILL_SECTION_SERIES_SINGLETON";
 
 // TrainingSession 識別子 → Section 識別子の写像
 // 同一 TrainingSession の異なる例文に対応できるよう、session + 例文テキストハッシュで決定論的に生成する

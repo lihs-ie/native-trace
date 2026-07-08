@@ -17,8 +17,8 @@ import { materials, sectionSeries, sections } from "../drizzle/schema";
 
 // ---- 診断用 Material / SectionSeries の固定識別子 ----
 // OQ-1 解決: シングルトン学習者と同様に、診断用 Material も sentinel 定数で管理する
-export const DIAGNOSTIC_MATERIAL_ID = "DIAGNOSTIC_MATERIAL_SINGLETON";
-export const DIAGNOSTIC_SECTION_SERIES_ID = "DIAGNOSTIC_SECTION_SERIES_SINGLETON";
+const DIAGNOSTIC_MATERIAL_ID = "DIAGNOSTIC_MATERIAL_SINGLETON";
+const DIAGNOSTIC_SECTION_SERIES_ID = "DIAGNOSTIC_SECTION_SERIES_SINGLETON";
 
 // 診断プロンプト識別子 → Section 識別子の写像
 // DiagnosticPrompt.identifier は "dp-lr-01" 等の固定値なので、Section 識別子を決定論的に導出する

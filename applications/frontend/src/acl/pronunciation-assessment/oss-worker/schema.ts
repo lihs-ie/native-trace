@@ -361,5 +361,3 @@ export const ossWorkerErrorResponseSchema = z.object({
     retryable: z.boolean(),
   }),
 });
-
-export type OssWorkerErrorResponse = z.infer<typeof ossWorkerErrorResponseSchema>;
