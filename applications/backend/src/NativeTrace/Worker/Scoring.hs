@@ -9,8 +9,6 @@ module NativeTrace.Worker.Scoring (
   generateFindingsFromGop,
   buildAssessmentScores,
   tokenize,
-  -- 後方互換: 既存 Assessment.hs が参照する名前を re-export する
-  scoreAssessment,
   -- 音質ガード
   checkAudioQuality,
   audioQualityMinMeanDbfs,
@@ -180,7 +178,6 @@ data TokenSegment = TokenSegment
 
 data ScoringInput = ScoringInput
   { inputText :: Text,
-    inputByteLength :: Int,
     inputDurationMilliseconds :: Int
   }
   deriving (Show, Eq)
@@ -193,9 +190,7 @@ data ScoringOutput = ScoringOutput
     scoreConnectedSpeech :: Int,
     scoreProsody :: Int,
     scoreIntelligibility :: Int,
-    outputTokens :: [TokenSegment],
-    summaryMessageJa :: Text,
-    summaryMessageEn :: Text
+    outputTokens :: [TokenSegment]
   }
   deriving (Show, Eq)
 
@@ -484,8 +479,8 @@ buildCefrScore score = CefrScore {cefrScoreValue = score, cefrBand = scoreToCefr
 
 -- ---- GOP ベースのスコアリング ----
 
-scoreFromGop :: AnalyzerResult -> ScoringOutput -> ScoringOutput
-scoreFromGop result scoringOutput =
+scoreFromGop :: AnalyzerResult -> [TokenSegment] -> ScoringOutput
+scoreFromGop result tokens =
   let phonemeGops = analyzedPerPhonemeGop result
       gops = map gopValue phonemeGops
       pronunciationScore = gopAverageToScore gops
@@ -514,14 +509,15 @@ scoreFromGop result scoringOutput =
             `div` 100
       -- intelligibility はまず findings なしで算出（後で findings から上書き可）
       intelligibilityScore = clampScore overallScore
-   in scoringOutput
+   in ScoringOutput
         { scoreOverall = overallScore,
           scoreAccuracy = accuracyScore,
           scoreNativeLikeness = nativeLikenessScore,
           scorePronunciation = pronunciationScore,
           scoreConnectedSpeech = connectedSpeechScoreValue,
           scoreProsody = prosodyScore,
-          scoreIntelligibility = intelligibilityScore
+          scoreIntelligibility = intelligibilityScore,
+          outputTokens = tokens
         }
 
 -- ---- Finding 生成 ----
@@ -1642,25 +1638,6 @@ buildFallbackSummary scoringOutput =
           if overallScore >= 60
             then "概ね良好な発音です。連結発話とリズムを意識して練習しましょう。"
             else "基本的な発音練習を継続しましょう。特に音素の正確な産出に注目してください。"
-
--- ---- 後方互換 API（Assessment.hs が呼ぶ） ----
-
-scoreAssessment :: ScoringInput -> ScoringOutput
-scoreAssessment input =
-  let text = inputText input
-      tokens = tokenize text
-   in ScoringOutput
-        { scoreOverall = 0,
-          scoreAccuracy = 50,
-          scoreNativeLikeness = 0,
-          scorePronunciation = 0,
-          scoreConnectedSpeech = 0,
-          scoreProsody = 65,
-          scoreIntelligibility = 0,
-          outputTokens = tokens,
-          summaryMessageJa = buildFallbackSummary (ScoringOutput 0 50 0 0 0 65 0 tokens "" ""),
-          summaryMessageEn = ""
-        }
 
 -- ---- GOP Delta 分類 (M-CRL-7 / ADR-022) ----
 

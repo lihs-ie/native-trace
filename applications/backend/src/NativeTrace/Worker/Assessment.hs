@@ -18,7 +18,6 @@ import NativeTrace.Worker.AnalyzerClient (
   PhonemeGop (..),
  )
 import NativeTrace.Worker.Scoring (
-  ScoringInput (..),
   ScoringOutput (..),
   TokenSegment (..),
   buildAssessmentScores,
@@ -28,8 +27,8 @@ import NativeTrace.Worker.Scoring (
   buildProsodyOutput,
   checkAudioQuality,
   generateFindingsFromGop,
-  scoreAssessment,
   scoreFromGop,
+  tokenize,
  )
 import NativeTrace.Worker.Types (
   AssessmentRequest (..),
@@ -182,8 +181,7 @@ buildAssessmentResponseFromGop request analyzerResult =
               responseDiagnosticPerPhonemeGop = map toDiagnosticEntry (analyzedPerPhonemeGop analyzerResult)
             }
         else
-          let baseScoringOutput = scoreAssessment (ScoringInput bodyText (ByteString.length "") durationMs)
-              scoringOutput = scoreFromGop analyzerResult baseScoringOutput
+          let scoringOutput = scoreFromGop analyzerResult (tokenize bodyText)
               segments = buildSegments request (outputTokens scoringOutput) durationMs
               findings = generateFindingsFromGop bodyText analyzerResult
               scores = buildAssessmentScores scoringOutput findings

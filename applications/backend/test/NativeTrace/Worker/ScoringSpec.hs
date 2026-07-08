@@ -19,7 +19,6 @@ import NativeTrace.Worker.AnalyzerClient (
  )
 import NativeTrace.Worker.Assessment (buildAssessmentResponseFromGop)
 import NativeTrace.Worker.Scoring (
-  ScoringInput (..),
   aaiDisplayEligibilityThreshold,
   articulatoryDisplayGuardrail,
   audioQualityMinSnrDb,
@@ -29,9 +28,9 @@ import NativeTrace.Worker.Scoring (
   deriveAcousticEvidence,
   generateFindingsFromGop,
   hillenbrandGaVowelFormants,
-  scoreAssessment,
   scoreFromGop,
   severityToScoreImpact,
+  tokenize,
  )
 import NativeTrace.Worker.Types (
   AcousticEvidence (..),
@@ -255,15 +254,15 @@ spec = do
     it "high-FL error causes larger intelligibility penalty than low-FL error" $ do
       let highFlFindings = generateFindingsFromGop bodyText fixtureHighFlAnalyzerResult
       let lowFlFindings = generateFindingsFromGop bodyText fixtureLowFlAnalyzerResult
-      let baseScoringOutput = scoreAssessment (ScoringInput bodyText 0 3000)
-      let highFlScores = buildAssessmentScores (scoreFromGop fixtureHighFlAnalyzerResult baseScoringOutput) highFlFindings
-      let lowFlScores = buildAssessmentScores (scoreFromGop fixtureLowFlAnalyzerResult baseScoringOutput) lowFlFindings
+      let tokens = tokenize bodyText
+      let highFlScores = buildAssessmentScores (scoreFromGop fixtureHighFlAnalyzerResult tokens) highFlFindings
+      let lowFlScores = buildAssessmentScores (scoreFromGop fixtureLowFlAnalyzerResult tokens) lowFlFindings
       -- 高FL誤りの intelligibility は低FL誤りより低い（減点が大きい）
       intelligibility highFlScores `shouldSatisfy` (<= intelligibility lowFlScores)
 
   describe "CEFR band mapping (M-111)" $ do
     it "score >= 80 maps to C1" $ do
-      let baseScoringOutput = scoreAssessment (ScoringInput bodyText 0 3000)
+      let tokens = tokenize bodyText
       -- 高GOP（良い発音）の場合は高スコア → C1 近辺
       let goodResult =
             fixtureAnalyzerResult
@@ -273,7 +272,7 @@ spec = do
                   ]
               }
       let findings = generateFindingsFromGop bodyText goodResult
-      let scores = buildAssessmentScores (scoreFromGop goodResult baseScoringOutput) findings
+      let scores = buildAssessmentScores (scoreFromGop goodResult tokens) findings
       -- cefrSegmental band は空でないことを確認
       cefrBand (cefrSegmental scores) `shouldSatisfy` (not . null . Text.unpack)
 
