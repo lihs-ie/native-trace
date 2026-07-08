@@ -4,36 +4,24 @@
  */
 
 import { z } from "zod";
+import {
+  textRangeSchema,
+  findingCategorySchema,
+  findingSeveritySchema,
+  pronunciationEvidenceSchema,
+} from "../shared/schema-fragments";
 
 // ---- Zod schema (response validation) ----
 
-const textRangeSchema = z.object({
-  startChar: z.number().int().nonnegative(),
-  endChar: z.number().int().positive(),
-});
-
 // audioRange: OpenAI は秒小数を返す可能性があるため、ここでは number (float) も許可し
 // response-mapper でミリ秒整数へ変換する。
-const audioRangeSecondsSchema = z.object({
-  startSeconds: z.number().nonnegative(),
-  endSeconds: z.number().positive(),
-}).nullable();
-
-// acl.md §5.3: category は Domain Choice Type の 5 値のみ許可
-const findingCategorySchema = z.enum([
-  "accuracy",
-  "pronunciation",
-  "connectedSpeech",
-  "prosody",
-  "nativeLikeness",
-]);
-
-const findingSeveritySchema = z.enum(["critical", "major", "minor", "suggestion"]);
-
-const pronunciationEvidenceSchema = z.object({
-  text: z.string().nullable(),
-  ipa: z.string().nullable(),
-});
+// 秒/ミリ秒で oss-worker と意図的に異なるため shared/schema-fragments.ts には移さない。
+const audioRangeSecondsSchema = z
+  .object({
+    startSeconds: z.number().nonnegative(),
+    endSeconds: z.number().positive(),
+  })
+  .nullable();
 
 const findingSchema = z.object({
   category: findingCategorySchema,
@@ -43,7 +31,11 @@ const findingSchema = z.object({
   expected: pronunciationEvidenceSchema,
   detected: pronunciationEvidenceSchema,
   messageJa: z.string().min(1),
-  messageEn: z.string().nullable().optional().transform((v) => v ?? null),
+  messageEn: z
+    .string()
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
   scoreImpact: z.number(),
   confidence: z.number().min(0).max(1),
 });
@@ -55,7 +47,11 @@ const segmentSchema = z.object({
     startSeconds: z.number().nonnegative(),
     endSeconds: z.number().positive(),
   }),
-  transcript: z.string().nullable().optional().transform((v) => v ?? null),
+  transcript: z
+    .string()
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
   confidence: z.number().min(0).max(1),
 });
 
@@ -70,7 +66,11 @@ const scoresSchema = z.object({
 
 const summarySchema = z.object({
   messageJa: z.string().min(1),
-  messageEn: z.string().nullable().optional().transform((v) => v ?? null),
+  messageEn: z
+    .string()
+    .nullable()
+    .optional()
+    .transform((v) => v ?? null),
 });
 
 export const openAiAssessmentResponseSchema = z.object({
@@ -105,7 +105,14 @@ export const OPENAI_ASSESSMENT_JSON_SCHEMA = {
           connectedSpeech: { type: "integer", minimum: 0, maximum: 100 },
           prosody: { type: "integer", minimum: 0, maximum: 100 },
         },
-        required: ["overall", "accuracy", "nativeLikeness", "pronunciation", "connectedSpeech", "prosody"],
+        required: [
+          "overall",
+          "accuracy",
+          "nativeLikeness",
+          "pronunciation",
+          "connectedSpeech",
+          "prosody",
+        ],
         additionalProperties: false,
       },
       summary: {
@@ -177,9 +184,16 @@ export const OPENAI_ASSESSMENT_JSON_SCHEMA = {
             confidence: { type: "number", minimum: 0, maximum: 1 },
           },
           required: [
-            "category", "severity", "textRange", "audioRange",
-            "expected", "detected", "messageJa", "messageEn",
-            "scoreImpact", "confidence",
+            "category",
+            "severity",
+            "textRange",
+            "audioRange",
+            "expected",
+            "detected",
+            "messageJa",
+            "messageEn",
+            "scoreImpact",
+            "confidence",
           ],
           additionalProperties: false,
         },
