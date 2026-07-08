@@ -15,7 +15,13 @@ export const GopHeatmap = ({ entries }: GopHeatmapProps) => {
   if (entries.length === 0) {
     return (
       <div className="gopmap">
-        <span style={{ fontFamily: "var(--font-jp)", fontSize: "var(--text-xs)", color: "var(--text-faint)" }}>
+        <span
+          style={{
+            fontFamily: "var(--font-jp)",
+            fontSize: "var(--text-xs)",
+            color: "var(--text-faint)",
+          }}
+        >
           GOP データなし
         </span>
       </div>

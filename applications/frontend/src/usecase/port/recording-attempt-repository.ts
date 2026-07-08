@@ -15,7 +15,11 @@ export type RecordingAttemptPage = Readonly<{
 
 export type RecordingAttemptRepository = Readonly<{
   find: (identifier: RecordingAttemptIdentifier) => ResultAsync<ReadyRecordingAttempt, DomainError>;
-  findSaving: (identifier: RecordingAttemptIdentifier) => ResultAsync<SavingRecordingAttempt, DomainError>;
-  search: (criteria: RecordingAttemptSearchCriteria) => ResultAsync<RecordingAttemptPage, DomainError>;
+  findSaving: (
+    identifier: RecordingAttemptIdentifier,
+  ) => ResultAsync<SavingRecordingAttempt, DomainError>;
+  search: (
+    criteria: RecordingAttemptSearchCriteria,
+  ) => ResultAsync<RecordingAttemptPage, DomainError>;
   persist: (attempt: RecordingAttempt) => ResultAsync<void, DomainError>;
 }>;

@@ -83,12 +83,14 @@ export const classifyFetchError = (error: unknown): AssessmentEngineFailureKind 
  * acl.md §6.2 の禁止事項に対応。
  */
 export const sanitizeErrorMessage = (message: string): string => {
-  return message
-    // Bearer token / API key パターン (sk-... / Bearer xxx)
-    .replace(/sk-[A-Za-z0-9_-]{10,}/g, "[REDACTED_API_KEY]")
-    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "Bearer [REDACTED]")
-    .replace(/Authorization:\s*[^\s]+/gi, "Authorization: [REDACTED]")
-    // ローカル絶対パス (Unix / Windows)
-    .replace(/\/(?:Users|home|root|var|tmp|opt|usr)\/[^\s,'"]+/g, "[REDACTED_PATH]")
-    .replace(/[A-Z]:\\[^\s,'"]+/g, "[REDACTED_PATH]");
+  return (
+    message
+      // Bearer token / API key パターン (sk-... / Bearer xxx)
+      .replace(/sk-[A-Za-z0-9_-]{10,}/g, "[REDACTED_API_KEY]")
+      .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "Bearer [REDACTED]")
+      .replace(/Authorization:\s*[^\s]+/gi, "Authorization: [REDACTED]")
+      // ローカル絶対パス (Unix / Windows)
+      .replace(/\/(?:Users|home|root|var|tmp|opt|usr)\/[^\s,'"]+/g, "[REDACTED_PATH]")
+      .replace(/[A-Z]:\\[^\s,'"]+/g, "[REDACTED_PATH]")
+  );
 };

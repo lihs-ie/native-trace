@@ -6,7 +6,10 @@
 import { randomUUID } from "crypto";
 import { type DrizzleDatabase } from "../client";
 import { abUsageLogs } from "../schema";
-import type { AbUsageLogRepository, AbUsageLog } from "../../../usecase/port/ab-usage-log-repository";
+import type {
+  AbUsageLogRepository,
+  AbUsageLog,
+} from "../../../usecase/port/ab-usage-log-repository";
 import { tryPersistence } from "./try-persistence";
 
 export const createDrizzleAbUsageLogRepository = (

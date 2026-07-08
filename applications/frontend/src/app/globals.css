@@ -4,105 +4,118 @@
    テーマ: 言語学・辞書的な真面目さ / ダーク基調 / IPA・データはモノスペース
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+JP:wght@400;500;700&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+JP:wght@400;500;700&display=swap");
 
 :root {
   /* ---- Type families ---- */
   --font-sans: "IBM Plex Sans", "Noto Sans JP", system-ui, sans-serif;
-  --font-jp:   "Noto Sans JP", "IBM Plex Sans", system-ui, sans-serif;
-  --font-serif:"Newsreader", Georgia, "Times New Roman", serif;
+  --font-jp: "Noto Sans JP", "IBM Plex Sans", system-ui, sans-serif;
+  --font-serif: "Newsreader", Georgia, "Times New Roman", serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
   /* ---- Type scale ---- */
   --text-2xs: 11px;
-  --text-xs:  12px;
-  --text-sm:  13px;
-  --text-base:15px;
-  --text-md:  16px;
-  --text-lg:  18px;
-  --text-xl:  21px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 15px;
+  --text-md: 16px;
+  --text-lg: 18px;
+  --text-xl: 21px;
   --text-2xl: 25px;
   --text-3xl: 31px;
   --text-4xl: 39px;
   --text-5xl: 49px;
 
   --leading-tight: 1.2;
-  --leading-snug:  1.4;
-  --leading-normal:1.6;
-  --leading-read:  1.85;
+  --leading-snug: 1.4;
+  --leading-normal: 1.6;
+  --leading-read: 1.85;
 
   --tracking-tight: -0.01em;
   --tracking-normal: 0em;
-  --tracking-wide:  0.04em;
-  --tracking-caps:  0.08em;
+  --tracking-wide: 0.04em;
+  --tracking-caps: 0.08em;
 
   /* ---- Neutral surfaces (dark, slightly cool ink) ---- */
-  --bg-base:     oklch(0.165 0.012 256);
-  --bg-sunken:   oklch(0.135 0.012 256);
-  --surface-1:   oklch(0.205 0.013 256);
-  --surface-2:   oklch(0.245 0.014 256);
-  --surface-3:   oklch(0.295 0.015 256);
-  --surface-hi:  oklch(0.345 0.016 256);
+  --bg-base: oklch(0.165 0.012 256);
+  --bg-sunken: oklch(0.135 0.012 256);
+  --surface-1: oklch(0.205 0.013 256);
+  --surface-2: oklch(0.245 0.014 256);
+  --surface-3: oklch(0.295 0.015 256);
+  --surface-hi: oklch(0.345 0.016 256);
 
-  --border-faint:  oklch(0.27 0.014 256);
-  --border:        oklch(0.34 0.016 256);
+  --border-faint: oklch(0.27 0.014 256);
+  --border: oklch(0.34 0.016 256);
   --border-strong: oklch(0.45 0.018 256);
 
   /* ---- Text ---- */
-  --text-primary:   oklch(0.965 0.004 256);
-  --text-secondary: oklch(0.80 0.010 256);
-  --text-tertiary:  oklch(0.635 0.012 256);
-  --text-faint:     oklch(0.515 0.012 256);
+  --text-primary: oklch(0.965 0.004 256);
+  --text-secondary: oklch(0.8 0.01 256);
+  --text-tertiary: oklch(0.635 0.012 256);
+  --text-faint: oklch(0.515 0.012 256);
   --text-on-accent: oklch(0.99 0.003 256);
 
   /* ---- Accent (blue #2f5fd0) ---- */
-  --accent:        oklch(0.555 0.165 264);
-  --accent-hover:  oklch(0.625 0.155 264);
-  --accent-press:  oklch(0.50 0.16 264);
-  --accent-soft:   oklch(0.40 0.085 264 / 0.28);
-  --accent-line:   oklch(0.62 0.14 264 / 0.55);
-  --accent-text:   oklch(0.74 0.13 264);
+  --accent: oklch(0.555 0.165 264);
+  --accent-hover: oklch(0.625 0.155 264);
+  --accent-press: oklch(0.5 0.16 264);
+  --accent-soft: oklch(0.4 0.085 264 / 0.28);
+  --accent-line: oklch(0.62 0.14 264 / 0.55);
+  --accent-text: oklch(0.74 0.13 264);
 
   /* ---- Severity ---- */
-  --sev-critical:       oklch(0.645 0.205 22);
-  --sev-critical-text:  oklch(0.76 0.16 22);
-  --sev-critical-soft:  oklch(0.645 0.205 22 / 0.16);
-  --sev-critical-line:  oklch(0.66 0.20 22 / 0.85);
-  --sev-major:          oklch(0.705 0.165 52);
-  --sev-major-text:     oklch(0.80 0.13 58);
-  --sev-major-soft:     oklch(0.705 0.165 52 / 0.16);
-  --sev-major-line:     oklch(0.72 0.16 52 / 0.85);
-  --sev-minor:          oklch(0.825 0.135 92);
-  --sev-minor-text:     oklch(0.86 0.12 95);
-  --sev-minor-soft:     oklch(0.825 0.135 92 / 0.15);
-  --sev-minor-line:     oklch(0.82 0.14 92 / 0.80);
-  --sev-suggest:        oklch(0.72 0.115 215);
-  --sev-suggest-text:   oklch(0.80 0.10 215);
-  --sev-suggest-soft:   oklch(0.72 0.115 215 / 0.14);
-  --sev-suggest-line:   oklch(0.72 0.12 215 / 0.75);
+  --sev-critical: oklch(0.645 0.205 22);
+  --sev-critical-text: oklch(0.76 0.16 22);
+  --sev-critical-soft: oklch(0.645 0.205 22 / 0.16);
+  --sev-critical-line: oklch(0.66 0.2 22 / 0.85);
+  --sev-major: oklch(0.705 0.165 52);
+  --sev-major-text: oklch(0.8 0.13 58);
+  --sev-major-soft: oklch(0.705 0.165 52 / 0.16);
+  --sev-major-line: oklch(0.72 0.16 52 / 0.85);
+  --sev-minor: oklch(0.825 0.135 92);
+  --sev-minor-text: oklch(0.86 0.12 95);
+  --sev-minor-soft: oklch(0.825 0.135 92 / 0.15);
+  --sev-minor-line: oklch(0.82 0.14 92 / 0.8);
+  --sev-suggest: oklch(0.72 0.115 215);
+  --sev-suggest-text: oklch(0.8 0.1 215);
+  --sev-suggest-soft: oklch(0.72 0.115 215 / 0.14);
+  --sev-suggest-line: oklch(0.72 0.12 215 / 0.75);
 
   /* ---- Functional ---- */
-  --positive:      oklch(0.72 0.14 158);
-  --positive-text: oklch(0.80 0.12 158);
+  --positive: oklch(0.72 0.14 158);
+  --positive-text: oklch(0.8 0.12 158);
   --positive-soft: oklch(0.72 0.14 158 / 0.16);
   --positive-line: oklch(0.72 0.14 158 / 0.4);
-  --warning:       oklch(0.78 0.14 78);
-  --danger:        oklch(0.64 0.20 22);
+  --warning: oklch(0.78 0.14 78);
+  --danger: oklch(0.64 0.2 22);
 
   /* ---- Overlay ---- */
-  --scrim: oklch(0.10 0.008 256 / 0.66);
+  --scrim: oklch(0.1 0.008 256 / 0.66);
 
   /* engine identity */
   --engine-openai: oklch(0.74 0.12 168);
-  --engine-rust:   oklch(0.74 0.13 38);
+  --engine-rust: oklch(0.74 0.13 38);
 
   /* ---- Spacing ---- */
-  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
-  --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-10: 40px;
-  --sp-12: 48px; --sp-16: 64px; --sp-20: 80px;
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+  --sp-16: 64px;
+  --sp-20: 80px;
 
   /* ---- Radii ---- */
-  --r-xs: 4px; --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-xl: 16px; --r-full: 999px;
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+  --r-full: 999px;
 
   /* ---- Shadows ---- */
   --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.4);
@@ -123,51 +136,51 @@
   /* ---- 二段階ゴール 2軸スコア (REQ-111) ----
      Stage I 明瞭性 = teal / Stage II ネイティブ性 = 既存 accent 青。
      「ネイティブ性」が北極星なのでブランド色を継承する。 */
-  --axis-intel:        oklch(0.66 0.115 190);
-  --axis-intel-text:   oklch(0.78 0.105 190);
-  --axis-intel-soft:   oklch(0.66 0.115 190 / 0.16);
-  --axis-intel-line:   oklch(0.70 0.11 190 / 0.6);
-  --axis-native:       var(--accent);
-  --axis-native-text:  var(--accent-text);
-  --axis-native-soft:  var(--accent-soft);
-  --axis-native-line:  var(--accent-line);
+  --axis-intel: oklch(0.66 0.115 190);
+  --axis-intel-text: oklch(0.78 0.105 190);
+  --axis-intel-soft: oklch(0.66 0.115 190 / 0.16);
+  --axis-intel-line: oklch(0.7 0.11 190 / 0.6);
+  --axis-native: var(--accent);
+  --axis-native-text: var(--accent-text);
+  --axis-native-soft: var(--accent-soft);
+  --axis-native-line: var(--accent-line);
 
   /* ---- 信頼度 (REQ-108) — 中立なメタ情報。彩度を持たせない ---- */
-  --conf-high: oklch(0.80 0.010 256);
-  --conf-mid:  oklch(0.635 0.012 256);
-  --conf-low:  oklch(0.49 0.012 256);
+  --conf-high: oklch(0.8 0.01 256);
+  --conf-mid: oklch(0.635 0.012 256);
+  --conf-low: oklch(0.49 0.012 256);
 
   /* ---- GOP ヒートマップ 5段階 (REQ-107) — 良→悪 ---- */
-  --heat-0: oklch(0.72 0.14 158 / 0.14);   /* 問題なし */
+  --heat-0: oklch(0.72 0.14 158 / 0.14); /* 問題なし */
   --heat-1: oklch(0.825 0.135 92 / 0.18);
   --heat-2: oklch(0.825 0.135 92 / 0.42);
   --heat-3: oklch(0.705 0.165 52 / 0.52);
-  --heat-4: oklch(0.645 0.205 22 / 0.62);  /* GOP < -12 */
+  --heat-4: oklch(0.645 0.205 22 / 0.62); /* GOP < -12 */
 
   /* ---- 韻律チャート (REQ-114 / 126) ----
      お手本=青(ブランド) / 学習者=琥珀。線種でも冗長符号化する。 */
-  --chart-ref:          oklch(0.62 0.14 264);
-  --chart-ref-soft:     oklch(0.62 0.14 264 / 0.18);
-  --chart-learner:      oklch(0.76 0.125 62);
+  --chart-ref: oklch(0.62 0.14 264);
+  --chart-ref-soft: oklch(0.62 0.14 264 / 0.18);
+  --chart-learner: oklch(0.76 0.125 62);
   --chart-learner-soft: oklch(0.76 0.125 62 / 0.18);
-  --chart-grid:         oklch(0.27 0.013 256);
-  --chart-axis:         oklch(0.40 0.014 256);
+  --chart-grid: oklch(0.27 0.013 256);
+  --chart-axis: oklch(0.4 0.014 256);
 
   /* ---- 音源アイデンティティ (REQ-124 / 128) ---- */
-  --src-model:  var(--chart-ref);      /* お手本 TTS */
-  --src-self:   var(--chart-learner);  /* 自分の録音 */
+  --src-model: var(--chart-ref); /* お手本 TTS */
+  --src-self: var(--chart-learner); /* 自分の録音 */
   --src-golden: oklch(0.72 0.115 215); /* Golden speaker (自声変換) */
 
   /* ---- 訓練 (REQ-122/123) — 唯一、達成感の演出を許容する領域 ---- */
-  --train-correct:      var(--positive);
+  --train-correct: var(--positive);
   --train-correct-soft: oklch(0.72 0.14 158 / 0.18);
   --train-correct-glow: 0 0 24px oklch(0.72 0.14 158 / 0.25);
-  --train-wrong:        var(--sev-critical);
-  --train-wrong-soft:   var(--sev-critical-soft);
+  --train-wrong: var(--sev-critical);
+  --train-wrong-soft: var(--sev-critical-soft);
 
   /* ---- v2 で追加した余白・寸法 ---- */
-  --panel-w: 460px;          /* 詳細パネル幅 (v1 から明文化) */
-  --choice-min-h: 88px;      /* HVPT 選択肢の最小高 (誤タップ防止) */
+  --panel-w: 460px; /* 詳細パネル幅 (v1 から明文化) */
+  --choice-min-h: 88px; /* HVPT 選択肢の最小高 (誤タップ防止) */
 }
 
 /* ============================================================
@@ -187,85 +200,100 @@
      floor = 常に正しい確定情報（静的図解・カタログ手順・実測GOP）。
      enrichment = 推定（AAI・音響偏差・LLM言い換え）。重大度色を侵さない
      紫系 hue 312 で、破線で「推定」を冗長符号化する。 */
-  --floor:         oklch(0.80 0.010 256);          /* 確定情報 = 無彩色（メタ） */
-  --floor-soft:    oklch(0.345 0.016 256);
-  --enrich:        oklch(0.66 0.14 312);           /* 推定アクセント（紫・重大度外） */
-  --enrich-text:   oklch(0.78 0.12 312);
-  --enrich-soft:   oklch(0.66 0.14 312 / 0.16);
-  --enrich-line:   oklch(0.70 0.13 312 / 0.6);
+  --floor: oklch(0.8 0.01 256); /* 確定情報 = 無彩色（メタ） */
+  --floor-soft: oklch(0.345 0.016 256);
+  --enrich: oklch(0.66 0.14 312); /* 推定アクセント（紫・重大度外） */
+  --enrich-text: oklch(0.78 0.12 312);
+  --enrich-soft: oklch(0.66 0.14 312 / 0.16);
+  --enrich-line: oklch(0.7 0.13 312 / 0.6);
 
   /* ---- 音響音声学診断 acousticEvidence (ADR-018) ----
      方向ラベルは「偏差の方向」であって重大度ではない。測定値=teal系
      （明瞭性軸 axis-intel と同系）、目標ノルム=ブランド青（chart-ref）。
      減点しない付帯証拠なので無彩〜teal に留め、赤系は使わない。 */
-  --measured:        var(--axis-intel);            /* 学習者の実測フォルマント */
-  --measured-text:   var(--axis-intel-text);
-  --measured-soft:   var(--axis-intel-soft);
-  --target-norm:     var(--chart-ref);             /* Hillenbrand 目標ノルム */
-  --target-norm-soft:var(--chart-ref-soft);
-  --dir-off:         var(--sev-major);             /* 方向ずれの矢印（±1SD超）= major 系 */
-  --dir-off-text:    var(--sev-major-text);
-  --dir-ok:          var(--positive);              /* 範囲内 = ok */
-  --dir-ok-text:     var(--positive-text);
+  --measured: var(--axis-intel); /* 学習者の実測フォルマント */
+  --measured-text: var(--axis-intel-text);
+  --measured-soft: var(--axis-intel-soft);
+  --target-norm: var(--chart-ref); /* Hillenbrand 目標ノルム */
+  --target-norm-soft: var(--chart-ref-soft);
+  --dir-off: var(--sev-major); /* 方向ずれの矢印（±1SD超）= major 系 */
+  --dir-off-text: var(--sev-major-text);
+  --dir-ok: var(--positive); /* 範囲内 = ok */
+  --dir-ok-text: var(--positive-text);
 
   /* ---- AAI 調音逆推定 EMA (ADR-019) ----
      舌先 / 舌背 / 唇開き の3点。推定なので enrichment 系。 */
-  --ema-tongue:   var(--enrich);
-  --ema-lip:      oklch(0.74 0.115 330);
-  --ema-track:    var(--enrich-line);
-  --aai-elig-ok:  var(--positive);                 /* displayEligibility ≥ 0.55 */
+  --ema-tongue: var(--enrich);
+  --ema-lip: oklch(0.74 0.115 330);
+  --ema-track: var(--enrich-line);
+  --aai-elig-ok: var(--positive); /* displayEligibility ≥ 0.55 */
   --aai-elig-low: var(--text-faint);
 
   /* ---- GOP デルタ / 改善計測 (ADR-022) ----
      deltaSignal: improved=positive / regressed=critical / unchanged=neutral。
      boundarySignal: crossedMinor/Major は重大度ランプを脱する方向。 */
-  --delta-improved:      var(--positive);
+  --delta-improved: var(--positive);
   --delta-improved-text: var(--positive-text);
   --delta-improved-soft: var(--positive-soft);
-  --delta-regressed:     var(--sev-critical);
-  --delta-regressed-text:var(--sev-critical-text);
-  --delta-regressed-soft:var(--sev-critical-soft);
-  --delta-flat:          var(--text-faint);
+  --delta-regressed: var(--sev-critical);
+  --delta-regressed-text: var(--sev-critical-text);
+  --delta-regressed-soft: var(--sev-critical-soft);
+  --delta-flat: var(--text-faint);
 
   /* ---- 録音中 音量メーター (ADR-016) ----
      ピークホール残光 + 「音量小」ラベルは持続低下(500ms)でのみ点灯。
      ゲート整合: -36 dBFS = LOW_VOLUME_DISPLAY_THRESHOLD 41%。 */
-  --vu-fill:       var(--positive);
-  --vu-fill-mid:   var(--axis-intel);
-  --vu-peak:       var(--text-primary);            /* ピークホール残光ライン */
-  --vu-low:        var(--sev-minor);               /* 音量小ゾーン */
-  --vu-gate:       var(--sev-critical-line);       /* -36 dBFS ゲート線 */
-  --vu-track:      var(--surface-3);
+  --vu-fill: var(--positive);
+  --vu-fill-mid: var(--axis-intel);
+  --vu-peak: var(--text-primary); /* ピークホール残光ライン */
+  --vu-low: var(--sev-minor); /* 音量小ゾーン */
+  --vu-gate: var(--sev-critical-line); /* -36 dBFS ゲート線 */
+  --vu-track: var(--surface-3);
 
   /* ---- 録音品質ステート (ADR-014/015) ----
      low_quality=再録音(critical系) / partial=部分成功(cloud落ち, suggest系)。 */
-  --q-rerecord:      var(--sev-critical);
+  --q-rerecord: var(--sev-critical);
   --q-rerecord-text: var(--sev-critical-text);
   --q-rerecord-soft: var(--sev-critical-soft);
-  --q-partial:       var(--sev-suggest);
-  --q-partial-text:  var(--sev-suggest-text);
-  --q-partial-soft:  var(--sev-suggest-soft);
+  --q-partial: var(--sev-suggest);
+  --q-partial-text: var(--sev-suggest-text);
+  --q-partial-soft: var(--sev-suggest-soft);
 
   /* ---- LLM コーチング provider 同一性 (ADR-021) ----
      claude-code(subscription) / ollama(local) / rule-based(fallback)。
      provider は「文章の出所」メタ。enrichment 系で、rule-based=無彩。 */
-  --llm-claude:    var(--enrich);
-  --llm-ollama:    oklch(0.70 0.12 200);
-  --llm-rule:      var(--floor);                   /* 決定論 fallback = 確定床 */
+  --llm-claude: var(--enrich);
+  --llm-ollama: oklch(0.7 0.12 200);
+  --llm-rule: var(--floor); /* 決定論 fallback = 確定床 */
 
   /* ---- ADR ステータス ---- */
-  --adr-accepted:  var(--positive);
-  --adr-proposed:  var(--sev-suggest);
+  --adr-accepted: var(--positive);
+  --adr-proposed: var(--sev-suggest);
 
   /* ---- v3 寸法 ---- */
-  --sagittal-size: 264px;       /* 矢状断面図の基準辺 */
+  --sagittal-size: 264px; /* 矢状断面図の基準辺 */
 }
 
 /* ---- Resets / base ---- */
-*, *::before, *::after { box-sizing: border-box; }
-* { padding: 0; margin: 0; }
-html { -webkit-text-size-adjust: 100%; height: 100%; color-scheme: dark; }
-html, body { max-width: 100vw; overflow-x: hidden; }
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+* {
+  padding: 0;
+  margin: 0;
+}
+html {
+  -webkit-text-size-adjust: 100%;
+  height: 100%;
+  color-scheme: dark;
+}
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
 body {
   min-height: 100%;
   background: var(--bg-base);
@@ -276,5 +304,10 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
-a { color: inherit; text-decoration: none; }
-::selection { background: var(--accent-soft); }
+a {
+  color: inherit;
+  text-decoration: none;
+}
+::selection {
+  background: var(--accent-soft);
+}

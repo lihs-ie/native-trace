@@ -16,11 +16,13 @@ const MAX_RAW_BODY_BYTES = 1024 * 1024; // 1 MB
  * JSON オブジェクトを StoredRawEngineResponse に変換する。
  * サイズが 1MB を超える場合は切り詰め、truncated: true を設定する。
  */
-export const buildStoredRawEngineResponse = (input: Readonly<{
-  provider: RawEngineResponseProvider;
-  capturedAt: Instant;
-  responseBody: unknown;
-}>): StoredRawEngineResponse => {
+export const buildStoredRawEngineResponse = (
+  input: Readonly<{
+    provider: RawEngineResponseProvider;
+    capturedAt: Instant;
+    responseBody: unknown;
+  }>,
+): StoredRawEngineResponse => {
   const bodyString = JSON.stringify(input.responseBody);
   const originalSizeBytes = Buffer.byteLength(bodyString, "utf8");
 

@@ -46,18 +46,12 @@
       "indexes": {
         "idx_ab_usage_logs_learner_played": {
           "name": "idx_ab_usage_logs_learner_played",
-          "columns": [
-            "learner",
-            "played_at"
-          ],
+          "columns": ["learner", "played_at"],
           "isUnique": false
         },
         "idx_ab_usage_logs_source_played": {
           "name": "idx_ab_usage_logs_source_played",
-          "columns": [
-            "source",
-            "played_at"
-          ],
+          "columns": ["source", "played_at"],
           "isUnique": false
         }
       },
@@ -256,27 +250,17 @@
         },
         "idx_analysis_jobs_run_engine": {
           "name": "idx_analysis_jobs_run_engine",
-          "columns": [
-            "analysis_run",
-            "engine"
-          ],
+          "columns": ["analysis_run", "engine"],
           "isUnique": false
         },
         "idx_analysis_jobs_run_status": {
           "name": "idx_analysis_jobs_run_status",
-          "columns": [
-            "analysis_run",
-            "deleted_at",
-            "status"
-          ],
+          "columns": ["analysis_run", "deleted_at", "status"],
           "isUnique": false
         },
         "uq_analysis_jobs_run_engine": {
           "name": "uq_analysis_jobs_run_engine",
-          "columns": [
-            "analysis_run",
-            "engine"
-          ],
+          "columns": ["analysis_run", "engine"],
           "isUnique": true
         }
       },
@@ -285,12 +269,8 @@
           "name": "analysis_jobs_analysis_run_analysis_runs_identifier_fk",
           "tableFrom": "analysis_jobs",
           "tableTo": "analysis_runs",
-          "columnsFrom": [
-            "analysis_run"
-          ],
-          "columnsTo": [
-            "identifier"
-          ],
+          "columnsFrom": ["analysis_run"],
+          "columnsTo": ["identifier"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -405,20 +385,12 @@
       "indexes": {
         "idx_analysis_runs_recording_attempt_created": {
           "name": "idx_analysis_runs_recording_attempt_created",
-          "columns": [
-            "recording_attempt",
-            "deleted_at",
-            "created_at"
-          ],
+          "columns": ["recording_attempt", "deleted_at", "created_at"],
           "isUnique": false
         },
         "idx_analysis_runs_status": {
           "name": "idx_analysis_runs_status",
-          "columns": [
-            "status",
-            "deleted_at",
-            "updated_at"
-          ],
+          "columns": ["status", "deleted_at", "updated_at"],
           "isUnique": false
         }
       },
@@ -427,12 +399,8 @@
           "name": "analysis_runs_recording_attempt_recording_attempts_identifier_fk",
           "tableFrom": "analysis_runs",
           "tableTo": "recording_attempts",
-          "columnsFrom": [
-            "recording_attempt"
-          ],
-          "columnsTo": [
-            "identifier"
-          ],
+          "columnsFrom": ["recording_attempt"],
+          "columnsTo": ["identifier"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -555,26 +523,17 @@
       "indexes": {
         "idx_assessment_results_analysis_job": {
           "name": "idx_assessment_results_analysis_job",
-          "columns": [
-            "analysis_job",
-            "deleted_at"
-          ],
+          "columns": ["analysis_job", "deleted_at"],
           "isUnique": false
         },
         "idx_assessment_results_scores": {
           "name": "idx_assessment_results_scores",
-          "columns": [
-            "deleted_at",
-            "created_at",
-            "overall_score"
-          ],
+          "columns": ["deleted_at", "created_at", "overall_score"],
           "isUnique": false
         },
         "uq_assessment_results_analysis_job": {
           "name": "uq_assessment_results_analysis_job",
-          "columns": [
-            "analysis_job"
-          ],
+          "columns": ["analysis_job"],
           "isUnique": true
         }
       },
@@ -583,12 +542,8 @@
           "name": "assessment_results_analysis_job_analysis_jobs_identifier_fk",
           "tableFrom": "assessment_results",
           "tableTo": "analysis_jobs",
-          "columnsFrom": [
-            "analysis_job"
-          ],
-          "columnsTo": [
-            "identifier"
-          ],
+          "columnsFrom": ["analysis_job"],
+          "columnsTo": ["identifier"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -746,32 +701,22 @@
       "indexes": {
         "idx_audio_files_recording_attempt": {
           "name": "idx_audio_files_recording_attempt",
-          "columns": [
-            "recording_attempt"
-          ],
+          "columns": ["recording_attempt"],
           "isUnique": false
         },
         "idx_audio_files_delete_status": {
           "name": "idx_audio_files_delete_status",
-          "columns": [
-            "status",
-            "deleted_at",
-            "updated_at"
-          ],
+          "columns": ["status", "deleted_at", "updated_at"],
           "isUnique": false
         },
         "uq_audio_files_recording_attempt": {
           "name": "uq_audio_files_recording_attempt",
-          "columns": [
-            "recording_attempt"
-          ],
+          "columns": ["recording_attempt"],
           "isUnique": true
         },
         "uq_audio_files_storage_key": {
           "name": "uq_audio_files_storage_key",
-          "columns": [
-            "storage_key"
-          ],
+          "columns": ["storage_key"],
           "isUnique": true
         }
       },
@@ -780,12 +725,8 @@
           "name": "audio_files_recording_attempt_recording_attempts_identifier_fk",
           "tableFrom": "audio_files",
           "tableTo": "recording_attempts",
-          "columnsFrom": [
-            "recording_attempt"
-          ],
-          "columnsTo": [
-            "identifier"
-          ],
+          "columnsFrom": ["recording_attempt"],
+          "columnsTo": ["identifier"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -903,11 +844,7 @@
       "indexes": {
         "idx_diagnostic_sessions_learner_created": {
           "name": "idx_diagnostic_sessions_learner_created",
-          "columns": [
-            "learner",
-            "deleted_at",
-            "created_at"
-          ],
+          "columns": ["learner", "deleted_at", "created_at"],
           "isUnique": false
         }
       },
@@ -982,19 +919,12 @@
       "indexes": {
         "idx_finding_dismissals_assessment_result": {
           "name": "idx_finding_dismissals_assessment_result",
-          "columns": [
-            "assessment_result",
-            "undone_at"
-          ],
+          "columns": ["assessment_result", "undone_at"],
           "isUnique": false
         },
         "idx_finding_dismissals_finding": {
           "name": "idx_finding_dismissals_finding",
-          "columns": [
-            "assessment_result",
-            "finding_identifier",
-            "undone_at"
-          ],
+          "columns": ["assessment_result", "finding_identifier", "undone_at"],
           "isUnique": false
         }
       },
@@ -1003,12 +933,8 @@
           "name": "finding_dismissals_assessment_result_assessment_results_identifier_fk",
           "tableFrom": "finding_dismissals",
           "tableTo": "assessment_results",
-          "columnsFrom": [
-            "assessment_result"
-          ],
-          "columnsTo": [
-            "identifier"
-          ],
+          "columnsFrom": ["assessment_result"],
+          "columnsTo": ["identifier"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1110,11 +1036,7 @@
       "indexes": {
         "idx_hvpt_trials_training_session": {
           "name": "idx_hvpt_trials_training_session",
-          "columns": [
-            "training_session",
-            "deleted_at",
-            "presented_at"
-          ],
+          "columns": ["training_session", "deleted_at", "presented_at"],
           "isUnique": false
         }
       },
@@ -1123,12 +1045,8 @@
           "name": "hvpt_trials_training_session_training_sessions_identifier_fk",
           "tableFrom": "hvpt_trials",
           "tableTo": "training_sessions",
-          "columnsFrom": [
-            "training_session"
-          ],
-          "columnsTo": [
-            "identifier"
-          ],
+          "columnsFrom": ["training_session"],
+          "columnsTo": ["identifier"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1269,10 +1187,7 @@
       "indexes": {
         "idx_materials_active_updated": {
           "name": "idx_materials_active_updated",
-          "columns": [
-            "deleted_at",
-            "updated_at"
-          ],
+          "columns": ["deleted_at", "updated_at"],
           "isUnique": false
         }
       },
@@ -1388,20 +1303,12 @@
       "indexes": {
         "idx_progress_snapshots_learner_captured": {
           "name": "idx_progress_snapshots_learner_captured",
-          "columns": [
-            "learner",
-            "deleted_at",
-            "captured_at"
-          ],
+          "columns": ["learner", "deleted_at", "captured_at"],
           "isUnique": false
         },
         "idx_progress_snapshots_section_captured": {
           "name": "idx_progress_snapshots_section_captured",
-          "columns": [
-            "section",
-            "deleted_at",
-            "captured_at"
-          ],
+          "columns": ["section", "deleted_at", "captured_at"],
           "isUnique": false
         }
       },
@@ -1410,12 +1317,8 @@
           "name": "progress_snapshots_source_assessment_assessment_results_identifier_fk",
           "tableFrom": "progress_snapshots",
           "tableTo": "assessment_results",
-          "columnsFrom": [
-            "source_assessment"
-          ],
-          "columnsTo": [
-            "identifier"
-          ],
+          "columnsFrom": ["source_assessment"],
+          "columnsTo": ["identifier"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1547,19 +1450,12 @@
       "indexes": {
         "idx_recording_attempts_section_recorded": {
           "name": "idx_recording_attempts_section_recorded",
-          "columns": [
-            "section",
-            "deleted_at",
-            "created_at"
-          ],
+          "columns": ["section", "deleted_at", "created_at"],
           "isUnique": false
         },
         "idx_recording_attempts_status": {
           "name": "idx_recording_attempts_status",
-          "columns": [
-            "status",
-            "deleted_at"
-          ],
+          "columns": ["status", "deleted_at"],
           "isUnique": false
         }
       },
@@ -1568,12 +1464,8 @@
           "name": "recording_attempts_section_sections_identifier_fk",
           "tableFrom": "recording_attempts",
           "tableTo": "sections",
-          "columnsFrom": [
-            "section"
-          ],
-          "columnsTo": [
-            "identifier"
-          ],
+          "columnsFrom": ["section"],
+          "columnsTo": ["identifier"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1667,11 +1559,7 @@
       "indexes": {
         "idx_section_series_material_order": {
           "name": "idx_section_series_material_order",
-          "columns": [
-            "material",
-            "deleted_at",
-            "display_order"
-          ],
+          "columns": ["material", "deleted_at", "display_order"],
           "isUnique": false
         }
       },
@@ -1680,12 +1568,8 @@
           "name": "section_series_material_materials_identifier_fk",
           "tableFrom": "section_series",
           "tableTo": "materials",
-          "columnsFrom": [
-            "material"
-          ],
-          "columnsTo": [
-            "identifier"
-          ],
+          "columnsFrom": ["material"],
+          "columnsTo": ["identifier"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1759,27 +1643,17 @@
       "indexes": {
         "idx_sections_latest": {
           "name": "idx_sections_latest",
-          "columns": [
-            "section_series",
-            "deleted_at",
-            "version_number"
-          ],
+          "columns": ["section_series", "deleted_at", "version_number"],
           "isUnique": false
         },
         "idx_sections_body_hash": {
           "name": "idx_sections_body_hash",
-          "columns": [
-            "section_series",
-            "body_text_hash"
-          ],
+          "columns": ["section_series", "body_text_hash"],
           "isUnique": false
         },
         "uq_sections_series_version": {
           "name": "uq_sections_series_version",
-          "columns": [
-            "section_series",
-            "version_number"
-          ],
+          "columns": ["section_series", "version_number"],
           "isUnique": true
         }
       },
@@ -1788,12 +1662,8 @@
           "name": "sections_section_series_section_series_identifier_fk",
           "tableFrom": "sections",
           "tableTo": "section_series",
-          "columnsFrom": [
-            "section_series"
-          ],
-          "columnsTo": [
-            "identifier"
-          ],
+          "columnsFrom": ["section_series"],
+          "columnsTo": ["identifier"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -1888,28 +1758,17 @@
       "indexes": {
         "idx_spacing_schedules_due": {
           "name": "idx_spacing_schedules_due",
-          "columns": [
-            "state",
-            "deleted_at",
-            "next_presentation_at"
-          ],
+          "columns": ["state", "deleted_at", "next_presentation_at"],
           "isUnique": false
         },
         "idx_spacing_schedules_learner_contrast": {
           "name": "idx_spacing_schedules_learner_contrast",
-          "columns": [
-            "learner",
-            "contrast",
-            "deleted_at"
-          ],
+          "columns": ["learner", "contrast", "deleted_at"],
           "isUnique": false
         },
         "uq_spacing_schedules_learner_contrast": {
           "name": "uq_spacing_schedules_learner_contrast",
-          "columns": [
-            "learner",
-            "contrast"
-          ],
+          "columns": ["learner", "contrast"],
           "isUnique": true
         }
       },
@@ -1918,12 +1777,8 @@
           "name": "spacing_schedules_focus_sound_weakness_profiles_identifier_fk",
           "tableFrom": "spacing_schedules",
           "tableTo": "weakness_profiles",
-          "columnsFrom": [
-            "focus_sound"
-          ],
-          "columnsTo": [
-            "identifier"
-          ],
+          "columnsFrom": ["focus_sound"],
+          "columnsTo": ["identifier"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -2039,21 +1894,12 @@
       "indexes": {
         "idx_training_sessions_learner_started": {
           "name": "idx_training_sessions_learner_started",
-          "columns": [
-            "learner",
-            "deleted_at",
-            "started_at"
-          ],
+          "columns": ["learner", "deleted_at", "started_at"],
           "isUnique": false
         },
         "idx_training_sessions_contrast_started": {
           "name": "idx_training_sessions_contrast_started",
-          "columns": [
-            "learner",
-            "contrast",
-            "deleted_at",
-            "started_at"
-          ],
+          "columns": ["learner", "contrast", "deleted_at", "started_at"],
           "isUnique": false
         }
       },
@@ -2150,17 +1996,12 @@
       "indexes": {
         "idx_weakness_profiles_learner": {
           "name": "idx_weakness_profiles_learner",
-          "columns": [
-            "learner",
-            "deleted_at"
-          ],
+          "columns": ["learner", "deleted_at"],
           "isUnique": false
         },
         "uq_weakness_profiles_learner": {
           "name": "uq_weakness_profiles_learner",
-          "columns": [
-            "learner"
-          ],
+          "columns": ["learner"],
           "isUnique": true
         }
       },
@@ -2169,12 +2010,8 @@
           "name": "weakness_profiles_diagnostic_session_diagnostic_sessions_identifier_fk",
           "tableFrom": "weakness_profiles",
           "tableTo": "diagnostic_sessions",
-          "columnsFrom": [
-            "diagnostic_session"
-          ],
-          "columnsTo": [
-            "identifier"
-          ],
+          "columnsFrom": ["diagnostic_session"],
+          "columnsTo": ["identifier"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }

@@ -104,8 +104,7 @@ export const F0Chart = ({ prosody }: F0ChartProps) => {
 
   const learnerPathData = buildPath(learnerTimesMs, learnerValuesHz);
 
-  const hasReference =
-    referenceF0Contour !== null && referenceF0Contour.valuesHz.length > 0;
+  const hasReference = referenceF0Contour !== null && referenceF0Contour.valuesHz.length > 0;
 
   const referencePathData = hasReference
     ? buildPath(referenceF0Contour.timesMs, referenceF0Contour.valuesHz)
@@ -160,10 +159,28 @@ export const F0Chart = ({ prosody }: F0ChartProps) => {
         aria-label="F0 輪郭グラフ"
       >
         {/* grid lines */}
-        <line className="f0-grid" x1={PADDING_X} y1={SVG_HEIGHT / 2} x2={SVG_WIDTH - PADDING_X} y2={SVG_HEIGHT / 2} />
+        <line
+          className="f0-grid"
+          x1={PADDING_X}
+          y1={SVG_HEIGHT / 2}
+          x2={SVG_WIDTH - PADDING_X}
+          y2={SVG_HEIGHT / 2}
+        />
         {/* axis */}
-        <line className="f0-axis" x1={PADDING_X} y1={PADDING_Y} x2={PADDING_X} y2={SVG_HEIGHT - PADDING_Y} />
-        <line className="f0-axis" x1={PADDING_X} y1={SVG_HEIGHT - PADDING_Y} x2={SVG_WIDTH - PADDING_X} y2={SVG_HEIGHT - PADDING_Y} />
+        <line
+          className="f0-axis"
+          x1={PADDING_X}
+          y1={PADDING_Y}
+          x2={PADDING_X}
+          y2={SVG_HEIGHT - PADDING_Y}
+        />
+        <line
+          className="f0-axis"
+          x1={PADDING_X}
+          y1={SVG_HEIGHT - PADDING_Y}
+          x2={SVG_WIDTH - PADDING_X}
+          y2={SVG_HEIGHT - PADDING_Y}
+        />
         {/* reference F0 path (お手本 — blind モード時は非表示) */}
         {hasReference && !isBlind && referencePathData ? (
           <path className="f0-ref" d={referencePathData} />

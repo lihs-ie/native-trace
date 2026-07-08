@@ -46,10 +46,7 @@ export async function GET(_request: NextRequest, context: RouteContext): Promise
   if (result.isErr()) {
     const error = result.error;
     // viewDiagnosticResult が pending エラーを返す場合は pending 状態を返す
-    if (
-      error.type === "validationFailed" &&
-      error.reason.includes("pending")
-    ) {
+    if (error.type === "validationFailed" && error.reason.includes("pending")) {
       const pendingDto: DiagnosticSessionStatusDto = {
         identifier: diagnosticSessionIdentifier,
         status: "pending",

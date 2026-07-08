@@ -32,7 +32,5 @@ export type ProgressSnapshotRepository = Readonly<{
    * find — 指定識別子の進捗スナップショットを取得する。
    * 見つからない場合は notFound エラーを返す。
    */
-  find: (
-    identifier: ProgressSnapshotIdentifier,
-  ) => ResultAsync<ProgressSnapshot, DomainError>;
+  find: (identifier: ProgressSnapshotIdentifier) => ResultAsync<ProgressSnapshot, DomainError>;
 }>;

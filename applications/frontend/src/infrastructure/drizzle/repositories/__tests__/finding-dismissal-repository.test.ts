@@ -88,9 +88,9 @@ describe("FindingDismissalRepository (real sqlite round-trip)", () => {
       dismissedAt: 1_781_000_000_000,
       reason: null,
     });
-    expect((await repository.findActiveDismissedIdentifiers(resultId))._unsafeUnwrap().has("FIND002")).toBe(
-      true,
-    );
+    expect(
+      (await repository.findActiveDismissedIdentifiers(resultId))._unsafeUnwrap().has("FIND002"),
+    ).toBe(true);
 
     const restored = await repository.restore(resultId, "FIND002", 1_781_000_001_000);
     expect(restored.isOk()).toBe(true);

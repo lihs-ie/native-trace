@@ -93,9 +93,7 @@ export const DetailPanel = ({ finding, onClose, onPlaySegment }: DetailPanelProp
           style={{
             fontSize: "var(--text-2xs)",
             color:
-              finding.scoreImpact === 0
-                ? "var(--text-faint)"
-                : `var(--sev-${severityClass}-text)`,
+              finding.scoreImpact === 0 ? "var(--text-faint)" : `var(--sev-${severityClass}-text)`,
           }}
         >
           {finding.scoreImpact === 0

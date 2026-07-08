@@ -81,37 +81,35 @@ export const createAnalyzerStimulusClient = (
         type: "persistenceFailed",
         reason: `analyzer /v1/stimuli への接続に失敗しました: ${String(fetchError)}`,
       }),
-    ).andThen(
-      (outcome): ResultAsync<ReadonlyArray<StimulusRecord>, DomainError> => {
-        if (outcome.kind === "not_found") {
-          return errAsync({
-            type: "notFound" as const,
-            resource: "Stimulus",
-            identifier: outcome.contrast,
-          });
-        }
+    ).andThen((outcome): ResultAsync<ReadonlyArray<StimulusRecord>, DomainError> => {
+      if (outcome.kind === "not_found") {
+        return errAsync({
+          type: "notFound" as const,
+          resource: "Stimulus",
+          identifier: outcome.contrast,
+        });
+      }
 
-        if (outcome.kind === "error") {
-          return errAsync({
-            type: "persistenceFailed" as const,
-            reason: `analyzer /v1/stimuli がエラーを返しました (status: ${outcome.status})`,
-          });
-        }
+      if (outcome.kind === "error") {
+        return errAsync({
+          type: "persistenceFailed" as const,
+          reason: `analyzer /v1/stimuli がエラーを返しました (status: ${outcome.status})`,
+        });
+      }
 
-        const stimuli: StimulusRecord[] = outcome.records.map((record) => ({
-          stimulusIdentifier: record.metadata.stimulusIdentifier,
-          contrast: record.metadata.contrast,
-          word: record.metadata.word,
-          speakerIdentifier: record.metadata.speakerIdentifier,
-          speakerSex: record.metadata.speakerSex,
-          context: record.metadata.context,
-          sourceCorpus: record.metadata.sourceCorpus,
-          licenseIdentifier: record.metadata.licenseIdentifier,
-          wavBase64: record.wavBase64,
-        }));
+      const stimuli: StimulusRecord[] = outcome.records.map((record) => ({
+        stimulusIdentifier: record.metadata.stimulusIdentifier,
+        contrast: record.metadata.contrast,
+        word: record.metadata.word,
+        speakerIdentifier: record.metadata.speakerIdentifier,
+        speakerSex: record.metadata.speakerSex,
+        context: record.metadata.context,
+        sourceCorpus: record.metadata.sourceCorpus,
+        licenseIdentifier: record.metadata.licenseIdentifier,
+        wavBase64: record.wavBase64,
+      }));
 
-        return okAsync(stimuli as ReadonlyArray<StimulusRecord>);
-      },
-    );
+      return okAsync(stimuli as ReadonlyArray<StimulusRecord>);
+    });
   },
 });

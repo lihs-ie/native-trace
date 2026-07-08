@@ -7,12 +7,7 @@
 import type { EngineFindingDto, EngineResultDto } from "./api-types";
 
 /** overlap 判定: startChar/endChar が重なるか（隣接 endChar==startChar は非重複）*/
-function rangesOverlap(
-  aStart: number,
-  aEnd: number,
-  bStart: number,
-  bEnd: number,
-): boolean {
+function rangesOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean {
   return aStart < bEnd && bStart < aEnd;
 }
 

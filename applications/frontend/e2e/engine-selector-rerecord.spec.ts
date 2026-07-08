@@ -17,10 +17,7 @@ test.use({
   permissions: ["microphone"],
 });
 
-test.skip(
-  ({ browserName }) => browserName !== "chromium",
-  "fake media is chromium-only",
-);
+test.skip(({ browserName }) => browserName !== "chromium", "fake media is chromium-only");
 
 const MATERIAL_ID = "M-test";
 const SECTION_ID = "S-test";
@@ -118,7 +115,5 @@ test("low_quality dock: OSS Worker 選択後に録音し直すと analysisMode �
   await stopButton.click();
 
   // POST の analysisMode が ossWorkerOnly であることを assert
-  await expect
-    .poll(() => capturedAnalysisMode, { timeout: 15_000 })
-    .toBe("ossWorkerOnly");
+  await expect.poll(() => capturedAnalysisMode, { timeout: 15_000 }).toBe("ossWorkerOnly");
 });

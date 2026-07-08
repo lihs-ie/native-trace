@@ -1,9 +1,5 @@
 import { type ResultAsync } from "neverthrow";
-import {
-  type Material,
-  type ActiveMaterial,
-  type MaterialIdentifier,
-} from "../../domain/material";
+import { type Material, type ActiveMaterial, type MaterialIdentifier } from "../../domain/material";
 import { type MaterialSearchCriteria } from "../../domain/criteria";
 import { type DomainError } from "../../domain/shared";
 

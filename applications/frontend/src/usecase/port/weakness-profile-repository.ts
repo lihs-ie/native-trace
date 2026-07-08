@@ -19,18 +19,14 @@ export type WeaknessProfileRepository = Readonly<{
    * find — 指定識別子の弱点プロファイルを取得する。
    * 見つからない場合は notFound エラーを返す。
    */
-  find: (
-    identifier: WeaknessProfileIdentifier,
-  ) => ResultAsync<WeaknessProfile, DomainError>;
+  find: (identifier: WeaknessProfileIdentifier) => ResultAsync<WeaknessProfile, DomainError>;
 
   /**
    * findByLearner — 指定学習者の弱点プロファイルを取得する。
    * 学習者ごと1プロファイル（uq_weakness_profiles_learner）。
    * 存在しない場合は null を返す（診断前は null）。
    */
-  findByLearner: (
-    learner: LearnerIdentifier,
-  ) => ResultAsync<WeaknessProfile | null, DomainError>;
+  findByLearner: (learner: LearnerIdentifier) => ResultAsync<WeaknessProfile | null, DomainError>;
 
   /**
    * persist — 弱点プロファイルを保存する（新規作成 / EWMA 更新の両方）。

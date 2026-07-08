@@ -87,9 +87,7 @@ test.describe("progress: 1 件", () => {
     await expect(page.locator(".cum-bar")).toBeVisible({ timeout: 10000 });
   });
 
-  test("1 件で .radar-poly--prev が存在しない + 前回比なし注記 (M-PG-5a)", async ({
-    page,
-  }) => {
+  test("1 件で .radar-poly--prev が存在しない + 前回比なし注記 (M-PG-5a)", async ({ page }) => {
     await page.goto("/progress");
     await expect(page.locator(".stage-track")).toBeVisible({ timeout: 15000 });
     expect(await page.locator(".radar-poly--prev").count()).toBe(0);

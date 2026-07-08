@@ -9,10 +9,7 @@ export const parseInput = <Schema extends z.ZodTypeAny>(
   const parsed = schema.safeParse(input);
   if (!parsed.success) {
     return err(
-      validationFailed(
-        "input",
-        parsed.error.errors.map((zodIssue) => zodIssue.message).join(", "),
-      ),
+      validationFailed("input", parsed.error.errors.map((zodIssue) => zodIssue.message).join(", ")),
     );
   }
   return ok(parsed.data);

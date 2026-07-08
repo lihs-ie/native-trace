@@ -72,8 +72,21 @@ const makeAssessmentResult = (): AssessmentResult => ({
   },
   summary: { overallCommentJa: "テスト", overallCommentEn: null },
   findings: [],
-  segments: [{ textRange: { startOffset: 0, endOffset: 10 }, audioRange: null, transcript: null, confidence: 0.9 }] as never,
-  metadata: { engineName: "oss_worker", engineVersion: "1.0", modelName: null, promptVersion: null, schemaVersion: "1" },
+  segments: [
+    {
+      textRange: { startOffset: 0, endOffset: 10 },
+      audioRange: null,
+      transcript: null,
+      confidence: 0.9,
+    },
+  ] as never,
+  metadata: {
+    engineName: "oss_worker",
+    engineVersion: "1.0",
+    modelName: null,
+    promptVersion: null,
+    schemaVersion: "1",
+  },
   tokenizerVersion: "v1" as never,
   raw: { data: {} },
   engineSnapshot: { type: "oss_worker", identifier: "w1", displayName: "worker", modelName: null },
@@ -175,9 +188,7 @@ describe("createViewDiagnosticResult", () => {
     expect(result.isErr()).toBe(true);
     if (result.isErr()) {
       expect(result.error.type).toBe("validationFailed");
-      expect(
-        "reason" in result.error && result.error.reason.includes("pending"),
-      ).toBe(true);
+      expect("reason" in result.error && result.error.reason.includes("pending")).toBe(true);
     }
   });
 

@@ -139,10 +139,10 @@ test.describe("diagnostic in-progress", () => {
       ([key, value]) => {
         sessionStorage.setItem(key, value);
       },
-      [
-        `diagnostic-session-${pendingIds.diagnosticSession}`,
-        JSON.stringify(sessionData),
-      ] as [string, string],
+      [`diagnostic-session-${pendingIds.diagnosticSession}`, JSON.stringify(sessionData)] as [
+        string,
+        string,
+      ],
     );
 
     await page.goto(`/diagnostic/${pendingIds.diagnosticSession}`);

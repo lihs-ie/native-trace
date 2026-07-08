@@ -4,10 +4,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "../../schema";
 import { type DrizzleDatabase } from "../../client";
 import { createDrizzleAnalysisJobRepository } from "../analysis-job-repository";
-import {
-  createAnalysisJobIdentifier,
-  createAnalysisJob,
-} from "../../../../domain/analysis-job";
+import { createAnalysisJobIdentifier, createAnalysisJob } from "../../../../domain/analysis-job";
 import { createAnalysisRunIdentifier } from "../../../../domain/analysis-run";
 
 const createTestDb = () => {
@@ -85,15 +82,19 @@ describe("DrizzleAnalysisJobRepository", () => {
     db = drizzle(sqlite, { schema }) as DrizzleDatabase;
 
     const now = new Date().toISOString();
-    sqlite.prepare(
-      `INSERT INTO recording_attempts (identifier, section, status, input_kind, created_at, updated_at)
+    sqlite
+      .prepare(
+        `INSERT INTO recording_attempts (identifier, section, status, input_kind, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run("REC001", "SEC001", "ready", "browser_recording", now, now);
+      )
+      .run("REC001", "SEC001", "ready", "browser_recording", now, now);
 
-    sqlite.prepare(
-      `INSERT INTO analysis_runs (identifier, recording_attempt, mode, status, created_at, updated_at)
+    sqlite
+      .prepare(
+        `INSERT INTO analysis_runs (identifier, recording_attempt, mode, status, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run("RUN001", "REC001", "cloud_only", "queued", now, now);
+      )
+      .run("RUN001", "REC001", "cloud_only", "queued", now, now);
   });
 
   afterEach(() => {

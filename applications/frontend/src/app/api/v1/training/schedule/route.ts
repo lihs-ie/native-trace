@@ -31,9 +31,8 @@ export async function GET(_request: NextRequest): Promise<Response> {
     });
   }
 
-  const schedulesResult = await container.repositories.spacingSchedule.findAllByLearner(
-    learnerIdentifier,
-  );
+  const schedulesResult =
+    await container.repositories.spacingSchedule.findAllByLearner(learnerIdentifier);
   if (schedulesResult.isErr()) {
     return domainErrorToResponse(schedulesResult.error);
   }
@@ -43,8 +42,7 @@ export async function GET(_request: NextRequest): Promise<Response> {
     return domainErrorToResponse(progressResult.error);
   }
 
-  const cumulativeTrainingMinutes =
-    progressResult.value.now?.cumulativeTrainingMinutes ?? 0;
+  const cumulativeTrainingMinutes = progressResult.value.now?.cumulativeTrainingMinutes ?? 0;
 
   const scheduleDtos: SpacingScheduleDto[] = schedulesResult.value.map((schedule) => ({
     identifier: String(schedule.identifier),

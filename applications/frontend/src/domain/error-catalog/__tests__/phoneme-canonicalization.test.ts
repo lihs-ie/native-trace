@@ -41,28 +41,28 @@ describe("PHONEME_ALIASES", () => {
 });
 
 describe("canonicalizePhoneme — M-HOW-5 acceptance (bare fixtures only)", () => {
-  it('bare ɾ → ɾ (no-op, already canonical)', () => {
+  it("bare ɾ → ɾ (no-op, already canonical)", () => {
     expect(canonicalizePhoneme("ɾ")).toBe("ɾ");
   });
 
-  it('[ɾ] → ɾ (bracket removal, then no alias)', () => {
+  it("[ɾ] → ɾ (bracket removal, then no alias)", () => {
     // "[ɾ]" stripped to "ɾ", no alias → stays "ɾ"
     expect(canonicalizePhoneme("[ɾ]")).toBe("ɾ");
   });
 
-  it('ɹ → ɾ (alias: retroflex approximant → flap)', () => {
+  it("ɹ → ɾ (alias: retroflex approximant → flap)", () => {
     expect(canonicalizePhoneme("ɹ")).toBe("ɾ");
   });
 
-  it('r → ɾ (alias: latin r → flap)', () => {
+  it("r → ɾ (alias: latin r → flap)", () => {
     expect(canonicalizePhoneme("r")).toBe("ɾ");
   });
 
-  it('l is not aliased', () => {
+  it("l is not aliased", () => {
     expect(canonicalizePhoneme("l")).toBe("l");
   });
 
-  it('/l/ slash-form → l', () => {
+  it("/l/ slash-form → l", () => {
     expect(canonicalizePhoneme("/l/")).toBe("l");
   });
 });

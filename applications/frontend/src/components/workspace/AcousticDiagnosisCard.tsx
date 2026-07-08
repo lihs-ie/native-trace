@@ -22,10 +22,7 @@ const clamp = (value: number, min: number, max: number): number =>
  * left% (F2 軸) = clamp((F2Hz − 700) / (2700 − 700), 0, 1) × 100
  * top%  (F1 軸) = clamp((F1Hz − 200) / (1000 − 200), 0, 1) × 100
  */
-const toVowelPlotCoords = (
-  f1Hz: number,
-  f2Hz: number,
-): { left: number; top: number } => ({
+const toVowelPlotCoords = (f1Hz: number, f2Hz: number): { left: number; top: number } => ({
   left: clamp((f2Hz - 700) / (2700 - 700), 0, 1) * 100,
   top: clamp((f1Hz - 200) / (1000 - 200), 0, 1) * 100,
 });
@@ -65,8 +62,7 @@ const toVectorStyle = (
  * M-ADVL-8: スペクトル重心 Hz バーの left% 換算。
  * レンジ [1000, 8000]。left% = clamp((Hz − 1000) / 7000, 0, 1) × 100
  */
-const spectralCentroidToLeftPercent = (hz: number): number =>
-  clamp((hz - 1000) / 7000, 0, 1) * 100;
+const spectralCentroidToLeftPercent = (hz: number): number => clamp((hz - 1000) / 7000, 0, 1) * 100;
 
 /**
  * M-ADVL-8: tense 長さ比バーの left% 換算。
@@ -130,11 +126,7 @@ const buildDirChips = (ae: AcousticEvidenceDto): DirChipData[] => {
   if (ae.rhoticity != null) {
     const isOk = ae.rhoticity === "ok";
     const arrow =
-      ae.rhoticity === "insufficient"
-        ? "↓"
-        : ae.rhoticity === "overRetroflex"
-          ? "↑"
-          : "○";
+      ae.rhoticity === "insufficient" ? "↓" : ae.rhoticity === "overRetroflex" ? "↑" : "○";
     const labelJa =
       ae.rhoticity === "insufficient"
         ? "r音性不足"
@@ -165,8 +157,7 @@ const buildDirChips = (ae: AcousticEvidenceDto): DirChipData[] => {
         : ae.sibilantPlace === "tooAlveolar"
           ? "歯茎寄り"
           : "範囲内";
-    const dirHz =
-      ae.spectralCentroidHz != null ? `${ae.spectralCentroidHz.toFixed(0)} Hz` : "";
+    const dirHz = ae.spectralCentroidHz != null ? `${ae.spectralCentroidHz.toFixed(0)} Hz` : "";
     chips.push({ axis: "sibilantPlace", arrow, labelJa, dirHz, isOk });
   }
 
@@ -175,8 +166,7 @@ const buildDirChips = (ae: AcousticEvidenceDto): DirChipData[] => {
     const isOk = ae.vowelLength === "ok";
     const arrow = ae.vowelLength === "tooShort" ? "↓" : "○";
     const labelJa = ae.vowelLength === "tooShort" ? "短すぎ" : "範囲内";
-    const dirHz =
-      ae.tenseLengthRatio != null ? `ratio ${ae.tenseLengthRatio.toFixed(1)}` : "";
+    const dirHz = ae.tenseLengthRatio != null ? `ratio ${ae.tenseLengthRatio.toFixed(1)}` : "";
     chips.push({ axis: "vowelLength", arrow, labelJa, dirHz, isOk });
   }
 
@@ -213,12 +203,7 @@ export const AcousticDiagnosisCard = ({
   // M-ADVL-5: ベクトル（両点が揃っているときのみ描画）
   const vectorStyle =
     measuredCoords != null && targetCoords != null
-      ? toVectorStyle(
-          measuredCoords.left,
-          measuredCoords.top,
-          targetCoords.left,
-          targetCoords.top,
-        )
+      ? toVectorStyle(measuredCoords.left, measuredCoords.top, targetCoords.left, targetCoords.top)
       : null;
 
   // M-ADVL-8: measure-bar の表示可否

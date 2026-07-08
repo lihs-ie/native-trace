@@ -53,9 +53,7 @@ describe("EngineSegSelector", () => {
 
   it("calls onChange with cloudOnly when OpenAI API button is clicked", async () => {
     const handleChange = vi.fn();
-    const { container } = render(
-      <EngineSegSelector value="comparison" onChange={handleChange} />,
-    );
+    const { container } = render(<EngineSegSelector value="comparison" onChange={handleChange} />);
     await userEvent.click(within(container).getByRole("button", { name: /openai api/i }));
     expect(handleChange).toHaveBeenCalledOnce();
     expect(handleChange).toHaveBeenCalledWith("cloudOnly");
@@ -63,9 +61,7 @@ describe("EngineSegSelector", () => {
 
   it("calls onChange with ossWorkerOnly when OSS Worker button is clicked", async () => {
     const handleChange = vi.fn();
-    const { container } = render(
-      <EngineSegSelector value="cloudOnly" onChange={handleChange} />,
-    );
+    const { container } = render(<EngineSegSelector value="cloudOnly" onChange={handleChange} />);
     await userEvent.click(within(container).getByRole("button", { name: /oss worker/i }));
     expect(handleChange).toHaveBeenCalledOnce();
     expect(handleChange).toHaveBeenCalledWith("ossWorkerOnly");
@@ -73,9 +69,7 @@ describe("EngineSegSelector", () => {
 
   it("calls onChange with comparison when ⊕ 比較 button is clicked", async () => {
     const handleChange = vi.fn();
-    const { container } = render(
-      <EngineSegSelector value="cloudOnly" onChange={handleChange} />,
-    );
+    const { container } = render(<EngineSegSelector value="cloudOnly" onChange={handleChange} />);
     await userEvent.click(within(container).getByRole("button", { name: /⊕ 比較/i }));
     expect(handleChange).toHaveBeenCalledOnce();
     expect(handleChange).toHaveBeenCalledWith("comparison");

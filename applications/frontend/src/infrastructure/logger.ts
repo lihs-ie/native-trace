@@ -17,8 +17,6 @@ export const createStructuredLogger = (nodeEnv: string): Logger => ({
       error instanceof Error
         ? { name: error.name, message: error.message }
         : { message: String(error) };
-    console.error(
-      JSON.stringify({ level: "error", message, error: sanitizedError, ...context }),
-    );
+    console.error(JSON.stringify({ level: "error", message, error: sanitizedError, ...context }));
   },
 });

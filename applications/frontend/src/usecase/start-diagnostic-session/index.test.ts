@@ -1,9 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { okAsync } from "neverthrow";
-import {
-  createStartDiagnosticSession,
-  type StartDiagnosticSessionDependencies,
-} from "./index";
+import { createStartDiagnosticSession, type StartDiagnosticSessionDependencies } from "./index";
 import { getDiagnosticPromptSet } from "../../infrastructure/training/diagnostic-prompt-fixture";
 
 /**
@@ -13,10 +10,12 @@ import { getDiagnosticPromptSet } from "../../infrastructure/training/diagnostic
  */
 
 const makeDeps = (
-  persistMock: ReturnType<typeof import("vitest")["vi"]["fn"]>,
+  persistMock: ReturnType<(typeof import("vitest"))["vi"]["fn"]>,
 ): StartDiagnosticSessionDependencies => ({
   diagnosticSessionRepository: {
-    find: () => { throw new Error("not expected in this test"); },
+    find: () => {
+      throw new Error("not expected in this test");
+    },
     findLatestByLearner: () => okAsync(null),
     persist: persistMock as never,
   },

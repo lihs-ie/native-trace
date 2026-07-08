@@ -59,11 +59,7 @@ describe("ensureFindingRetrySectionExists", () => {
   });
 
   it("存在しない場合に Section 識別子を生成して返す", async () => {
-    const identifier = await ensureFindingRetrySectionExists(
-      database,
-      "finding-abc-123",
-      "world",
-    );
+    const identifier = await ensureFindingRetrySectionExists(database, "finding-abc-123", "world");
     expect(typeof identifier).toBe("string");
     expect(identifier.length).toBeGreaterThan(0);
     expect(identifier).toContain("FINDING_RETRY_SECTION_");
@@ -96,11 +92,7 @@ describe("ensureFindingRetrySectionExists", () => {
   });
 
   it("findingIdentifier の '-' が '_' に正規化され大文字化される", async () => {
-    const identifier = await ensureFindingRetrySectionExists(
-      database,
-      "finding-test-001",
-      "word",
-    );
+    const identifier = await ensureFindingRetrySectionExists(database, "finding-test-001", "word");
     expect(identifier).toBe("FINDING_RETRY_SECTION_FINDING_TEST_001");
   });
 });

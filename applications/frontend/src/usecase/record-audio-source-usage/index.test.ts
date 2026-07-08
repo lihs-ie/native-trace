@@ -46,7 +46,11 @@ describe("createRecordAudioSourceUsage (M-GRV-8)", () => {
     const clock: Clock = { now: () => FIXED_NOW };
     const usecase = createRecordAudioSourceUsage({ abUsageLogRepository, clock });
 
-    await usecase({ learner: "01JWZLEARNER0000000000001", source: "self", qualityGatePassed: null });
+    await usecase({
+      learner: "01JWZLEARNER0000000000001",
+      source: "self",
+      qualityGatePassed: null,
+    });
 
     expect(abUsageLogRepository.record).toHaveBeenCalledWith(
       expect.objectContaining({ source: "self", qualityGatePassed: null }),

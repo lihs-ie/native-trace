@@ -19,9 +19,7 @@ export type DiagnosticSessionRepository = Readonly<{
    * find — 指定識別子の診断セッションを取得する。
    * 見つからない場合は notFound エラーを返す。
    */
-  find: (
-    identifier: DiagnosticSessionIdentifier,
-  ) => ResultAsync<DiagnosticSession, DomainError>;
+  find: (identifier: DiagnosticSessionIdentifier) => ResultAsync<DiagnosticSession, DomainError>;
 
   /**
    * findLatestByLearner — 指定学習者の最新診断セッションを取得する。

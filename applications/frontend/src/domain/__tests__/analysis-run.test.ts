@@ -77,10 +77,7 @@ const makeCanceledJob = (suffix = "0001"): AnalysisJob => {
 
 describe("deriveAnalysisRunStatus", () => {
   it("running が含まれる → running", () => {
-    const jobs: NonEmptyList<AnalysisJob> = [
-      makeRunningJob("0001"),
-      makeQueuedJob("0002"),
-    ];
+    const jobs: NonEmptyList<AnalysisJob> = [makeRunningJob("0001"), makeQueuedJob("0002")];
     expect(deriveAnalysisRunStatus(jobs)).toBe("running");
   });
 
@@ -95,10 +92,7 @@ describe("deriveAnalysisRunStatus", () => {
   });
 
   it("全 succeeded → succeeded", () => {
-    const jobs: NonEmptyList<AnalysisJob> = [
-      makeSucceededJob("0001"),
-      makeSucceededJob("0002"),
-    ];
+    const jobs: NonEmptyList<AnalysisJob> = [makeSucceededJob("0001"), makeSucceededJob("0002")];
     expect(deriveAnalysisRunStatus(jobs)).toBe("succeeded");
   });
 
@@ -112,27 +106,19 @@ describe("deriveAnalysisRunStatus", () => {
   });
 
   it("全 canceled → canceled", () => {
-    const jobs: NonEmptyList<AnalysisJob> = [
-      makeCanceledJob("0001"),
-      makeCanceledJob("0002"),
-    ];
+    const jobs: NonEmptyList<AnalysisJob> = [makeCanceledJob("0001"), makeCanceledJob("0002")];
     expect(deriveAnalysisRunStatus(jobs)).toBe("canceled");
   });
 
   it("succeeded なし + failed → failed", () => {
-    const jobs: NonEmptyList<AnalysisJob> = [
-      makeFailedJob("0001"),
-      makeCanceledJob("0002"),
-    ];
+    const jobs: NonEmptyList<AnalysisJob> = [makeFailedJob("0001"), makeCanceledJob("0002")];
     expect(deriveAnalysisRunStatus(jobs)).toBe("failed");
   });
 });
 
 describe("createAnalysisRun", () => {
   it("AnalysisRun を作成しイベントを返す", () => {
-    const recordingAttemptId = createRecordingAttemptIdentifier(
-      "01HREC000000000001",
-    );
+    const recordingAttemptId = createRecordingAttemptIdentifier("01HREC000000000001");
     if (!recordingAttemptId) throw new Error("null id");
     const runId = makeRunId();
     const now = new Date("2026-01-01T00:00:00Z");

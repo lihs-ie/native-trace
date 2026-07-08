@@ -56,13 +56,7 @@ describe("leaseAnalysisJob", () => {
   it("Queued → Leased に遷移する", () => {
     const { job, now } = makeQueuedJob();
     const leasedUntil = new Date(now.getTime() + 60000);
-    const output = leaseAnalysisJob(
-      job,
-      makeLeaseToken(),
-      "runner-1",
-      leasedUntil,
-      now,
-    );
+    const output = leaseAnalysisJob(job, makeLeaseToken(), "runner-1", leasedUntil, now);
 
     expect(output.analysisJob.type).toBe("leased");
     expect(output.analysisJob.attemptCount).toBe(1);

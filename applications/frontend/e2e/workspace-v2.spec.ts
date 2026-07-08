@@ -25,9 +25,7 @@ test.afterAll(() => {
 test("workspace-v2: v2 selectors visible in result view", async ({ page }) => {
   // 結果画面への遷移
   // URL: /materials/{materialIdentifier}/sections/{sectionIdentifier}
-  await page.goto(
-    `/materials/${seedIds.material}/sections/${seedIds.section}`,
-  );
+  await page.goto(`/materials/${seedIds.material}/sections/${seedIds.section}`);
 
   // ページが「result」状態になるまで待機
   // WorkspaceResultV2 は resultsByEngine が 1 件以上あるときに描画される

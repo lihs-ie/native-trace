@@ -67,7 +67,12 @@ const makeWeaknessProfileId = (value = "WP-001") => {
 
 const makePromptSet = (): DiagnosticPromptSet => ({
   prompts: [
-    { identifier: "p1", text: "Please say: red led", targetCatalogId: null, phenomenon: "segmental" },
+    {
+      identifier: "p1",
+      text: "Please say: red led",
+      targetCatalogId: null,
+      phenomenon: "segmental",
+    },
   ],
 });
 

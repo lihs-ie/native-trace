@@ -48,9 +48,7 @@ const buildAcousticEvidence = (
 
 describe("AcousticDiagnosisCard (M-ADVL-2) null 制御", () => {
   it("acousticEvidence=null のとき .acoustic が DOM に存在しない", () => {
-    const { container } = render(
-      <AcousticDiagnosisCard acousticEvidence={null} />,
-    );
+    const { container } = render(<AcousticDiagnosisCard acousticEvidence={null} />);
     expect(container.querySelector(".acoustic")).toBeNull();
   });
 
@@ -99,9 +97,7 @@ describe("AcousticDiagnosisCard (M-ADVL-4) 母音プロット座標", () => {
       measuredF1Hz: 450,
       measuredF2Hz: 1100,
     });
-    const { container } = render(
-      <AcousticDiagnosisCard acousticEvidence={ae} />,
-    );
+    const { container } = render(<AcousticDiagnosisCard acousticEvidence={ae} />);
     const measuredPt = container.querySelector(".vp-pt--measured") as HTMLElement | null;
     expect(measuredPt).not.toBeNull();
     const leftStr = measuredPt?.style.left ?? "";
@@ -121,9 +117,7 @@ describe("AcousticDiagnosisCard (M-ADVL-4) 母音プロット座標", () => {
       targetF1Hz: 344,
       targetF2Hz: 2300,
     });
-    const { container } = render(
-      <AcousticDiagnosisCard acousticEvidence={ae} />,
-    );
+    const { container } = render(<AcousticDiagnosisCard acousticEvidence={ae} />);
     const targetPt = container.querySelector(".vp-pt--target") as HTMLElement | null;
     expect(targetPt).not.toBeNull();
     const leftValue = parseFloat(targetPt?.style.left ?? "0");
@@ -137,9 +131,7 @@ describe("AcousticDiagnosisCard (M-ADVL-4) 母音プロット座標", () => {
       measuredF1Hz: null,
       measuredF2Hz: null,
     });
-    const { container } = render(
-      <AcousticDiagnosisCard acousticEvidence={ae} />,
-    );
+    const { container } = render(<AcousticDiagnosisCard acousticEvidence={ae} />);
     expect(container.querySelector(".vp-pt--measured")).toBeNull();
   });
 });
@@ -163,9 +155,7 @@ describe("AcousticDiagnosisCard (M-ADVL-5) 偏差ベクトル", () => {
       targetF1Hz: 344,
       targetF2Hz: 2300,
     });
-    const { container } = render(
-      <AcousticDiagnosisCard acousticEvidence={ae} />,
-    );
+    const { container } = render(<AcousticDiagnosisCard acousticEvidence={ae} />);
     const vec = container.querySelector(".vp-vec") as HTMLElement | null;
     expect(vec).not.toBeNull();
     const widthPx = parseFloat(vec?.style.width ?? "0");
@@ -180,9 +170,7 @@ describe("AcousticDiagnosisCard (M-ADVL-5) 偏差ベクトル", () => {
       targetF1Hz: 344,
       targetF2Hz: 2300,
     });
-    const { container } = render(
-      <AcousticDiagnosisCard acousticEvidence={ae} />,
-    );
+    const { container } = render(<AcousticDiagnosisCard acousticEvidence={ae} />);
     const vec = container.querySelector(".vp-vec") as HTMLElement | null;
     expect(vec?.style.transform).toContain("rotate(");
   });
@@ -192,9 +180,7 @@ describe("AcousticDiagnosisCard (M-ADVL-5) 偏差ベクトル", () => {
       targetF1Hz: null,
       targetF2Hz: null,
     });
-    const { container } = render(
-      <AcousticDiagnosisCard acousticEvidence={ae} />,
-    );
+    const { container } = render(<AcousticDiagnosisCard acousticEvidence={ae} />);
     expect(container.querySelector(".vp-vec")).toBeNull();
   });
 });
@@ -204,9 +190,7 @@ describe("AcousticDiagnosisCard (M-ADVL-5) 偏差ベクトル", () => {
 describe("AcousticDiagnosisCard (M-ADVL-6) 方向チップ", () => {
   it("tongueHeight=tooLow のとき .dir-k に 'tongueHeight' が含まれる", () => {
     const ae = buildAcousticEvidence({ tongueHeight: "tooLow" });
-    const { container } = render(
-      <AcousticDiagnosisCard acousticEvidence={ae} />,
-    );
+    const { container } = render(<AcousticDiagnosisCard acousticEvidence={ae} />);
     const dirKeys = Array.from(container.querySelectorAll(".dir-k")).map(
       (el) => el.textContent ?? "",
     );
@@ -218,9 +202,7 @@ describe("AcousticDiagnosisCard (M-ADVL-6) 方向チップ", () => {
       tongueHeight: "tooLow",
       signedF1SdDeviation: 1.4,
     });
-    const { container } = render(
-      <AcousticDiagnosisCard acousticEvidence={ae} />,
-    );
+    const { container } = render(<AcousticDiagnosisCard acousticEvidence={ae} />);
     const chips = container.querySelectorAll(".dir-chip");
     let found = false;
     chips.forEach((chip) => {
@@ -236,9 +218,7 @@ describe("AcousticDiagnosisCard (M-ADVL-6) 方向チップ", () => {
 
   it("tongueHeight=ok のとき is-ok クラスが付く", () => {
     const ae = buildAcousticEvidence({ tongueHeight: "ok" });
-    const { container } = render(
-      <AcousticDiagnosisCard acousticEvidence={ae} />,
-    );
+    const { container } = render(<AcousticDiagnosisCard acousticEvidence={ae} />);
     const okChip = Array.from(container.querySelectorAll(".dir-chip.is-ok")).find((el) =>
       el.querySelector(".dir-k")?.textContent?.includes("tongueHeight"),
     );
@@ -247,9 +227,7 @@ describe("AcousticDiagnosisCard (M-ADVL-6) 方向チップ", () => {
 
   it("tongueHeight=null のときそのチップが描画されない", () => {
     const ae = buildAcousticEvidence({ tongueHeight: null });
-    const { container } = render(
-      <AcousticDiagnosisCard acousticEvidence={ae} />,
-    );
+    const { container } = render(<AcousticDiagnosisCard acousticEvidence={ae} />);
     const dirKeys = Array.from(container.querySelectorAll(".dir-k")).map(
       (el) => el.textContent ?? "",
     );
@@ -266,9 +244,7 @@ describe("AcousticDiagnosisCard (M-ADVL-7) rhoticity チップ F3 数値", () =>
       measuredF3Hz: 1800,
       targetF3Hz: 2000,
     });
-    const { container } = render(
-      <AcousticDiagnosisCard acousticEvidence={ae} />,
-    );
+    const { container } = render(<AcousticDiagnosisCard acousticEvidence={ae} />);
     const chips = container.querySelectorAll(".dir-chip");
     let rhChip: Element | undefined;
     chips.forEach((chip) => {
@@ -288,9 +264,7 @@ describe("AcousticDiagnosisCard (M-ADVL-7) rhoticity チップ F3 数値", () =>
       measuredF3Hz: 1800,
       targetF3Hz: 2000,
     });
-    const { container } = render(
-      <AcousticDiagnosisCard acousticEvidence={ae} />,
-    );
+    const { container } = render(<AcousticDiagnosisCard acousticEvidence={ae} />);
     const chips = container.querySelectorAll(".dir-chip");
     let hzText = "";
     chips.forEach((chip) => {
@@ -316,9 +290,7 @@ describe("AcousticDiagnosisCard (M-ADVL-8) measure-bar", () => {
       spectralCentroidHz: 3600,
       targetSpectralCentroidHz: 4500,
     });
-    const { container } = render(
-      <AcousticDiagnosisCard acousticEvidence={ae} />,
-    );
+    const { container } = render(<AcousticDiagnosisCard acousticEvidence={ae} />);
     const measureBars = container.querySelectorAll(".measure-bar");
     let spectralBar: Element | undefined;
     measureBars.forEach((bar) => {
@@ -338,9 +310,7 @@ describe("AcousticDiagnosisCard (M-ADVL-8) measure-bar", () => {
       spectralCentroidHz: 3600,
       targetSpectralCentroidHz: 4500,
     });
-    const { container } = render(
-      <AcousticDiagnosisCard acousticEvidence={ae} />,
-    );
+    const { container } = render(<AcousticDiagnosisCard acousticEvidence={ae} />);
     const measureBars = container.querySelectorAll(".measure-bar");
     let spectralBar: Element | undefined;
     measureBars.forEach((bar) => {
@@ -356,9 +326,7 @@ describe("AcousticDiagnosisCard (M-ADVL-8) measure-bar", () => {
 
   it("spectralCentroidHz=null のとき spectral centroid measure-bar が存在しない", () => {
     const ae = buildAcousticEvidence({ spectralCentroidHz: null });
-    const { container } = render(
-      <AcousticDiagnosisCard acousticEvidence={ae} />,
-    );
+    const { container } = render(<AcousticDiagnosisCard acousticEvidence={ae} />);
     const measureBars = container.querySelectorAll(".measure-bar");
     const spectralBarFound = Array.from(measureBars).some((bar) =>
       bar.textContent?.includes("/s/ 重心"),
@@ -368,9 +336,7 @@ describe("AcousticDiagnosisCard (M-ADVL-8) measure-bar", () => {
 
   it("tenseLengthRatio=null のとき tense 長さ比 measure-bar が存在しない", () => {
     const ae = buildAcousticEvidence({ tenseLengthRatio: null });
-    const { container } = render(
-      <AcousticDiagnosisCard acousticEvidence={ae} />,
-    );
+    const { container } = render(<AcousticDiagnosisCard acousticEvidence={ae} />);
     const measureBars = container.querySelectorAll(".measure-bar");
     const tenseBarFound = Array.from(measureBars).some((bar) =>
       bar.textContent?.includes("tense 長さ比"),

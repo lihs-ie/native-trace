@@ -156,7 +156,9 @@ const mockTrainingApi = async (page: Page): Promise<void> => {
     fulfillJson(route, buildScheduleResponse(now)),
   );
 
-  await page.route("**/api/v1/training/drills", (route) => fulfillJson(route, buildDrillResponse()));
+  await page.route("**/api/v1/training/drills", (route) =>
+    fulfillJson(route, buildDrillResponse()),
+  );
 
   await page.route("**/api/v1/training/hvpt-sessions", (route) =>
     fulfillJson(route, buildSessionResponse()),
@@ -173,7 +175,10 @@ const mockTrainingApi = async (page: Page): Promise<void> => {
     return fulfillJson(route, {
       hvptTrialIdentifier: `tr-${body.responseLabelValue ?? "x"}`,
       correct: body.responseLabelValue === body.correctLabelValue,
-      correctLabel: { type: body.correctLabelType ?? "spelling", value: body.correctLabelValue ?? "" },
+      correctLabel: {
+        type: body.correctLabelType ?? "spelling",
+        value: body.correctLabelValue ?? "",
+      },
       correctStimulusWavBase64: body.correctStimulusWavBase64 ?? TINY_WAV,
     });
   });
@@ -244,7 +249,9 @@ test.describe("training 画面 — HVPT 識別課題 (M-TR-6)", () => {
 });
 
 test.describe("training 画面 — design-system-v2 合致 + データ駆動 (M-TR-8)", () => {
-  test("HVPT 窓・rail・dock・シャドーイング窓の部品クラスが実データで描画される", async ({ page }) => {
+  test("HVPT 窓・rail・dock・シャドーイング窓の部品クラスが実データで描画される", async ({
+    page,
+  }) => {
     await mockTrainingApi(page);
     await gotoTrainingWithProfile(page);
 
@@ -301,7 +308,9 @@ test.describe("training 画面 — 診断前ガード", () => {
     // sessionStorage を設定せずに遷移 (no_weakness_profile 状態)
     await page.goto("/training");
 
-    await expect(page.getByText("訓練を開始するには診断が必要です")).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText("訓練を開始するには診断が必要です")).toBeVisible({
+      timeout: 15000,
+    });
     await expect(page.getByRole("link", { name: /診断を始める/ })).toBeVisible();
     // 診断前は forced-choice が描画されない
     await expect(page.locator(".choice-grid#choices")).toHaveCount(0);

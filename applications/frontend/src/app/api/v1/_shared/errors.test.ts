@@ -19,8 +19,12 @@ describe("domainErrorToResponse", () => {
     };
     const response = domainErrorToResponse(error);
     expect(response.status).toBe(400);
-    const body = await parseBody(response) as {
-      error: { code: string; message: string; details?: { fieldErrors?: Array<{ field: string; message: string }> } };
+    const body = (await parseBody(response)) as {
+      error: {
+        code: string;
+        message: string;
+        details?: { fieldErrors?: Array<{ field: string; message: string }> };
+      };
       meta: { requestIdentifier: string };
     };
     expect(body.error.code).toBe("validationFailed");
@@ -36,7 +40,7 @@ describe("domainErrorToResponse", () => {
     };
     const response = domainErrorToResponse(error);
     expect(response.status).toBe(404);
-    const body = await parseBody(response) as { error: { code: string } };
+    const body = (await parseBody(response)) as { error: { code: string } };
     expect(body.error.code).toBe("notFound");
   });
 
@@ -49,7 +53,7 @@ describe("domainErrorToResponse", () => {
     };
     const response = domainErrorToResponse(error);
     expect(response.status).toBe(409);
-    const body = await parseBody(response) as { error: { code: string } };
+    const body = (await parseBody(response)) as { error: { code: string } };
     expect(body.error.code).toBe("invalidStateTransition");
   });
 
@@ -60,7 +64,7 @@ describe("domainErrorToResponse", () => {
     };
     const response = domainErrorToResponse(error);
     expect(response.status).toBe(500);
-    const body = await parseBody(response) as { error: { code: string } };
+    const body = (await parseBody(response)) as { error: { code: string } };
     expect(body.error.code).toBe("persistenceFailed");
   });
 
@@ -71,7 +75,7 @@ describe("domainErrorToResponse", () => {
     };
     const response = domainErrorToResponse(error);
     expect(response.status).toBe(500);
-    const body = await parseBody(response) as { error: { code: string } };
+    const body = (await parseBody(response)) as { error: { code: string } };
     expect(body.error.code).toBe("transactionFailed");
   });
 
@@ -82,7 +86,7 @@ describe("domainErrorToResponse", () => {
     };
     const response = domainErrorToResponse(error);
     expect(response.status).toBe(500);
-    const body = await parseBody(response) as { error: { code: string } };
+    const body = (await parseBody(response)) as { error: { code: string } };
     expect(body.error.code).toBe("audioStorageFailed");
   });
 
@@ -95,7 +99,7 @@ describe("domainErrorToResponse", () => {
     };
     const response = domainErrorToResponse(error);
     expect(response.status).toBe(502);
-    const body = await parseBody(response) as { error: { code: string } };
+    const body = (await parseBody(response)) as { error: { code: string } };
     expect(body.error.code).toBe("assessmentEngineFailed");
   });
 
@@ -106,7 +110,7 @@ describe("domainErrorToResponse", () => {
     };
     const response = domainErrorToResponse(error);
     expect(response.status).toBe(502);
-    const body = await parseBody(response) as { error: { code: string } };
+    const body = (await parseBody(response)) as { error: { code: string } };
     expect(body.error.code).toBe("assessmentSchemaInvalid");
   });
 
@@ -117,7 +121,7 @@ describe("domainErrorToResponse", () => {
       identifier: "01JZ0000000000000000000001",
     };
     const response = domainErrorToResponse(error);
-    const body = await parseBody(response) as { meta: { requestIdentifier: string } };
+    const body = (await parseBody(response)) as { meta: { requestIdentifier: string } };
     expect(body.meta.requestIdentifier).toMatch(/^req_[0-9a-f]{32}$/);
   });
 
