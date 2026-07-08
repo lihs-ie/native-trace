@@ -11,6 +11,7 @@ import { type AssessmentResultRepository } from "../port/assessment-result-repos
 import { type FindingDismissalRepository } from "../port/finding-dismissal-repository";
 import { type AudioFileRepository } from "../port/audio-file-repository";
 import { tokenizeSectionBody, type SectionToken } from "../shared/tokenizer";
+import { firstPage } from "../shared/pagination";
 
 // ---- Input ----
 
@@ -255,7 +256,7 @@ export const createViewPracticeWorkspace =
       const recordingAttemptResult = dependencies.recordingAttemptRepository.search({
         type: "attemptsInSection",
         section: section.identifier,
-        pagination: { type: "offset", offset: 0 as never, limit: 50 as never },
+        pagination: firstPage(50),
         sort: "createdAt_desc",
       });
 
@@ -297,7 +298,7 @@ export const createViewPracticeWorkspace =
           .search({
             type: "runsByRecordingAttempt",
             recordingAttempt: latestReady.identifier,
-            pagination: { type: "offset", offset: 0 as never, limit: 10 as never },
+            pagination: firstPage(10),
             sort: "createdAt_desc",
           })
           .andThen((runPage) => {

@@ -10,6 +10,7 @@ import {
   type MaterialDetailStatsRepository,
   type SectionSeriesStats,
 } from "../port/material-detail-stats-repository";
+import { firstPage, unboundedPage } from "../shared/pagination";
 
 // ---- Input ----
 
@@ -105,7 +106,7 @@ const buildSectionSeriesItemWithoutStats = async (
     sectionRepository.search({
       type: "sectionVersionsInSeries",
       sectionSeries: series.identifier,
-      pagination: { type: "offset", offset: 0 as never, limit: 100 as never },
+      pagination: firstPage(100),
       sort: "version_desc",
     }),
   ]);
@@ -174,7 +175,7 @@ export const createViewMaterialPracticePlan =
           .search({
             type: "activeSeriesInMaterial",
             material: identifierResult,
-            pagination: { type: "offset", offset: 0 as never, limit: 1000 as never },
+            pagination: unboundedPage(),
             sort: "displayOrder_asc",
           })
           .andThen((seriesPage) => {

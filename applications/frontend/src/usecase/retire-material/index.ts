@@ -13,6 +13,7 @@ import {
 } from "../../domain/section-series";
 import { type MaterialRepository } from "../port/material-repository";
 import { type SectionSeriesRepository } from "../port/section-series-repository";
+import { unboundedPage } from "../shared/pagination";
 import { type TransactionManager } from "../port/transaction-manager";
 import { type Clock } from "../port/clock";
 import { type Logger } from "../port/logger";
@@ -74,7 +75,7 @@ export const createRetireMaterial =
           .search({
             type: "activeSeriesInMaterial",
             material: identifierResult,
-            pagination: { type: "offset", offset: 0 as never, limit: 1000 as never },
+            pagination: unboundedPage(),
             sort: "displayOrder_asc",
           })
           .andThen((seriesPage) => {

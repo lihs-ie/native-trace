@@ -8,7 +8,7 @@ import { type SectionRepository } from "../port/section-repository";
 import { type RecordingAttemptRepository } from "../port/recording-attempt-repository";
 import { type AnalysisRunRepository } from "../port/analysis-run-repository";
 import { type AssessmentResultRepository } from "../port/assessment-result-repository";
-import { toDomainPagination } from "../shared/pagination";
+import { toDomainPagination, firstPage } from "../shared/pagination";
 
 // ---- Input ----
 
@@ -156,7 +156,7 @@ const buildAttemptsSequentially = (
     .search({
       type: "runsByRecordingAttempt",
       recordingAttempt: attempt.identifier,
-      pagination: { type: "offset", offset: 0 as never, limit: 20 as never },
+      pagination: firstPage(20),
       sort: "createdAt_desc",
     })
     .andThen((runPage) =>
@@ -190,7 +190,7 @@ const buildSectionVersionsSequentially = (
     .search({
       type: "attemptsInSection",
       section: section.identifier,
-      pagination: { type: "offset", offset: 0 as never, limit: 50 as never },
+      pagination: firstPage(50),
       sort: "createdAt_desc",
     })
     .andThen((attemptPage) =>

@@ -10,6 +10,7 @@ import { type AnalysisJobRepository } from "../port/analysis-job-repository";
 import { type AssessmentResultRepository } from "../port/assessment-result-repository";
 import { type FindingDismissalRepository } from "../port/finding-dismissal-repository";
 import { type Clock } from "../port/clock";
+import { singleItemPage } from "../shared/pagination";
 
 // ---- Input ----
 
@@ -69,21 +70,19 @@ export const createRestoreFinding =
         dependencies.recordingAttemptRepository.search({
           type: "attemptsInSection",
           section: sectionIdentifier,
-          pagination: { type: "offset", offset: 0 as never, limit: 1 as never },
+          pagination: singleItemPage(),
           sort: "createdAt_desc",
         }),
       )
       .andThen((recordingPage) => {
         const latestReady = recordingPage.items.find((a) => a.type === "ready");
         if (!latestReady) {
-          return errAsync(
-            validationFailed("section", "解析済みの録音試行が見つかりません"),
-          );
+          return errAsync(validationFailed("section", "解析済みの録音試行が見つかりません"));
         }
         return dependencies.analysisRunRepository.search({
           type: "runsByRecordingAttempt",
           recordingAttempt: latestReady.identifier,
-          pagination: { type: "offset", offset: 0 as never, limit: 1 as never },
+          pagination: singleItemPage(),
           sort: "createdAt_desc",
         });
       })
@@ -112,9 +111,7 @@ export const createRestoreFinding =
           r.findings.some((f) => String(f.identifier) === findingIdentifier),
         );
         if (!matchingResult) {
-          return errAsync(
-            validationFailed("finding", "指定された finding が見つかりません"),
-          );
+          return errAsync(validationFailed("finding", "指定された finding が見つかりません"));
         }
 
         const assessmentResultIdentifier = createAssessmentResultIdentifier(
