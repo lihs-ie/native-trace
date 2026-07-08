@@ -34,7 +34,7 @@ _SAMPLE_RATE = 16000
 _FRAME_SIZE = 320
 # 5 秒間のサンプル数。尖度推定には十分な統計量（80000 サンプル）が必要。
 _N_SAMPLES = 5 * _SAMPLE_RATE
-# WADA-SNR の先験尖度に合致した Gamma 変調係数（audio_energy.py _WADA_K_CLEAN_PRIOR と対応）。
+# WADA-SNR の先験尖度に合致した Gamma 変調係数（audio_energy.py wada_k_clean_prior と対応）。
 _GAMMA_SHAPE = 0.5
 _SIGNAL_AMPLITUDE = 0.15
 # 許容誤差（±4 dB）
@@ -136,8 +136,8 @@ class TestComputeWadaSnr:
 
         for i in range(len(estimates) - 1):
             assert estimates[i] > estimates[i + 1], (
-                f"SNR 単調性違反: snr_levels={snr_levels[i]} → {snr_levels[i+1]}, "
-                f"estimates={estimates[i]:.2f} → {estimates[i+1]:.2f}"
+                f"SNR 単調性違反: snr_levels={snr_levels[i]} → {snr_levels[i + 1]}, "
+                f"estimates={estimates[i]:.2f} → {estimates[i + 1]:.2f}"
             )
 
     @pytest.mark.skipif(
@@ -209,8 +209,8 @@ class TestComputeWadaSnr:
         for i in range(len(estimates) - 1):
             assert estimates[i] > estimates[i + 1], (
                 f"実音声 SNR 単調性違反: {labels[i]}({estimates[i]:.4f}) → "
-                f"{labels[i+1]}({estimates[i+1]:.4f}) — ordering が成立しない。"
-                f" 全推定値: {dict(zip(labels, [f'{e:.4f}' for e in estimates]))}"
+                f"{labels[i + 1]}({estimates[i + 1]:.4f}) — ordering が成立しない。"
+                f" 全推定値: {dict(zip(labels, [f'{e:.4f}' for e in estimates], strict=False))}"
             )
 
     def test_clean_signal_higher_than_0db_noisy(self) -> None:

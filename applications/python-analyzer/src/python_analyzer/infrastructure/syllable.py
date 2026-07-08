@@ -80,9 +80,7 @@ def detect_syllables(
         actual_count = count_vowel_nuclei_from_phoneme_list(actual_phoneme_labels)
 
         # 挿入母音を検出する（実測 > 期待のときのみ）
-        inserted_vowels = _find_inserted_vowels(
-            phonemes_in_word, expected_count, actual_count
-        )
+        inserted_vowels = _find_inserted_vowels(phonemes_in_word, expected_count, actual_count)
 
         measurements.append(
             SyllableMeasurement(

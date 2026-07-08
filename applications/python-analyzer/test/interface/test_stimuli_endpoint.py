@@ -89,10 +89,12 @@ def seeded_assets_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
         _make_asset("ae-ah", "but", "26", PhonologicalContext.WORD_INITIAL),
     ]
 
-    store.write_assets({  # type: ignore[arg-type]
-        "r-l": rl_assets,
-        "ae-ah": aeah_assets,
-    })
+    store.write_assets(
+        {  # type: ignore[arg-type]
+            "r-l": rl_assets,
+            "ae-ah": aeah_assets,
+        }
+    )
 
     return directory
 
@@ -107,6 +109,7 @@ def client(seeded_assets_dir: Path) -> Generator[TestClient, None, None]:
     handler_module._ASSETS_DIR = seeded_assets_dir
 
     from python_analyzer.app import app
+
     with TestClient(app) as test_client:
         yield test_client
 
@@ -181,8 +184,7 @@ class TestGetStimuliEndpoint:
 
         # The two contrasts must have different word sets.
         assert rl_words != aeah_words, (
-            "Different contrasts must serve different words; "
-            "this would indicate a fixed dummy set"
+            "Different contrasts must serve different words; this would indicate a fixed dummy set"
         )
 
     def test_404_for_unknown_contrast(self, client: TestClient) -> None:

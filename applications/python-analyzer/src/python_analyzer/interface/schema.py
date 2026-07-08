@@ -232,9 +232,7 @@ class AnalysisResponse(BaseModel):
         default=0.0, description="forced_align 非 blank フレームから推定した実音声長（秒）"
     )
     # C1-b F0 輪郭（parselmouth）
-    f0Contour: F0ContourResponse | None = Field(
-        default=None, description="F0 輪郭（parselmouth）"
-    )
+    f0Contour: F0ContourResponse | None = Field(default=None, description="F0 輪郭（parselmouth）")
     # M-F0REF-a: お手本（referenceText）の Kokoro TTS 音声から抽出した F0 輪郭。
     # 既存 F0ContourResponse 型を再利用（同一 JSON 形状: timesMs / valuesHz）。
     # 抽出不可時は null（後方互換・reference 不在時に学習者経路を壊さない）。
@@ -262,12 +260,14 @@ class AnalysisResponse(BaseModel):
         default_factory=list,
         description="per-phoneme フォルマント・スペクトル重心・持続時間計測（ADR-018 D1）",
     )
-    # M-APD-6 / M-APD-11: speakerSex を analyzer→worker に echo する（ADR-018 D1 AnalyzerResult 経由）。
+    # M-APD-6 / M-APD-11: speakerSex を analyzer→worker に echo する
+    # （ADR-018 D1 AnalyzerResult 経由）。
     # worker が hillenbrandGaVowelFormants ノルム照合に使用する（ADR-018 D4）。
     # S-APD-4 拡張点: 将来 re-record delta 表示（D9）で acousticEvidence との diff 追跡に利用可能。
     speakerSex: str = Field(
         default="unknown",
-        description="話者性別 echo: 'F' / 'M' / 'unknown'（ADR-009 値集合）。worker が偏差判定に使用",
+        description="話者性別 echo: 'F' / 'M' / 'unknown'（ADR-009 値集合）。"
+        "worker が偏差判定に使用",
     )
 
 

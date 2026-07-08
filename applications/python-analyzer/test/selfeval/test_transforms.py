@@ -152,27 +152,21 @@ class TestAddPinkNoise:
         wav = _make_sine_wave(amplitude=0.4, duration_seconds=2.0)
         noisy = add_pink_noise(wav, target_snr_db=20.0)
         measured_snr = _measure_snr(wav, noisy)
-        assert abs(measured_snr - 20.0) < 3.0, (
-            f"SNR target=20.0dB, measured={measured_snr:.2f}dB"
-        )
+        assert abs(measured_snr - 20.0) < 3.0, f"SNR target=20.0dB, measured={measured_snr:.2f}dB"
 
     def test_snr_10db_within_tolerance(self) -> None:
         """SNR=10 dB のノイズを加算したとき、実測 SNR が目標値の ±3 dB 以内であること。"""
         wav = _make_sine_wave(amplitude=0.4, duration_seconds=2.0)
         noisy = add_pink_noise(wav, target_snr_db=10.0)
         measured_snr = _measure_snr(wav, noisy)
-        assert abs(measured_snr - 10.0) < 3.0, (
-            f"SNR target=10.0dB, measured={measured_snr:.2f}dB"
-        )
+        assert abs(measured_snr - 10.0) < 3.0, f"SNR target=10.0dB, measured={measured_snr:.2f}dB"
 
     def test_snr_5db_within_tolerance(self) -> None:
         """SNR=5 dB のノイズを加算したとき、実測 SNR が目標値の ±4 dB 以内であること。"""
         wav = _make_sine_wave(amplitude=0.4, duration_seconds=2.0)
         noisy = add_pink_noise(wav, target_snr_db=5.0)
         measured_snr = _measure_snr(wav, noisy)
-        assert abs(measured_snr - 5.0) < 4.0, (
-            f"SNR target=5.0dB, measured={measured_snr:.2f}dB"
-        )
+        assert abs(measured_snr - 5.0) < 4.0, f"SNR target=5.0dB, measured={measured_snr:.2f}dB"
 
     def test_lower_snr_means_more_noise(self) -> None:
         """SNR が低いほどノイズ量が多いこと（ノイズ RMS 単調増加）。"""

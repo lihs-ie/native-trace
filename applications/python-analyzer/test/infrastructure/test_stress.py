@@ -13,9 +13,7 @@ from python_analyzer.infrastructure.parselmouth_prosody import (
 class TestPredictStressFromAcoustics:
     """_predict_stress_from_acoustics() の M-114R-a 改善後テスト。"""
 
-    def _make_f0_contour(
-        self, times_ms: list[int], values_hz: list[float]
-    ) -> F0Contour:
+    def _make_f0_contour(self, times_ms: list[int], values_hz: list[float]) -> F0Contour:
         return F0Contour(
             times_milliseconds=tuple(times_ms),
             values_hz=tuple(values_hz),

@@ -104,7 +104,7 @@ class TestComputeSpeechActiveRms:
         )
         # Must be significantly larger (silence dilutes whole-file RMS substantially)
         assert speech_active > whole_rms * 2.0, (
-            f"speech-active RMS not sufficiently larger than whole-file RMS"
+            "speech-active RMS not sufficiently larger than whole-file RMS"
         )
 
     # (c) silence-dilution property: appending more silence does NOT change speech-active RMS
@@ -125,7 +125,8 @@ class TestComputeSpeechActiveRms:
         rms_long = compute_speech_active_rms(waveform_long)
 
         assert rms_short == pytest.approx(rms_long, rel=1e-4), (
-            f"speech-active RMS changed with added silence: short={rms_short:.6f}, long={rms_long:.6f}"
+            f"speech-active RMS changed with added silence: "
+            f"short={rms_short:.6f}, long={rms_long:.6f}"
         )
 
         # Also confirm that whole-file RMS DOES change (to show the property is meaningful)

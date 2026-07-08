@@ -13,16 +13,13 @@ import os
 import sys
 import tempfile
 
-import pytest
-
 # test ルートを sys.path に追加する
 _TEST_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if _TEST_ROOT not in sys.path:
     sys.path.insert(0, _TEST_ROOT)
 
 from selfeval.compute_fingerprint import _hash_pip_lines  # noqa: E402
-from selfeval.drift_check import classify_drift, _extract_fresh_signals  # noqa: E402
-
+from selfeval.drift_check import _extract_fresh_signals, classify_drift  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # テストヘルパー
@@ -163,12 +160,8 @@ class TestHashPipLines:
 
     def test_pip3_install_is_captured(self) -> None:
         """pip3 install を含む行も hash に含まれること。"""
-        dockerfile_with_pip3 = _make_dockerfile(
-            ["FROM python:3.11-slim", "RUN pip3 install torch"]
-        )
-        dockerfile_without_pip3 = _make_dockerfile(
-            ["FROM python:3.11-slim", "# no pip lines"]
-        )
+        dockerfile_with_pip3 = _make_dockerfile(["FROM python:3.11-slim", "RUN pip3 install torch"])
+        dockerfile_without_pip3 = _make_dockerfile(["FROM python:3.11-slim", "# no pip lines"])
         try:
             hash_with = _hash_pip_lines(dockerfile_with_pip3)
             hash_without = _hash_pip_lines(dockerfile_without_pip3)
@@ -179,9 +172,7 @@ class TestHashPipLines:
 
     def test_hash_is_deterministic(self) -> None:
         """同じ Dockerfile に対して複数回呼んでも同じ hash を返すこと。"""
-        dockerfile_path = _make_dockerfile(
-            ["FROM python:3.11-slim", "RUN pip install numpy scipy"]
-        )
+        dockerfile_path = _make_dockerfile(["FROM python:3.11-slim", "RUN pip install numpy scipy"])
         try:
             hash_1 = _hash_pip_lines(dockerfile_path)
             hash_2 = _hash_pip_lines(dockerfile_path)
@@ -219,7 +210,7 @@ class TestClassifyDrift:
         assert advisory["changedPositions"] == 0
         assert advisory["escalated"] is False
         # 拡散 CTC advisory diff 行のみ（regression diff 行なし）
-        regression_diff_lines = [l for l in diff_lines if "topNBest IPA change:" in l]
+        regression_diff_lines = [line for line in diff_lines if "topNBest IPA change:" in line]
         assert regression_diff_lines == []
 
     def test_regression_on_gop_sign_flip(self) -> None:
@@ -254,11 +245,11 @@ class TestClassifyDrift:
         assert advisory["total"] == 8
         assert advisory["escalated"] is False
         # advisory 行が記録されること
-        advisory_lines = [l for l in diff_lines if "advisoryIpaDrift" in l]
+        advisory_lines = [line for line in diff_lines if "advisoryIpaDrift" in line]
         assert len(advisory_lines) == 1
         assert "pos0" in advisory_lines[0]
         # regression 用の "topNBest IPA change:" 行は出ないこと
-        regression_ipa_lines = [l for l in diff_lines if "topNBest IPA change:" in l]
+        regression_ipa_lines = [line for line in diff_lines if "topNBest IPA change:" in line]
         assert regression_ipa_lines == []
 
     def test_majority_ipa_change_escalates_to_regression(self) -> None:
@@ -280,7 +271,7 @@ class TestClassifyDrift:
         assert advisory["total"] == 8
         assert advisory["escalated"] is True
         # topNBest IPA change 行が出ること
-        ipa_change_lines = [l for l in diff_lines if "topNBest IPA change:" in l]
+        ipa_change_lines = [line for line in diff_lines if "topNBest IPA change:" in line]
         assert len(ipa_change_lines) == 8
 
     def test_exactly_majority_threshold_escalates(self) -> None:
@@ -342,7 +333,11 @@ class TestClassifyDrift:
         classification, diff_lines, advisory = classify_drift(fresh, pinned)
         assert classification == "benign"
         # advisory lines のみ（regression diff 行なし）
-        regression_lines = [l for l in diff_lines if "sign-flip" in l or "out-of-band" in l or "structure broken" in l]
+        regression_lines = [
+            line
+            for line in diff_lines
+            if "sign-flip" in line or "out-of-band" in line or "structure broken" in line
+        ]
         assert regression_lines == []
 
     def test_regression_on_structure_broken_empty_nbest(self) -> None:
@@ -361,7 +356,8 @@ class TestClassifyDrift:
     def test_regression_on_topnbest_length_mismatch_majority(self) -> None:
         """topNBest の長さが大幅不一致（majority 超過）の場合は regression。
 
-        pinned=8, fresh=3 → 5 positions changed (extra 5) + 0 mismatches in overlap → 5/8 ≥ 4 → regression。
+        pinned=8, fresh=3 → 5 positions changed (extra 5) + 0 mismatches in overlap
+        → 5/8 ≥ 4 → regression。
         """
         pinned = _make_pinned_observed(
             phonemes=["h", "ə", "l", "oʊ", "w", "ɜː", "l", "d"]  # 8 phonemes
@@ -376,9 +372,7 @@ class TestClassifyDrift:
 
     def test_advisory_ipa_drift_in_benign_result(self) -> None:
         """benign 時も advisoryIpaDrift dict が返ること（changedPositions=0 の場合）。"""
-        pinned = _make_pinned_observed(
-            phonemes=["h", "ə", "l", "oʊ", "w", "ɜː", "l", "d"]
-        )
+        pinned = _make_pinned_observed(phonemes=["h", "ə", "l", "oʊ", "w", "ɜː", "l", "d"])
         fresh = _make_fresh_signals(
             gop_values=[-6.0, -7.0, -8.0, -9.0, -10.0, -11.0, -12.0, -13.0],
             top1_phonemes=["h", "ə", "l", "oʊ", "w", "ɜː", "l", "d"],
@@ -394,9 +388,7 @@ class TestClassifyDrift:
 
     def test_multiple_ipa_changes_all_reported_when_majority(self) -> None:
         """majority の IPA 変化が全て diff_lines に含まれること。"""
-        pinned = _make_pinned_observed(
-            phonemes=["h", "ə", "l", "oʊ", "w", "ɜː", "l", "d"]
-        )
+        pinned = _make_pinned_observed(phonemes=["h", "ə", "l", "oʊ", "w", "ɜː", "l", "d"])
         fresh = _make_fresh_signals(
             gop_values=[-6.0, -7.0, -8.0, -9.0, -10.0, -11.0, -12.0, -13.0],
             top1_phonemes=["ZZZ", "ə", "XXX", "YYY", "AAA", "ɜː", "l", "d"],  # 4/8 = majority
@@ -404,7 +396,7 @@ class TestClassifyDrift:
         classification, diff_lines, advisory = classify_drift(fresh, pinned)
         assert classification == "regression"
         # pos0, pos2, pos3, pos4 の 4 positions が報告されること
-        ipa_change_lines = [l for l in diff_lines if "topNBest IPA change:" in l]
+        ipa_change_lines = [line for line in diff_lines if "topNBest IPA change:" in line]
         assert len(ipa_change_lines) == 4
 
 
@@ -431,7 +423,7 @@ class TestExtractFreshSignals:
                 "gop": gop,
                 "nBest": [{"phoneme": phoneme, "confidence": 0.01}],
             }
-            for phoneme, gop in zip(phonemes, gops)
+            for phoneme, gop in zip(phonemes, gops, strict=False)
         ]
         return {
             "perPhonemeGop": per_phoneme_gop,

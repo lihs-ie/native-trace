@@ -89,16 +89,25 @@ class TestRawMeasurementResultPhonemeAcousticsField:
 
     def test_phoneme_acoustics_default_is_empty_tuple(self) -> None:
         """phoneme_acoustics のデフォルトが空 tuple であること（後方互換）。"""
-        from python_analyzer.domain.measurement import RawMeasurementResult
         from python_analyzer.domain.phoneme import IpaSequence, PhonemeLabel
 
         # 最小限の RawMeasurementResult を構築する（phoneme_acoustics を省略）
         result = RawMeasurementResult(
             expected_ipa=IpaSequence(
-                phonemes=(PhonemeLabel("h"), PhonemeLabel("ɛ"), PhonemeLabel("l"), PhonemeLabel("oʊ"))
+                phonemes=(
+                    PhonemeLabel("h"),
+                    PhonemeLabel("ɛ"),
+                    PhonemeLabel("l"),
+                    PhonemeLabel("oʊ"),
+                )
             ),
             detected_ipa=IpaSequence(
-                phonemes=(PhonemeLabel("h"), PhonemeLabel("ɛ"), PhonemeLabel("l"), PhonemeLabel("oʊ"))
+                phonemes=(
+                    PhonemeLabel("h"),
+                    PhonemeLabel("ɛ"),
+                    PhonemeLabel("l"),
+                    PhonemeLabel("oʊ"),
+                )
             ),
             per_phoneme_gop=(),
             inter_word_silences=(),
@@ -109,7 +118,6 @@ class TestRawMeasurementResultPhonemeAcousticsField:
 
     def test_phoneme_acoustics_accepts_tuple(self) -> None:
         """phoneme_acoustics に tuple を渡せること。"""
-        from python_analyzer.domain.measurement import RawMeasurementResult
         from python_analyzer.domain.phoneme import IpaSequence, PhonemeLabel
 
         measurement = PhonemeAcousticMeasurement(

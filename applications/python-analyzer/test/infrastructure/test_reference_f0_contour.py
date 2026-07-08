@@ -115,12 +115,11 @@ class TestAnalysisResponseReferenceF0Contour:
     - referenceF0Contour.valuesHz が非空。
     - reference=None 時に f0Contour 経路が壊れない。
 
-    espeak-ng が必要な aligner を呼び出すため、Docker 環境（espeak-ng インストール済み）でのみ実行する。
+    espeak-ng が必要な aligner を呼び出すため、
+    Docker 環境（espeak-ng インストール済み）でのみ実行する。
     """
 
-    def test_analyze_returns_reference_f0_contour_in_response(
-        self, client: TestClient
-    ) -> None:
+    def test_analyze_returns_reference_f0_contour_in_response(self, client: TestClient) -> None:
         """POST /v1/analyze が referenceF0Contour フィールドを返すこと。
 
         kokoro が利用可能な場合、referenceF0Contour が非空の valuesHz を持つことを assert する。
@@ -215,7 +214,9 @@ class TestAnalysisResponseReferenceF0Contour:
         )
 
         # 学習者経路（f0Contour / perPhonemeGop 等）は壊れていないこと
-        assert data["perPhonemeGop"] is not None, "includeReferenceF0=False で perPhonemeGop が null"
+        assert data["perPhonemeGop"] is not None, (
+            "includeReferenceF0=False で perPhonemeGop が null"
+        )
         assert len(data["perPhonemeGop"]) > 0, (
             "includeReferenceF0=False で perPhonemeGop が空: 学習者経路が退行している"
         )

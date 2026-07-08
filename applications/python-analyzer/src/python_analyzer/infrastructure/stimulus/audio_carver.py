@@ -64,9 +64,7 @@ def carve_word_segment(
         num_frames_to_read = end_frame - start_frame
 
         if num_frames_to_read <= 0:
-            raise ValueError(
-                f"Invalid frame range: start={start_frame}, end={end_frame}"
-            )
+            raise ValueError(f"Invalid frame range: start={start_frame}, end={end_frame}")
 
         wav_reader.setpos(start_frame)
         raw_frames = wav_reader.readframes(num_frames_to_read)

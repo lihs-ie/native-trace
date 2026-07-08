@@ -92,9 +92,7 @@ def run_core_carve_pipeline(
     # Build word → list of (utterance_id, transcript) index from LibriTTS.
     # utterance_id = "{speaker}_{chapter}_{utterance}_{segment}" (basename without ext)
     logger.info("Scanning LibriTTS transcripts for target words")
-    utterance_word_index = _build_utterance_word_index(
-        corpus_archive_path, target_words
-    )
+    utterance_word_index = _build_utterance_word_index(corpus_archive_path, target_words)
     logger.info(
         "Found %d utterance-word hits",
         sum(len(v) for v in utterance_word_index.values()),
@@ -102,9 +100,7 @@ def run_core_carve_pipeline(
 
     # Load alignment TextGrids for matched utterances.
     logger.info("Loading alignment TextGrids")
-    alignment_map = _load_alignment_map(
-        alignment_archive_path, set(utterance_word_index.keys())
-    )
+    alignment_map = _load_alignment_map(alignment_archive_path, set(utterance_word_index.keys()))
     logger.info("Loaded %d alignment TextGrids", len(alignment_map))
 
     # Build per-contrast results.
@@ -171,9 +167,7 @@ def run_core_carve_pipeline(
                             interval.end_seconds,
                         )
                     except (ValueError, Exception) as carve_error:
-                        logger.debug(
-                            "Carve error for %s/%s: %s", utterance_id, word, carve_error
-                        )
+                        logger.debug("Carve error for %s/%s: %s", utterance_id, word, carve_error)
                         continue
 
                     # Quality filter.
@@ -190,8 +184,7 @@ def run_core_carve_pipeline(
                     for contrast in contrasts_for_word:
                         used_speakers = per_contrast_word_speakers[contrast][word]
                         current_count = sum(
-                            1 for asset in results[contrast]
-                            if asset.identifier.word == word
+                            1 for asset in results[contrast] if asset.identifier.word == word
                         )
 
                         if current_count >= max_stimuli_per_word:
@@ -270,8 +263,7 @@ def _build_utterance_word_index(
 
     # Precompile regex for word-boundary matching.
     word_patterns = {
-        word: re.compile(r"\b" + re.escape(word) + r"\b", re.IGNORECASE)
-        for word in target_words
+        word: re.compile(r"\b" + re.escape(word) + r"\b", re.IGNORECASE) for word in target_words
     }
 
     with tarfile.open(corpus_archive_path, "r:gz") as archive:

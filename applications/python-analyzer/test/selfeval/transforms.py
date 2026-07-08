@@ -221,7 +221,7 @@ def call_analyze(
         f"--{boundary}\r\n"
         f'Content-Disposition: form-data; name="audio"; filename="audio.wav"\r\n'
         f"Content-Type: audio/wav\r\n\r\n"
-    ).encode("utf-8")
+    ).encode()
     body_parts.append(audio_header)
     body_parts.append(wav_bytes)
     body_parts.append(b"\r\n")
@@ -231,13 +231,13 @@ def call_analyze(
         f"--{boundary}\r\n"
         f'Content-Disposition: form-data; name="metadata"\r\n'
         f"Content-Type: application/json\r\n\r\n"
-    ).encode("utf-8")
+    ).encode()
     body_parts.append(meta_header)
     body_parts.append(metadata.encode("utf-8"))
     body_parts.append(b"\r\n")
 
     # 終端
-    body_parts.append(f"--{boundary}--\r\n".encode("utf-8"))
+    body_parts.append(f"--{boundary}--\r\n".encode())
 
     body = b"".join(body_parts)
     content_type = f"multipart/form-data; boundary={boundary}"

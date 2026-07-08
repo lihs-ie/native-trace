@@ -75,9 +75,7 @@ class TestCarveWordSegment:
     def test_padding_does_not_exceed_file_bounds(self) -> None:
         source = _make_synthetic_wav(duration_seconds=0.5)
         # start_seconds near the beginning — padding should be clamped to 0.
-        carved = carve_word_segment(
-            source, start_seconds=0.0, end_seconds=0.2, padding_seconds=0.1
-        )
+        carved = carve_word_segment(source, start_seconds=0.0, end_seconds=0.2, padding_seconds=0.1)
         with wave.open(io.BytesIO(carved), "r") as reader:
             assert reader.getnframes() > 0
 

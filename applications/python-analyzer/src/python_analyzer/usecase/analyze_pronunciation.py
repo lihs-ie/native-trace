@@ -84,7 +84,9 @@ class AnalyzePronunciationUseCase:
         )
 
         # 録音品質計測（dBFS / 実音声長 / WADA-SNR）
-        mean_dbfs, speech_duration_seconds, estimated_snr_db = self._aligner.measure_audio_quality(audio)
+        mean_dbfs, speech_duration_seconds, estimated_snr_db = self._aligner.measure_audio_quality(
+            audio
+        )
 
         # 単語分割と境界情報を導出する（if self._prosody: ブロックと wordPosition 付与の両方で使用）
         words = _tokenize_words(reference_text)
@@ -101,9 +103,7 @@ class AnalyzePronunciationUseCase:
         phoneme_acoustics: tuple[PhonemeAcousticMeasurement, ...] = ()
 
         if self._prosody is not None:
-            expected_ipa_per_word = _get_expected_ipa_per_word(
-                words, expected_ipa.to_string()
-            )
+            expected_ipa_per_word = _get_expected_ipa_per_word(words, expected_ipa.to_string())
 
             # C1-b F0 輪郭（PCM バイト列が必要）
             pcm_bytes = audio.content
@@ -155,9 +155,7 @@ class AnalyzePronunciationUseCase:
                 reference_f0_contour = self._prosody.extract_reference_f0_contour(reference_text)
 
         # M-102R-b: 音素ごとの単語内位置（wordPosition）を付与する
-        per_phoneme_gop_with_position = _assign_word_positions(
-            per_phoneme_gop, word_boundaries
-        )
+        per_phoneme_gop_with_position = _assign_word_positions(per_phoneme_gop, word_boundaries)
 
         return RawMeasurementResult(
             expected_ipa=expected_ipa,

@@ -74,8 +74,7 @@ def synthesize_speech(
     """
     if voice not in ALL_KOKORO_VOICES:
         raise ValueError(
-            f"無効な voice ID: {voice!r}。"
-            f"利用可能な voice: {sorted(ALL_KOKORO_VOICES)}"
+            f"無効な voice ID: {voice!r}。利用可能な voice: {sorted(ALL_KOKORO_VOICES)}"
         )
 
     try:
@@ -129,9 +128,7 @@ def select_multi_talker_voices(
     if count < 2:
         raise ValueError(f"count は 2 以上が必要です: {count}")
     if count > len(ALL_KOKORO_VOICES):
-        raise ValueError(
-            f"count は {len(ALL_KOKORO_VOICES)} 以下が必要です: {count}"
-        )
+        raise ValueError(f"count は {len(ALL_KOKORO_VOICES)} 以下が必要です: {count}")
 
     female_list = list(KOKORO_FEMALE_VOICES)
     male_list = list(KOKORO_MALE_VOICES)

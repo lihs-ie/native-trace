@@ -44,7 +44,7 @@ def extract_f0_contour(
     import numpy as np
     import soundfile as sf
 
-    def _decode_samples(raw: bytes) -> tuple[object, int]:
+    def _decode_samples(raw: bytes) -> tuple[np.ndarray, int]:
         # soundfile(libsndfile) は WAV/FLAC 等しか読めず、ブラウザ録音の WebM/OGG は読めない。
         # まず soundfile を試し、失敗したら ffmpeg で WAV PCM に変換して読み直す
         # (ffmpeg は入力フォーマットをストリームから自動判定するため mime_type 不要)。
@@ -53,8 +53,18 @@ def extract_f0_contour(
         except Exception:
             result = subprocess.run(
                 [
-                    "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
-                    "-i", "pipe:0", "-f", "wav", "-acodec", "pcm_s16le", "pipe:1",
+                    "ffmpeg",
+                    "-nostdin",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-i",
+                    "pipe:0",
+                    "-f",
+                    "wav",
+                    "-acodec",
+                    "pcm_s16le",
+                    "pipe:1",
                 ],
                 input=raw,
                 capture_output=True,
@@ -63,7 +73,7 @@ def extract_f0_contour(
             if result.returncode != 0:
                 raise RuntimeError(
                     f"ffmpeg デコード失敗: {result.stderr.decode(errors='replace')}"
-                )
+                ) from None
             return sf.read(io.BytesIO(result.stdout), dtype="float64")
 
     try:
@@ -125,7 +135,10 @@ def extract_word_stress(
         zip(words, word_boundaries, expected_stress_per_word, strict=False)
     ):
         predicted_stress = _predict_stress_from_acoustics(
-            start_ms, end_ms, f0_contour, phoneme_durations_per_word[word_index],
+            start_ms,
+            end_ms,
+            f0_contour,
+            phoneme_durations_per_word[word_index],
             global_f0_median=global_f0_median,
         )
         measurements.append(

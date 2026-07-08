@@ -20,7 +20,6 @@ import json
 import os
 import subprocess
 import sys
-from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # デフォルトパス定数
@@ -66,9 +65,7 @@ def _hash_pip_lines(dockerfile_path: str) -> str:
         lines = file_handle.readlines()
 
     pip_lines = [
-        line.rstrip("\n")
-        for line in lines
-        if "pip install" in line or "pip3 install" in line
+        line.rstrip("\n") for line in lines if "pip install" in line or "pip3 install" in line
     ]
     joined = "\n".join(pip_lines)
     return hashlib.sha256(joined.encode("utf-8")).hexdigest()
@@ -136,9 +133,7 @@ def compute_fingerprint(repo_root: str) -> str:
         RuntimeError: analyzer コンテナが起動していない場合（docker inspect 失敗）。
         FileNotFoundError: Dockerfile が存在しない場合。
     """
-    dockerfile_path = os.path.join(
-        repo_root, "applications", "python-analyzer", "Dockerfile"
-    )
+    dockerfile_path = os.path.join(repo_root, "applications", "python-analyzer", "Dockerfile")
     pip_hash = _hash_pip_lines(dockerfile_path)
     docker_id = _get_docker_image_id("native-trace-analyzer")
     return f"docker:{docker_id}|pip:{pip_hash}"
@@ -178,7 +173,8 @@ def write_fingerprint_to_manifest(manifest_path: str, fingerprint: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "analyzer 指紋を計算し、オプションで manifest.json に書き込む（ADR-031 D12 Stage-3）。\n"
+            "analyzer 指紋を計算し、オプションで manifest.json に書き込む"
+            "（ADR-031 D12 Stage-3）。\n"
             "--write を付けると manifest の analyzerCommit が LIVE 指紋で上書きされる。\n"
             "--write なし（デフォルト）は指紋を stdout に出力するだけで manifest を変更しない。"
         )

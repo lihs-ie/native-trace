@@ -101,9 +101,7 @@ class TestSynthesizeSpeechVoiceValidation:
 class TestSynthesizeSpeechBackwardCompatibility:
     """synthesize_speech の後方互換テスト（voice 省略時の挙動）。"""
 
-    def test_voice_omitted_uses_default_af_heart(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_voice_omitted_uses_default_af_heart(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """voice を省略した呼び出しが af_heart を使うこと。
 
         voice バリデーションが af_heart で通過し RuntimeError（kokoro 不在）になることで

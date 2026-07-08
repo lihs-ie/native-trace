@@ -82,12 +82,7 @@ class TestStimulusAssetStoreWriteAndLoad:
         asset = _make_test_asset()
         store.write_assets({"r-l": [asset]})  # type: ignore[arg-type]
 
-        expected = (
-            tmp_path
-            / "libritts"
-            / "r-l"
-            / "right__19__word-initial__libritts.wav"
-        )
+        expected = tmp_path / "libritts" / "r-l" / "right__19__word-initial__libritts.wav"
         assert expected.exists()
         assert len(expected.read_bytes()) > 0
 
@@ -105,10 +100,12 @@ class TestStimulusAssetStoreQuery:
         asset_a = _make_test_asset(contrast="r-l", word="right")
         asset_b = _make_test_asset(contrast="r-l", word="light", speaker="26")
         asset_c = _make_test_asset(contrast="ae-ah", word="bat", speaker="32")
-        store.write_assets({  # type: ignore[arg-type]
-            "r-l": [asset_a, asset_b],
-            "ae-ah": [asset_c],
-        })
+        store.write_assets(
+            {  # type: ignore[arg-type]
+                "r-l": [asset_a, asset_b],
+                "ae-ah": [asset_c],
+            }
+        )
 
         results = store.query_stimuli("r-l")  # type: ignore[arg-type]
         assert len(results) == 2
@@ -117,9 +114,7 @@ class TestStimulusAssetStoreQuery:
 
     def test_context_filter(self, tmp_path: Path) -> None:
         store = StimulusAssetStore(tmp_path)
-        initial_asset = _make_test_asset(
-            word="right", context=PhonologicalContext.WORD_INITIAL
-        )
+        initial_asset = _make_test_asset(word="right", context=PhonologicalContext.WORD_INITIAL)
         cluster_asset = _make_test_asset(
             word="grass",
             speaker="26",
@@ -128,13 +123,15 @@ class TestStimulusAssetStoreQuery:
         store.write_assets({"r-l": [initial_asset, cluster_asset]})  # type: ignore[arg-type]
 
         initial_results = store.query_stimuli(
-            "r-l", context=PhonologicalContext.WORD_INITIAL  # type: ignore[arg-type]
+            "r-l",
+            context=PhonologicalContext.WORD_INITIAL,  # type: ignore[arg-type]
         )
         assert len(initial_results) == 1
         assert initial_results[0]["word"] == "right"
 
         cluster_results = store.query_stimuli(
-            "r-l", context=PhonologicalContext.CLUSTER  # type: ignore[arg-type]
+            "r-l",
+            context=PhonologicalContext.CLUSTER,  # type: ignore[arg-type]
         )
         assert len(cluster_results) == 1
         assert cluster_results[0]["word"] == "grass"

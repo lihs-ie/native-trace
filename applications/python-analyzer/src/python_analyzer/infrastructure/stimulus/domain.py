@@ -97,14 +97,10 @@ MINIMAL_PAIRS: dict[ContrastIdentifier, list[tuple[str, str]]] = {
 }
 
 # Contrasts that must be carved from LibriTTS (natural speech core).
-CORE_CONTRASTS: frozenset[ContrastIdentifier] = frozenset(
-    ["r-l", "ae-ah", "iy-ih", "v-b"]
-)
+CORE_CONTRASTS: frozenset[ContrastIdentifier] = frozenset(["r-l", "ae-ah", "iy-ih", "v-b"])
 
 # Contrasts supplemented by Kokoro (long-tail).
-LONG_TAIL_CONTRASTS: frozenset[ContrastIdentifier] = frozenset(
-    ["th-s", "dh-z", "aa-ae", "s-sh"]
-)
+LONG_TAIL_CONTRASTS: frozenset[ContrastIdentifier] = frozenset(["th-s", "dh-z", "aa-ae", "s-sh"])
 
 # Cluster-initial words: first consonant cluster is the diagnostic context.
 CLUSTER_INITIAL_WORDS: frozenset[str] = frozenset(
@@ -197,8 +193,4 @@ class ContrastCarveSummary:
 
     def satisfies_req122(self) -> bool:
         """Check REQ-122: >=5 speakers, mixed sex, multiple contexts."""
-        return (
-            self.speaker_count() >= 5
-            and self.has_mixed_sex()
-            and len(self.context_set()) >= 2
-        )
+        return self.speaker_count() >= 5 and self.has_mixed_sex() and len(self.context_set()) >= 2

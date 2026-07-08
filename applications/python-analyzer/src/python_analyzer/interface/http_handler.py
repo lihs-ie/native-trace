@@ -1,4 +1,5 @@
-"""HTTP ルーター: GET /health + POST /v1/tts + GET /v1/stimuli + POST /v1/analyze + POST /v1/shadowing-lag。
+"""HTTP ルーター: GET /health + POST /v1/tts + GET /v1/stimuli +
+POST /v1/analyze + POST /v1/shadowing-lag。
 
 app.py の Composition Root で include_router して登録される。
 use case を要するルート（/v1/analyze / /v1/shadowing-lag）は setter で DI される（W42）。
@@ -100,8 +101,7 @@ async def get_stimuli(
     contrast: str = Query(
         ...,
         description=(
-            "音素対立 (例: 'r-l', 'ae-ah', 'iy-ih', 'v-b', "
-            "'th-s', 'dh-z', 'aa-ae', 's-sh')"
+            "音素対立 (例: 'r-l', 'ae-ah', 'iy-ih', 'v-b', 'th-s', 'dh-z', 'aa-ae', 's-sh')"
         ),
     ),
     context: str | None = Query(

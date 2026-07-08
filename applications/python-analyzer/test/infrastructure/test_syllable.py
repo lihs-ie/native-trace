@@ -65,9 +65,7 @@ class TestCountVowelNucleiFromPhonemeList:
 class TestDetectSyllables:
     """detect_syllables() のテスト。"""
 
-    def _make_boundary(
-        self, phoneme: str, start_ms: int, end_ms: int
-    ) -> AlignmentBoundary:
+    def _make_boundary(self, phoneme: str, start_ms: int, end_ms: int) -> AlignmentBoundary:
         """テスト用 AlignmentBoundary を生成するヘルパー。"""
         return AlignmentBoundary(
             phoneme=PhonemeLabel(phoneme),

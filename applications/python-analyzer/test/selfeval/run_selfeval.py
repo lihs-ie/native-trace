@@ -10,8 +10,10 @@
     例:
         SELFEVAL metamorphic gain_invariance PASS observed=max_gop_delta:0.0000,ipa_match:True
         SELFEVAL metamorphic noise_monotonicity PASS observed=medians:[-5.23,-6.12,-7.45,-9.01]
-        SELFEVAL metamorphic flip_directionality PASS observed=low_quality_triggered:True,control_gop_stable:True
-        SELFEVAL confidence_measurement h PASS observed=entropy:1.2345,margin:0.3100,prod_confidence:None
+        SELFEVAL metamorphic flip_directionality PASS
+            observed=low_quality_triggered:True,control_gop_stable:True
+        SELFEVAL confidence_measurement h PASS
+            observed=entropy:1.2345,margin:0.3100,prod_confidence:None
         SELFEVAL calibration_ece all_phonemes PASS observed=ece:0.1234
 
 終了コード:
@@ -80,7 +82,8 @@ _KNOWN_FAILURES: dict[str, str] = {
     "noise_monotonicity": (
         "Loop-B fix (ADR-032 SNR gate) DISABLED pending redesign — "
         "fixed WADA floor invalidated by 13-clip validation (D4補正-2); "
-        "noise non-monotonicity is an OPEN production defect tracked for the per-clip-relative redesign"
+        "noise non-monotonicity is an OPEN production defect tracked for the "
+        "per-clip-relative redesign"
     ),
 }
 
@@ -99,7 +102,9 @@ _VERDICT_FORMAT = "SELFEVAL {family} {case} {result} observed={observed}"
 # ---------------------------------------------------------------------------
 
 
-def _emit(family: str, case: str, passed: bool, observed: str, known_fail: str | None = None) -> None:
+def _emit(
+    family: str, case: str, passed: bool, observed: str, known_fail: str | None = None
+) -> None:
     """verdict line を stdout に出力する。
 
     known_fail が指定されたとき: FAIL[KNOWN] と表示し、追跡理由を末尾に付加する。
@@ -204,9 +209,7 @@ def run_gain_invariance(analyzer_url: str, base_wav: np.ndarray, sample_rate: in
         global_ipa_match = global_ipa_match and ipa_match
 
         # nBest top-1 変化チェック
-        nbest_match = all(
-            base_nbest_top1.get(p) == scaled_nbest_top1.get(p) for p in base_gops
-        )
+        nbest_match = all(base_nbest_top1.get(p) == scaled_nbest_top1.get(p) for p in base_gops)
 
         if max_delta > _GAIN_INVARIANCE_GOP_TOLERANCE or not ipa_match or not nbest_match:
             all_passed = False
@@ -230,8 +233,10 @@ def run_noise_monotonicity(analyzer_url: str, base_wav: np.ndarray, sample_rate:
     production SNR gate DISABLED (ADR-032 D4補正-2) — noise non-monotonicity is an OPEN defect;
     checked over ALL levels, reported as FAIL[KNOWN] until the redesign.
 
-    全レベルを検査する（estimatedSnrDb による除外なし）。Scoring.hs の SNR ゲートが無効化されたため、
-    production は低 SNR 音声でも GOP を返す。5dB レベルの GOP 逆転（CTC overconfidence under noise）は
+    全レベルを検査する（estimatedSnrDb による除外なし）。
+    Scoring.hs の SNR ゲートが無効化されたため、
+    production は低 SNR 音声でも GOP を返す。
+    5dB レベルの GOP 逆転（CTC overconfidence under noise）は
     production で観測可能な未修正の不具合であり、FAIL[KNOWN] として正直に報告する。
 
     estimatedSnrDb は観測文字列に含めて可視性を確保するが、除外判定には使用しない。
@@ -343,9 +348,7 @@ def run_flip_directionality(analyzer_url: str, base_wav: np.ndarray, sample_rate
     base_bytes = to_wav_bytes(base_wav, sample_rate)
     try:
         base_response = call_analyze(analyzer_url, base_bytes, _REFERENCE_TEXT, base_duration)
-        control_response = call_analyze(
-            analyzer_url, control_bytes, _REFERENCE_TEXT, base_duration
-        )
+        control_response = call_analyze(analyzer_url, control_bytes, _REFERENCE_TEXT, base_duration)
     except Exception as error:
         _emit(family, case, False, f"control_call_failed:{error}")
         return False
@@ -360,7 +363,7 @@ def run_flip_directionality(analyzer_url: str, base_wav: np.ndarray, sample_rate
     # control の GOP が ε 以内に収まること（aligner の非決定性を考慮した帯域判定）
     control_epsilon = _GAIN_INVARIANCE_GOP_TOLERANCE * 2.0  # 2x tolerance for control
     max_control_delta = 0.0
-    for base_gop, ctrl_gop in zip(base_gops, control_gops):
+    for base_gop, ctrl_gop in zip(base_gops, control_gops, strict=False):
         max_control_delta = max(max_control_delta, abs(base_gop - ctrl_gop))
 
     control_gop_stable = max_control_delta <= control_epsilon
@@ -409,9 +412,7 @@ def _compute_entropy(probs: list[float]) -> float:
     return entropy
 
 
-def run_confidence_measurement(
-    analyzer_url: str, base_wav: np.ndarray, sample_rate: int
-) -> bool:
+def run_confidence_measurement(analyzer_url: str, base_wav: np.ndarray, sample_rate: int) -> bool:
     """confidence/uncertainty 測定（M-FCH-5、測定のみ — PASS 条件は /v1/analyze 成功のみ）。
 
     /v1/analyze perPhonemeGop[*].nBest から per-phoneme entropy + top-1 margin を計算する。
@@ -634,7 +635,8 @@ def main() -> int:
     ece_passed = run_calibration_ece(analyzer_url, base_wav, sample_rate)
 
     # KNOWN_FAILURES を除いた pass/fail 判定
-    # noise_monotonicity は ADR-032 D4補正-2 で FAIL[KNOWN] に再登録 — SNR ゲート無効化で未修正不具合
+    # noise_monotonicity は ADR-032 D4補正-2 で FAIL[KNOWN] に再登録
+    # — SNR ゲート無効化で未修正不具合
     noise_case = "noise_monotonicity"
     noise_is_known = noise_case in _KNOWN_FAILURES
 

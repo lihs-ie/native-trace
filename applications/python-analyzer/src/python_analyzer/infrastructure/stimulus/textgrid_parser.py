@@ -119,7 +119,5 @@ def find_word_boundary(
     """
     target_lower = target_word.lower().strip()
     return [
-        interval
-        for interval in word_intervals
-        if interval.word.lower().strip() == target_lower
+        interval for interval in word_intervals if interval.word.lower().strip() == target_lower
     ]

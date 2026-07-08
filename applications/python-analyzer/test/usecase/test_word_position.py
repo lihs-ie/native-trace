@@ -69,11 +69,11 @@ class TestAssignWordPositions:
         result = _assign_word_positions(gop, word_boundaries)
         # word 1
         assert result[0].word_position == "initial"  # h
-        assert result[1].word_position == "final"     # ɪ
+        assert result[1].word_position == "final"  # ɪ
         # word 2
         assert result[2].word_position == "initial"  # ð
-        assert result[3].word_position == "medial"   # ɛ
-        assert result[4].word_position == "final"    # ɹ
+        assert result[3].word_position == "medial"  # ɛ
+        assert result[4].word_position == "final"  # ɹ
 
     def test_empty_input_returns_empty_tuple(self) -> None:
         """空入力は空タプルを返すこと。"""

@@ -215,8 +215,6 @@ class TestToFormantBurgArguments:
 
         このヘルパーは TEST ファイル内にのみ存在し、本番コードには含まない。
         """
-        captured_kwargs: dict[str, Any] = {}
-
         # parselmouth モジュール全体をモックして to_formant_burg の引数をキャプチャする
         # このモックは TEST ファイル内の変数として存在し、本番コードには注入しない
         import sys
@@ -471,7 +469,9 @@ class TestMultiPointMedianSampling:
         assert results[0].f3_hz is None
 
     def test_get_value_at_time_called_5_times_per_formant(self) -> None:
-        """各 formant (1,2,3) につき 5 点のサンプリングが行われること（M-APD-19: 0.3/0.4/0.5/0.6/0.7）。"""
+        """各 formant (1,2,3) につき 5 点のサンプリングが行われること
+        （M-APD-19: 0.3/0.4/0.5/0.6/0.7）。
+        """
         try:
             import soundfile  # noqa: F401
         except ImportError:
@@ -513,7 +513,8 @@ class TestMultiPointMedianSampling:
 
         # 1 boundary × 3 formants × 5 sample points = 15 calls
         assert fake_formants.get_value_at_time.call_count == 15, (
-            f"expected 15 calls (3 formants × 5 points), got {fake_formants.get_value_at_time.call_count}"
+            f"expected 15 calls (3 formants × 5 points), "
+            f"got {fake_formants.get_value_at_time.call_count}"
         )
 
 
@@ -521,7 +522,9 @@ class TestMultiPointMedianSampling:
 
 
 class TestProsodyAnalyzerFormantCeiling:
-    """ProsodyAnalyzer.measure_phoneme_acoustics が speakerSex に応じて正しい Hz 天井を選択すること（M-APD-4）。"""
+    """ProsodyAnalyzer.measure_phoneme_acoustics が
+    speakerSex に応じて正しい Hz 天井を選択すること（M-APD-4）。
+    """
 
     def _call_with_fake_formant(
         self,
@@ -533,9 +536,8 @@ class TestProsodyAnalyzerFormantCeiling:
         """
         captured: dict[str, Any] = {}
 
-        import sys
-
         import python_analyzer.infrastructure.parselmouth_formant as real_module
+
         original_extract = real_module.extract_phoneme_acoustics
 
         def fake_extract(
@@ -551,7 +553,6 @@ class TestProsodyAnalyzerFormantCeiling:
 
         try:
             from python_analyzer.infrastructure.prosody_analyzer import ProsodyAnalyzer
-            from python_analyzer.domain.phoneme import AlignmentBoundary, PhonemeLabel
 
             analyzer = ProsodyAnalyzer()
             analyzer.measure_phoneme_acoustics(

@@ -101,8 +101,7 @@ class StimulusAssetStore:
         manifest_path = self._base_directory / MANIFEST_FILENAME
         if not manifest_path.exists():
             raise FileNotFoundError(
-                f"Attribution manifest not found: {manifest_path}. "
-                "Run the carve pipeline first."
+                f"Attribution manifest not found: {manifest_path}. Run the carve pipeline first."
             )
         with manifest_path.open("r", encoding="utf-8") as manifest_file:
             return json.load(manifest_file)
@@ -147,9 +146,7 @@ class StimulusAssetStore:
         # Parse parts: contrast__word__speaker__context__source
         parts = stimulus_identifier_string.split("__")
         if len(parts) < 5:
-            raise ValueError(
-                f"Invalid stimulus identifier string: {stimulus_identifier_string!r}"
-            )
+            raise ValueError(f"Invalid stimulus identifier string: {stimulus_identifier_string!r}")
 
         contrast = parts[0]
         word = parts[1]
@@ -162,9 +159,7 @@ class StimulusAssetStore:
         file_path = self._base_directory / source_dir / contrast / filename
 
         if not file_path.exists():
-            raise FileNotFoundError(
-                f"Stimulus WAV not found: {file_path}"
-            )
+            raise FileNotFoundError(f"Stimulus WAV not found: {file_path}")
 
         return file_path.read_bytes()
 
@@ -202,11 +197,7 @@ class StimulusAssetStore:
 
     def _asset_path(self, asset: StimulusAsset) -> Path:
         """Compute the on-disk path for a stimulus asset."""
-        source_dir = (
-            "libritts"
-            if asset.identifier.source == StimulusSource.LIBRITTS
-            else "kokoro"
-        )
+        source_dir = "libritts" if asset.identifier.source == StimulusSource.LIBRITTS else "kokoro"
         contrast_dir = asset.identifier.contrast
         filename = (
             f"{asset.identifier.word}"

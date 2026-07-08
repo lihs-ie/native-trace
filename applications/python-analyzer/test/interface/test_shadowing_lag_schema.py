@@ -101,9 +101,7 @@ class TestShadowingLagResponse:
         """JSON シリアライズ時にフィールド名が camelCase であること。"""
         response = ShadowingLagResponse(
             lagMilliseconds=100.0,
-            perSegmentLag=[
-                PerSegmentLagResponse(phoneme="h", lagMilliseconds=100.0)
-            ],
+            perSegmentLag=[PerSegmentLagResponse(phoneme="h", lagMilliseconds=100.0)],
             speechRateRatio=0.9,
             pauseCountLearner=1,
             pauseCountReference=0,

@@ -64,8 +64,7 @@ def run(
         )
     else:
         logger.warning(
-            "LibriTTS or alignment archive not found — skipping core carve. "
-            "corpus=%s alignment=%s",
+            "LibriTTS or alignment archive not found — skipping core carve. corpus=%s alignment=%s",
             corpus_archive_path,
             alignment_archive_path,
         )
@@ -92,12 +91,7 @@ def run(
         speaker_ids = {a.identifier.speaker_identifier for a in assets}
         sexes = {a.speaker_sex for a in assets}
         contexts = {a.identifier.context.value for a in assets}
-        satisfies = (
-            len(speaker_ids) >= 5
-            and "F" in sexes
-            and "M" in sexes
-            and len(contexts) >= 2
-        )
+        satisfies = len(speaker_ids) >= 5 and "F" in sexes and "M" in sexes and len(contexts) >= 2
         logger.info(
             "  %s: %d assets, %d speakers, sexes=%s, contexts=%s, REQ-122=%s",
             contrast,
@@ -111,9 +105,7 @@ def run(
 
 def main() -> None:
     """CLI entry point for the carve runner."""
-    parser = argparse.ArgumentParser(
-        description="Run the HVPT stimulus carve pipeline (ADR-009)"
-    )
+    parser = argparse.ArgumentParser(description="Run the HVPT stimulus carve pipeline (ADR-009)")
     parser.add_argument(
         "--corpus",
         type=Path,

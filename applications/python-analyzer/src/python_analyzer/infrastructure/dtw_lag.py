@@ -69,9 +69,7 @@ def compute_lag(
     reference_starts = np.array(
         [b.start_milliseconds for b in reference_boundaries], dtype=np.float64
     )
-    learner_starts = np.array(
-        [b.start_milliseconds for b in learner_boundaries], dtype=np.float64
-    )
+    learner_starts = np.array([b.start_milliseconds for b in learner_boundaries], dtype=np.float64)
 
     # DTW でインデックス対応を求める
     reference_indices, learner_indices = _dtw_align(reference_starts, learner_starts)
@@ -151,9 +149,7 @@ def _load_waveform_numpy(audio: AudioInput) -> np.ndarray | None:
         if sample_width == 2:
             samples = np.frombuffer(raw_bytes, dtype=np.int16).astype(np.float32) / 32768.0
         elif sample_width == 1:
-            samples = (
-                np.frombuffer(raw_bytes, dtype=np.uint8).astype(np.float32) - 128.0
-            ) / 128.0
+            samples = (np.frombuffer(raw_bytes, dtype=np.uint8).astype(np.float32) - 128.0) / 128.0
         else:
             return None
 

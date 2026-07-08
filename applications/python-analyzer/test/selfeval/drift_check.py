@@ -8,7 +8,8 @@
     DRIFT fingerprint=match status=skip
         → 指紋一致時（再実行なし、exit 0）
 
-    DRIFT <entryIdentifier> <benign|regression> fingerprint=mismatch classification=<benign|regression>
+    DRIFT <entryIdentifier> <benign|regression> fingerprint=mismatch
+        classification=<benign|regression>
         → 指紋不一致時（再実行あり）
 
     regression があれば続けて diff 行:
@@ -41,7 +42,6 @@ import json
 import math
 import os
 import sys
-from pathlib import Path
 from typing import Any
 
 # transforms と compute_fingerprint をパス解決できるよう sys.path に test ルートを追加する
@@ -175,7 +175,8 @@ def classify_drift(
             - 構造破損（perPhonemeGop / detectedIpa フィールド消失・型変化・nBest 空）
         topNBest IPA 変化 = ADVISORY（多数決ゲート）:
             - 変化位置が過半数（≥ ceil(N/2)）以上 → escalate（モデルスワップ class）
-            - 変化位置が少数（< ceil(N/2)）→ benign + advisoryIpaDrift に記録（拡散 CTC ノイズ class）
+            - 変化位置が少数（< ceil(N/2)）→ benign + advisoryIpaDrift に記録
+              （拡散 CTC ノイズ class）
             ※ rawTop1Conf=0.0142 の拡散 CTC では 1 位置の変化はノイズに相当する
               majority gate により scipy-incident class（全音素変化）は検出し続ける
         benign: HARD トリガー全て不成立 + IPA 変化が少数の場合
@@ -204,24 +205,28 @@ def classify_drift(
         # 符号反転チェック（HARD）
         if pinned_band_all_negative and fresh_gop > 0.0:
             diff_lines.append(
-                f"  gop sign-flip: pinned band all-negative but fresh gop={fresh_gop:.2f} is positive"
+                f"  gop sign-flip: pinned band all-negative but "
+                f"fresh gop={fresh_gop:.2f} is positive"
             )
             is_regression = True
         elif pinned_band_all_positive and fresh_gop < 0.0:
             diff_lines.append(
-                f"  gop sign-flip: pinned band all-positive but fresh gop={fresh_gop:.2f} is negative"
+                f"  gop sign-flip: pinned band all-positive but "
+                f"fresh gop={fresh_gop:.2f} is negative"
             )
             is_regression = True
 
         # out-of-band チェック（HARD / ε を超えた逸脱）
         if fresh_gop < pinned_band_min - gop_margin_epsilon:
             diff_lines.append(
-                f"  gop out-of-band: fresh={fresh_gop:.2f} below band=[{pinned_band_min},{pinned_band_max}] margin={gop_margin_epsilon}"
+                f"  gop out-of-band: fresh={fresh_gop:.2f} "
+                f"below band=[{pinned_band_min},{pinned_band_max}] margin={gop_margin_epsilon}"
             )
             is_regression = True
         elif fresh_gop > pinned_band_max + gop_margin_epsilon:
             diff_lines.append(
-                f"  gop out-of-band: fresh={fresh_gop:.2f} above band=[{pinned_band_min},{pinned_band_max}] margin={gop_margin_epsilon}"
+                f"  gop out-of-band: fresh={fresh_gop:.2f} "
+                f"above band=[{pinned_band_min},{pinned_band_max}] margin={gop_margin_epsilon}"
             )
             is_regression = True
 
@@ -236,7 +241,7 @@ def classify_drift(
     total_positions = max(len(fresh_top1_phonemes), len(pinned_top1_phonemes))
 
     for position, (fresh_phoneme, pinned_phoneme) in enumerate(
-        zip(fresh_top1_phonemes, pinned_top1_phonemes)
+        zip(fresh_top1_phonemes, pinned_top1_phonemes, strict=False)
     ):
         if fresh_phoneme != pinned_phoneme:
             ipa_changed_positions.append(position)
@@ -260,21 +265,26 @@ def classify_drift(
         # majority 超過 → HARD regression として昇格
         for position, fresh_phoneme, pinned_phoneme in ipa_diff_details:
             diff_lines.append(
-                f"  topNBest IPA change: pos{position} fresh={fresh_phoneme} pinned={pinned_phoneme}"
+                f"  topNBest IPA change: pos{position} "
+                f"fresh={fresh_phoneme} pinned={pinned_phoneme}"
             )
         if length_mismatch:
             diff_lines.append(
-                f"  topNBest length mismatch: fresh={len(fresh_top1_phonemes)} pinned={len(pinned_top1_phonemes)}"
+                f"  topNBest length mismatch: fresh={len(fresh_top1_phonemes)} "
+                f"pinned={len(pinned_top1_phonemes)}"
             )
         diff_lines.append(
-            f"  topNBest IPA majority changed: {changed_count}/{total_positions} positions (threshold={majority_threshold}) → escalated"
+            f"  topNBest IPA majority changed: {changed_count}/{total_positions} "
+            f"positions (threshold={majority_threshold}) → escalated"
         )
         is_regression = True
     else:
         # minority → advisory のみ（benign に影響しない）
         for position, fresh_phoneme, pinned_phoneme in ipa_diff_details:
             diff_lines.append(
-                f"  advisoryIpaDrift pos{position}: fresh={fresh_phoneme} pinned={pinned_phoneme} (minority {changed_count}/{total_positions}, not escalated)"
+                f"  advisoryIpaDrift pos{position}: "
+                f"fresh={fresh_phoneme} pinned={pinned_phoneme} "
+                f"(minority {changed_count}/{total_positions}, not escalated)"
             )
 
     advisory_ipa_drift: dict[str, Any] = {
@@ -334,14 +344,11 @@ def _rerun_entry(
 
     # GOP 符号反転フラグ（report 用）
     pinned_band_all_negative = float(pinned_gop_band.get("max", 0.0)) < 0.0
-    sign_flip = any(
-        (pinned_band_all_negative and gop > 0.0) for gop in fresh_signals["gop_values"]
-    )
+    sign_flip = any((pinned_band_all_negative and gop > 0.0) for gop in fresh_signals["gop_values"])
 
     # top-1 phoneme match フラグ
-    nbest_match = (
-        len(fresh_top1_phonemes) == len(pinned_top1_phonemes)
-        and all(f == p for f, p in zip(fresh_top1_phonemes, pinned_top1_phonemes))
+    nbest_match = len(fresh_top1_phonemes) == len(pinned_top1_phonemes) and all(
+        f == p for f, p in zip(fresh_top1_phonemes, pinned_top1_phonemes, strict=False)
     )
 
     # in-band フラグ（全 gop が ε 内に収まるか）
@@ -450,7 +457,8 @@ def run_drift_check(
             # analyzer 呼び出し失敗は regression 扱いとしてエスカレーション
             error_message = str(error)
             print(
-                f"DRIFT {entry_identifier} regression fingerprint=mismatch classification=regression",
+                f"DRIFT {entry_identifier} regression fingerprint=mismatch "
+                "classification=regression",
                 flush=True,
             )
             print(f"  analyzer call failed: {error_message}", flush=True)
@@ -473,7 +481,8 @@ def run_drift_check(
 
         # human-readable 出力
         print(
-            f"DRIFT {entry_identifier} {classification} fingerprint=mismatch classification={classification}",
+            f"DRIFT {entry_identifier} {classification} fingerprint=mismatch "
+            f"classification={classification}",
             flush=True,
         )
         for diff_line in diff_lines:
@@ -507,7 +516,8 @@ def main() -> int:
             "指紋一致時はスキップ（exit 0）。\n"
             "不一致時は /v1/analyze を再実行し benign/regression を分類する。\n"
             "regression 1 件以上で exit 1（エスカレーション）。\n"
-            "NOTE: このスクリプトは manifest を書き換えない。re-pin は compute_fingerprint.py --write を使用する。"
+            "NOTE: このスクリプトは manifest を書き換えない。"
+            "re-pin は compute_fingerprint.py --write を使用する。"
         )
     )
     parser.add_argument(

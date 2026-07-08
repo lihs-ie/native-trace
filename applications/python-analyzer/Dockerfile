@@ -80,6 +80,11 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 COPY src/ /app/src/
 COPY test/ /app/test/
 
+# ruff の設定（line-length=100 等）をコンテナ内 lint ゲートで参照できるようにする。
+# 実行時には不活性で、CI の `ruff check` / `ruff format --check` の設定を
+# ホスト側と一致させるためだけに配置する（依存インストールには使用しない）。
+COPY pyproject.toml /app/
+
 # 事前 carve した curated stimulus assets をコピーする（ADR-009 / W-4）。
 # 7.7 GB の raw corpus は同梱しない。carve 済アセット（数十 MB）のみ。
 # stimuli-assets/ は carve_runner を dev host で実行して生成する（上記コメント参照）。

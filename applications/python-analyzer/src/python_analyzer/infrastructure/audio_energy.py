@@ -128,8 +128,8 @@ def compute_wada_snr(
         推定 SNR（dB）。発話区間サンプルが空の場合は番兵値 WADA_SNR_SENTINEL_DB（-120.0）を返す。
         値域は概ね -10 〜 45 dB の範囲に収まる（尖度の有効範囲による）。
     """
-    _WADA_K_CLEAN_PRIOR = 34.0  # Gamma-modulated speech の先験尖度（calibrated, see docstring）
-    _MIN_SPEECH_SAMPLES = 10
+    wada_k_clean_prior = 34.0  # Gamma-modulated speech の先験尖度（calibrated, see docstring）
+    min_speech_samples = 10
 
     if len(samples) == 0:
         return WADA_SNR_SENTINEL_DB
@@ -144,7 +144,7 @@ def compute_wada_snr(
     # 低 SNR = 雑音フレーム混入）、尖度が非単調になるため全サンプルを対象とする。
     all_samples = samples.astype(np.float64)
     nz_samples = all_samples[np.abs(all_samples) > 1e-12]
-    if len(nz_samples) < _MIN_SPEECH_SAMPLES:
+    if len(nz_samples) < min_speech_samples:
         return WADA_SNR_SENTINEL_DB
 
     # 4 次モーメントから正規化尖度を計算する: K_y = E[y^4] / (E[y^2])^2
@@ -153,7 +153,7 @@ def compute_wada_snr(
         return WADA_SNR_SENTINEL_DB
     k_y = float(np.mean(all_samples**4)) / (p_y**2)
 
-    kappa_s = _WADA_K_CLEAN_PRIOR
+    kappa_s = wada_k_clean_prior
     # K_y を二次方程式の有効範囲 (3, kappa_s) にクランプする
     k_y = max(3.001, min(kappa_s - 0.001, k_y))
 
